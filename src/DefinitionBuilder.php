@@ -16,6 +16,8 @@ use Symfony\Component\DependencyInjection\Reference;
 /**
  * Builds the container definition of a single entity's {@see EntityDefinition} from its `#[Table]`
  * and {@see Field} attributes, validating both as it goes so a mis-declared entity fails the build.
+ *
+ * @internal
  */
 final readonly class DefinitionBuilder
 {

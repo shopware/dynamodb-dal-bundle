@@ -22,6 +22,8 @@ final class GetOutput implements \IteratorAggregate
     private ?array $cache = null;
 
     /**
+     * @internal
+     *
      * @param \Generator<int, Entity> $source - each found entity
      */
     public function __construct(

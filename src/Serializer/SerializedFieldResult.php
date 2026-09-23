@@ -6,6 +6,9 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
+/**
+ * @internal
+ */
 class SerializedFieldResult
 {
     /**

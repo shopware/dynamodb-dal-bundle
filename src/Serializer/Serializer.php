@@ -18,6 +18,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * Serializes and deserializes items based on their definition and field serializers.
+ *
+ * @internal
  */
 class Serializer
 {

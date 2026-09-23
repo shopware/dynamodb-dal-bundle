@@ -7,6 +7,8 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * @internal
+ *
  * @template Definition of EntityDefinition = EntityDefinition
  */
 class SerializedResult

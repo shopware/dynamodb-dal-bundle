@@ -11,6 +11,8 @@ use Symfony\Contracts\Service\ResetInterface;
  *
  * Each `compile()` call results a result containing expression attributes that are unique
  * and can be merged with other results into one list without colliding keys.
+ *
+ * @internal
  */
 class ExpressionCompiler implements ResetInterface
 {

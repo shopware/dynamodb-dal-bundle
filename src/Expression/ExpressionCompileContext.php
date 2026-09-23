@@ -13,11 +13,19 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 class ExpressionCompileContext
 {
     /**
+     * Collected by {@see placeholder()} and {@see numberPlaceholder()}; read by the compiler.
+     *
+     * @internal
+     *
      * @var array<string, AttributeValue>
      */
     public array $values = [];
 
     /**
+     * Collected by {@see attribute()}; read by the compiler.
+     *
+     * @internal
+     *
      * @var array<string, string>
      */
     public array $names = [];
@@ -30,6 +38,9 @@ class ExpressionCompileContext
      */
     public bool $isCompound = false;
 
+    /**
+     * @internal
+     */
     public function __construct(
         public readonly EntityDefinition $definition,
         public readonly string $prefix,

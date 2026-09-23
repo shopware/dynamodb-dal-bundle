@@ -20,6 +20,8 @@ abstract class ReadOutput implements \IteratorAggregate
     private bool $consumed = false;
 
     /**
+     * @internal
+     *
      * @param \Generator<int, Entity> $source
      */
     public function __construct(

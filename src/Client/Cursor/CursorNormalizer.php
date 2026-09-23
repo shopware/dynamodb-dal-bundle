@@ -17,6 +17,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * (De)normalizes a {@see Cursor} across the HTTP edge (it rides the URL via `#[MapQueryString]`). A
  * cursor holds deserialized values; the DAL {@see Serializer} converts them to/from the DynamoDB scalar
  * form (`{S|N|B}`), with field names resolved from the cursor's table via the {@see EntityDefinitionRegistry}.
+ *
+ * @internal
  */
 final class CursorNormalizer implements NormalizerInterface, DenormalizerInterface
 {

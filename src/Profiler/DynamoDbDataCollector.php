@@ -19,6 +19,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Serializer timings are pushed in by {@see TraceableSerializer} during the request.
  *
+ * @internal
+ *
  * @codeCoverageIgnore
  */
 class DynamoDbDataCollector extends AbstractDataCollector

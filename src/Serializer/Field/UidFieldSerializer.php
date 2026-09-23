@@ -9,6 +9,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use Symfony\Component\Uid\AbstractUid;
 
 /**
+ * @internal
+ *
  * @extends AbstractFieldSerializer<AbstractUid, class-string<AbstractUid>>
  */
 class UidFieldSerializer extends AbstractFieldSerializer

@@ -11,6 +11,8 @@ use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 
 /**
  * Tags every registered {@see AbstractFieldSerializer} so {@see DefinitionCompilerPass} finds it.
+ *
+ * @internal
  */
 class ServiceTaggingPass implements CompilerPassInterface
 {

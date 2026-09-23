@@ -18,6 +18,8 @@ class FieldDefinition
     private EntityDefinition $entityDefinition;
 
     /**
+     * @internal
+     *
      * @param Type $type
      * @param AbstractFieldSerializer<mixed, Type> $serializer
      */

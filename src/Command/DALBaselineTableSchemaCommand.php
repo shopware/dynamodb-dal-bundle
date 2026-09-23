@@ -17,6 +17,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Outputs the current DynamoDB key/index schema from the live table (describeTable) as JSON.
  * Diffed against a committed copy, it flags a key or index change on a table.
  *
+ * @internal
+ *
  * @codeCoverageIgnore
  */
 #[AsCommand(

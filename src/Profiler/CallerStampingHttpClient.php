@@ -15,6 +15,8 @@ use Symfony\Contracts\HttpClient\ResponseStreamInterface;
  * decorates every `http_client.client` with a TraceableHttpClient at priority 100, so 0 here keeps us
  * outside it and the stamped options land in the trace.
  *
+ * @internal
+ *
  * @codeCoverageIgnore
  */
 final class CallerStampingHttpClient implements HttpClientInterface

@@ -40,6 +40,9 @@ class WriterClient
      */
     private const array TRANSACT_WRITE_CONFLICT_RETRYABLE_CODES = ['None', 'TransactionConflict'];
 
+    /**
+     * @internal
+     */
     public function __construct(
         protected readonly DynamoDbClient $client,
         protected readonly Serializer $serializer,

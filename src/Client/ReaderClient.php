@@ -24,6 +24,9 @@ class ReaderClient
 {
     private const int BATCH_GET_LIMIT = 100;
 
+    /**
+     * @internal
+     */
     public function __construct(
         protected readonly DynamoDbClient $client,
         protected readonly Serializer $serializer,

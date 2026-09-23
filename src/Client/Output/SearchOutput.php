@@ -18,6 +18,8 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
 final class SearchOutput extends ReadOutput
 {
     /**
+     * @internal
+     *
      * @param \Generator<int, Entity> $source
      * @param EntityDefinition<Entity> $definition
      */

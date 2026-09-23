@@ -14,6 +14,8 @@ use Symfony\Component\Stopwatch\Stopwatch;
  * The captured timings are aggregated by the calling method so the panel can show a combined
  * per-call-site total (DynamoDB API time + serializer time).
  *
+ * @internal
+ *
  * @codeCoverageIgnore
  */
 final class TraceableSerializer extends Serializer

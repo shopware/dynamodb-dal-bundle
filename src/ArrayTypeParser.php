@@ -5,6 +5,8 @@ namespace Shopware\DynamodbDalBundle;
 /**
  * Parses PHPStan-style @var types for array properties to distinguish list<> (DynamoDB L) from array<> (DynamoDB M) and to extract the value type.
  * Only list<T> is treated as a list; all array<...> forms (including array<T> with no key type) are treated as maps.
+ *
+ * @internal
  */
 final class ArrayTypeParser
 {

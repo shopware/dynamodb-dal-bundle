@@ -13,6 +13,8 @@ use Symfony\Component\Uid\AbstractUid;
  *
  * Deserialization returns the decoded array so the entity normalizer can convert it into the target struct.
  *
+ * @internal
+ *
  * @extends AbstractFieldSerializer<array<string, mixed>|\JsonSerializable, 'array'|class-string>
  */
 class JsonFieldSerializer extends AbstractFieldSerializer

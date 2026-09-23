@@ -8,6 +8,8 @@ use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * @internal
+ *
  * @extends AbstractFieldSerializer<string, 'string'>
  */
 class StringFieldSerializer extends AbstractFieldSerializer

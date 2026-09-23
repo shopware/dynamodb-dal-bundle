@@ -16,6 +16,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  *
  * Map values are encoded/decoded using the serializer for the field's value type (from @var or Field::valueType).
  *
+ * @internal
+ *
  * @extends AbstractFieldSerializer<array<string, mixed>, 'array'>
  */
 class MapFieldSerializer extends AbstractFieldSerializer

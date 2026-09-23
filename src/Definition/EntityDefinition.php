@@ -16,6 +16,8 @@ class EntityDefinition
     private readonly array $fieldDefinitions;
 
     /**
+     * @internal
+     *
      * @param class-string<Entity> $class
      * @param iterable<string, FieldDefinition<Entity>> $fieldDefinitions
      * @param array<string, IndexSchema> $indexes - keyed by index name

@@ -29,6 +29,8 @@ class EntityDefinitionRegistry
     private array $logicalByEntityClass = [];
 
     /**
+     * @internal
+     *
      * @param iterable<string, EntityDefinition<AbstractEntity>> $definitions - keyed by logical table name
      */
     public function __construct(iterable $definitions)

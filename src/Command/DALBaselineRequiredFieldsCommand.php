@@ -14,6 +14,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Outputs the current required-field names per DAL entity as JSON baseline.
  * Diffed against a committed copy, it flags a field turning required that stored rows may lack.
  *
+ * @internal
+ *
  * @codeCoverageIgnore
  */
 #[AsCommand(

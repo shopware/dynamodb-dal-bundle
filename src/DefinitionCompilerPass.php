@@ -10,6 +10,9 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 
+/**
+ * @internal
+ */
 class DefinitionCompilerPass implements CompilerPassInterface
 {
     public const string ENTITIES_PARAMETER = 'shopware_dynamodb_dal.entities';

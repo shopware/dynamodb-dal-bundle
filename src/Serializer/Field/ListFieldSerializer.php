@@ -16,6 +16,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  *
  * List values are encoded/decoded using the serializer for the field's value type (from @var or Field::valueType).
  *
+ * @internal
+ *
  * @extends AbstractFieldSerializer<array<int, mixed>, 'array'>
  */
 class ListFieldSerializer extends AbstractFieldSerializer

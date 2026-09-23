@@ -15,14 +15,15 @@ use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 
 /**
- * @TODO rename this to something better
- *
  * Table-agnostic facade over the {@see ReaderClient}: each method takes the {@see EntityDefinition} it
  * operates on, wraps reads in result objects, and owns the write path. Callers work with entities; the
  * `AttributeValue` (de)serialization lives in the reader and serializer.
  */
 class Client
 {
+    /**
+     * @internal
+     */
     public function __construct(
         protected readonly ReaderClient $reader,
         protected readonly WriterClient $writer,

@@ -10,6 +10,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 /**
  * Can not support {@see \DateTimeInterface} as it has no common method to construct an object.
  *
+ * @internal
+ *
  * @extends AbstractFieldSerializer<\DateTimeImmutable|\DateTime, class-string<\DateTimeImmutable|\DateTime>>
  */
 class DateTimeFieldSerializer extends AbstractFieldSerializer

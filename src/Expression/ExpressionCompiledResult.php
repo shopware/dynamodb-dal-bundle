@@ -35,6 +35,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  *     ...$key->getExpressionAttributes($filter),
  * ]);
  * ```
+ *
+ * @internal
  */
 class ExpressionCompiledResult
 {

@@ -12,6 +12,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  * Enums without any cases can not be serialized.
  * Enums missing a value or can not be deserialized will fallback to the first case available.
  *
+ * @internal
+ *
  * @extends AbstractFieldSerializer<\BackedEnum, class-string<\BackedEnum>>
  */
 class BackedEnumFieldSerializer extends AbstractFieldSerializer
