@@ -1,0 +1,37 @@
+name: meta
+
+on:
+  pull_request:
+  push:
+    branches:
+      - trunk
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: $/.github/actions/setup
+      - name: Validate composer.json
+        run: composer validate --strict
+      - name: Verify PSR-4 autoload
+        run: composer dump-autoload --optimize --strict-psr --no-scripts
+
+  bc-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          php-version: '8.5'
+          full: 'true'
+
+      - name: Install bc-checker
+        run: |
+          composer global require roave/backward-compatibility-check:8.21.0 --no-audit
+          echo "$(composer global config home)/vendor/bin" >> "$GITHUB_PATH"
+
+      - name: Run bc-check
+        if: github.event_name == 'pull_request' && !contains(github.base_ref, '/feature/')
+        run: roave-backward-compatibility-check --format=github-actions --from="origin/${{ github.base_ref }}"

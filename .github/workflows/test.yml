@@ -1,0 +1,51 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - trunk
+
+permissions:
+  contents: read
+
+jobs:
+  phpunit-unit:
+    name: phpunit unit (PHP ${{ matrix.php-version }}, ${{ matrix.dependencies }} dependencies)
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
+        dependencies: [lowest, highest]
+
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          php-version: ${{ matrix.php-version }}
+          dependencies: ${{ matrix.dependencies }}
+
+      - name: Run unit tests
+        run: composer phpunit:unit
+
+  phpunit-integration:
+    name: phpunit integration (PHP ${{ matrix.php-version }}, ${{ matrix.dependencies }} dependencies)
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
+        dependencies: [lowest, highest]
+
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          php-version: ${{ matrix.php-version }}
+          dependencies: ${{ matrix.dependencies }}
+
+      - uses: $/.github/actions/setup-dynamodb
+
+      - name: Run integration tests
+        run: composer phpunit:integration

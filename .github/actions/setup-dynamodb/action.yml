@@ -1,0 +1,27 @@
+name: Setup DynamoDB
+description: Start DynamoDB Local from compose.yaml and wait until it answers
+
+inputs:
+  endpoint:
+    description: Where DynamoDB Local is reachable — exported as DYNAMODB_ENDPOINT
+    required: false
+    default: http://127.0.0.1:8000
+
+runs:
+  using: composite
+  steps:
+    - name: Start DynamoDB Local
+      shell: bash
+      run: docker compose up --detach --wait
+
+    - name: Wait for DynamoDB Local
+      shell: bash
+      env:
+        ENDPOINT: ${{ inputs.endpoint }}
+      run: timeout 60 bash -c 'until curl --silent --output /dev/null "$ENDPOINT"; do sleep 1; done'
+
+    - name: Export DYNAMODB_ENDPOINT
+      shell: bash
+      env:
+        ENDPOINT: ${{ inputs.endpoint }}
+      run: echo "DYNAMODB_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
