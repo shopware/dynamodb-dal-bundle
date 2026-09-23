@@ -4,7 +4,10 @@ namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\ArrayTypeParser;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -30,7 +33,7 @@ class MapFieldSerializer extends AbstractFieldSerializer
         }
 
         if (!\is_array($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'array', $value);
+            throw new WrongTypeException($definition, 'array', $value);
         }
 
         $m = [];
@@ -45,12 +48,7 @@ class MapFieldSerializer extends AbstractFieldSerializer
             try {
                 $m[$key] = $valueDef->getSerializer()->serialize($valueDef, $v);
             } catch (\Throwable $e) {
-                $nestedPath = $valueDef->getName();
-                if ($e instanceof SerializerException && ($prevPath = $e->getParameters()['nestedPath'] ?? null) !== null) {
-                    $nestedPath .= '.' . $prevPath;
-                }
-
-                throw SerializerException::fieldSerializationFailed($valueDef->getSerializer()::class, $valueDef, $v, $e, $nestedPath);
+                throw new FieldSerializationException($definition, $e, self::elementPath('.' . $key, $valueDef, $e));
             }
         }
 
@@ -66,13 +64,13 @@ class MapFieldSerializer extends AbstractFieldSerializer
 
         $map = $attributeValue->getM();
         if ($map === [] && !isset($attributeValue->requestBody()['M'])) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'M');
+            throw new MissingAttributeValueException($definition, 'M');
         }
 
         $result = [];
         foreach ($map as $key => $nested) {
             if (!$nested instanceof AttributeValue) {
-                throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'M');
+                throw new MissingAttributeValueException($definition, 'M');
             }
 
             if ($nested->getNull() === true) {
@@ -84,12 +82,7 @@ class MapFieldSerializer extends AbstractFieldSerializer
             try {
                 $result[$key] = $valueDef->getSerializer()->deserialize($valueDef, $nested);
             } catch (\Throwable $e) {
-                $nestedPath = $valueDef->getName();
-                if ($e instanceof SerializerException && ($prevPath = $e->getParameters()['nestedPath'] ?? null) !== null) {
-                    $nestedPath .= '.' . $prevPath;
-                }
-
-                throw SerializerException::fieldDeserializationFailed($valueDef->getSerializer()::class, $valueDef, $nested, $e, $nestedPath);
+                throw new FieldDeserializationException($definition, $e, self::elementPath('.' . $key, $valueDef, $e));
             }
         }
 

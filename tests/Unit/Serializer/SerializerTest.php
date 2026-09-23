@@ -8,7 +8,11 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
@@ -106,7 +110,7 @@ class SerializerTest extends TestCase
 
     public function testDeserializeWithMissigRequiredFieldsThrows(): void
     {
-        static::expectException(SerializerException::class);
+        static::expectException(FieldMissingDeserializedValueException::class);
         static::expectExceptionMessage('Missing required value for field "required" in item "normal" after deserialization and denormalization.');
 
         $this->serializer->deserialize($this->definition, [
@@ -116,7 +120,7 @@ class SerializerTest extends TestCase
 
     public function testDeserializeWithWrongFieldType(): void
     {
-        static::expectException(SerializerException::class);
+        static::expectException(MissingAttributeValueException::class);
         static::expectExceptionMessage('Missing expected DynamoDB attribute value of type "S" for field "autofilledId" in item "normal"');
 
         $this->serializer->deserialize($this->definition, [
@@ -125,14 +129,14 @@ class SerializerTest extends TestCase
         ]);
     }
 
-    public function testDeserializeWithSerializerException(): void
+    public function testDeserializeWrapsAFailingFieldSerializer(): void
     {
         $serializer = $this->createMock(AbstractFieldSerializer::class);
         $serializer->expects(static::once())->method('deserialize')->willThrowException(new \RuntimeException('test-deserialization-error'));
 
         $definition = NormalEntity::createDefinition(fieldSerializer: $serializer);
 
-        static::expectException(SerializerException::class);
+        static::expectException(FieldDeserializationException::class);
         static::expectExceptionMessage('Field "autofilledId" in item "normal" could not be deserialized');
 
         $this->serializer->deserialize($definition, [
@@ -259,8 +263,8 @@ class SerializerTest extends TestCase
             'unknownField' => 'test-unknown-field',
         ];
 
-        static::expectException(SerializerException::class);
-        static::expectExceptionMessage('Unknown field "unknownField" in item "normal" cannot be serialized');
+        static::expectException(UnknownFieldException::class);
+        static::expectExceptionMessage('Unknown field "unknownField" in item "normal"');
 
         $this->serializer->serialize($this->definition, $fields);
     }
@@ -363,7 +367,7 @@ class SerializerTest extends TestCase
             new KeySchema('required'),
         );
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(FieldMissingSerializedValueException::class);
         $this->expectExceptionMessage('Missing required value for field');
 
         $this->serializer->serialize($definition, ['required' => null]);
@@ -483,7 +487,7 @@ class SerializerTest extends TestCase
         // The createdAt range key is an N-typed field; an S value cannot be deserialized into it.
         $definition = $this->keyedDefinition();
 
-        static::expectException(SerializerException::class);
+        static::expectException(FieldDeserializationException::class);
 
         $this->serializer->deserializeKey($definition, [
             'tenantId' => new AttributeValue(['S' => 'tenant-1']),
@@ -513,7 +517,7 @@ class SerializerTest extends TestCase
         // emit an incomplete DynamoDB key. (keyedDefinition has no normalizer, so nothing back-fills it.)
         $definition = $this->keyedDefinition();
 
-        static::expectException(SerializerException::class);
+        static::expectException(FieldMissingSerializedValueException::class);
 
         $this->serializer->serializeKey($definition, new Index(null, null));
     }
@@ -545,7 +549,7 @@ class SerializerTest extends TestCase
         $definition = $this->keyedDefinition();
         $cursor = new Cursor('order', new Index(null, null));
 
-        static::expectException(SerializerException::class);
+        static::expectException(FieldMissingSerializedValueException::class);
 
         $this->serializer->serializeCursor($definition, $cursor);
     }

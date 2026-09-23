@@ -11,7 +11,7 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Criteria\Filter;
-use Shopware\DynamodbDalBundle\Exception\EntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 
@@ -94,7 +94,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
     public function testGetThrowsForAnUnregisteredEntityClass(): void
     {
-        static::expectException(EntityDefinitionException::class);
+        static::expectException(UnknownEntityDefinitionException::class);
 
         /** @phpstan-ignore-next-line argument.type -- deliberately not an entity of this application */
         iterator_to_array($this->reader()->get(new GetInput([\stdClass::class => [new Index('x')]])), false);

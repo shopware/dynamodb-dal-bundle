@@ -6,8 +6,9 @@ use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Criteria\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
-use Shopware\DynamodbDalBundle\Exception\ExpressionException;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
@@ -293,25 +294,25 @@ class ExpressionCompileContextTest extends TestCase
         static::assertSame([], array_intersect_key($a->values, $b->values));
     }
 
-    public function testUnknownFieldThrowsExpressionException(): void
+    public function testUnknownFieldThrows(): void
     {
-        $this->expectException(ExpressionException::class);
+        $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('Unknown field "doesNotExist"');
 
         $this->compile(Filter::equals('doesNotExist', 'x'));
     }
 
-    public function testNullValueThrowsExpressionException(): void
+    public function testNullValueThrows(): void
     {
-        $this->expectException(ExpressionException::class);
+        $this->expectException(NullFilterValueException::class);
         $this->expectExceptionMessage('Filter value for field "name"');
 
         $this->compile(Filter::equals('name', null));
     }
 
-    public function testWrongTypeBubblesSerializerException(): void
+    public function testWrongTypeBubblesUp(): void
     {
-        $this->expectException(SerializerException::class);
+        $this->expectException(WrongTypeException::class);
 
         $this->compile(Filter::equals('name', 123));
     }
@@ -369,7 +370,7 @@ class ExpressionCompileContextTest extends TestCase
     public function testDottedPathOnUnknownRootThrows(): void
     {
         // The full path appears in the message — easier to spot a bad call site than just the root segment.
-        $this->expectException(ExpressionException::class);
+        $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('Unknown field "doesNotExist.color"');
 
         $this->compile(Filter::equals('doesNotExist.color', 'red'), MapDefinition::create());
@@ -380,7 +381,7 @@ class ExpressionCompileContextTest extends TestCase
         // `name` is a plain string field — it has no `valueFieldDefinition`, so any path
         // beyond the root is rejected. Subsequent segments aren't otherwise validated, but
         // the root must opt into being traversable.
-        $this->expectException(ExpressionException::class);
+        $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('name.foo');
 
         $this->compile(Filter::equals('name.foo', 'baz'));
@@ -390,7 +391,7 @@ class ExpressionCompileContextTest extends TestCase
     {
         // `settings` is Map<string, string> — one level of descent is allowed.
         // A third segment would try to descend into a scalar, so the path is rejected.
-        $this->expectException(ExpressionException::class);
+        $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('settings.deeply.nested.whatever');
 
         $this->compile(
@@ -399,10 +400,10 @@ class ExpressionCompileContextTest extends TestCase
         );
     }
 
-    public function testDottedPathWrongTypeBubblesSerializerException(): void
+    public function testDottedPathWrongTypeBubblesUp(): void
     {
         // settings.color is string-typed at the leaf; passing an int triggers wrongType.
-        $this->expectException(SerializerException::class);
+        $this->expectException(WrongTypeException::class);
 
         $this->compile(Filter::equals('settings.color', 123), MapDefinition::create());
     }

@@ -5,8 +5,9 @@ namespace Shopware\DynamodbDalBundle\Criteria;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
-use Shopware\DynamodbDalBundle\Exception\ExpressionException;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 class ExpressionCompileContext
@@ -40,7 +41,7 @@ class ExpressionCompileContext
      */
     public function attribute(string $fieldName): string
     {
-        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw ExpressionException::unknownField($this->definition, $fieldName);
+        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
 
         $this->names = [...$this->names, ...$path->getExpressionAttributeNames()];
 
@@ -54,7 +55,7 @@ class ExpressionCompileContext
      */
     public function placeholder(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
     {
-        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw ExpressionException::unknownField($this->definition, $fieldName);
+        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
         $field = $path->definition;
 
         if ($useValueFieldDefinition) {
@@ -62,7 +63,7 @@ class ExpressionCompileContext
         }
 
         if ($value === null) {
-            throw ExpressionException::nullFilterValue($field);
+            throw new NullFilterValueException($field);
         }
 
         try {
@@ -72,7 +73,7 @@ class ExpressionCompileContext
                 throw $e;
             }
 
-            throw SerializerException::fieldSerializationFailed($field->getSerializer()::class, $field, $value, $e);
+            throw new FieldSerializationException($field, $e, $path->path);
         }
 
         $placeholder = $path->getAttributeValueName($this->prefix . '_' . \count($this->values));

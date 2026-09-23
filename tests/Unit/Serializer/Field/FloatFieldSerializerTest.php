@@ -5,7 +5,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Serializer\Field\FloatFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
@@ -67,7 +67,7 @@ class FloatFieldSerializerTest extends TestCase
 
         $attribute = AttributeValue::create(['S' => 'no-number']);
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(MissingAttributeValueException::class);
         $this->expectExceptionMessage('Missing expected DynamoDB attribute value of type "N" for field "amount" in item "normal"');
 
         $this->serializer->deserialize($definition, $attribute);

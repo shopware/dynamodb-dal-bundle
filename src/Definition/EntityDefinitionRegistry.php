@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Definition;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Exception\EntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 
 /**
  * Lookup of every {@see EntityDefinition}, by its logical table name (the `#[Table(name: ..)]` value,
@@ -44,26 +44,26 @@ class EntityDefinitionRegistry
     /**
      * Resolves a definition by its logical table name (the `#[Table(name: ..)]` value).
      *
-     * @throws EntityDefinitionException when no definition is registered for the given logical name
+     * @throws UnknownEntityDefinitionException when no definition is registered for the given logical name
      *
      * @return EntityDefinition<AbstractEntity>
      */
     public function get(string $name): EntityDefinition
     {
-        return $this->definitions[$name] ?? throw EntityDefinitionException::unknownTable($name);
+        return $this->definitions[$name] ?? throw new UnknownEntityDefinitionException($name);
     }
 
     /**
      * Resolves a definition by its physical DynamoDB table name — the key DynamoDB uses in a
      * `BatchGetItem` response, which a caller needs to map back to an entity for deserialization.
      *
-     * @throws EntityDefinitionException when no definition is registered for the given physical table
+     * @throws UnknownEntityDefinitionException when no definition is registered for the given physical table
      *
      * @return EntityDefinition<AbstractEntity>
      */
     public function getByTableName(string $table): EntityDefinition
     {
-        return $this->get($this->logicalByPhysical[$table] ?? throw EntityDefinitionException::unknownTable($table));
+        return $this->get($this->logicalByPhysical[$table] ?? throw new UnknownEntityDefinitionException($table));
     }
 
     /**
@@ -71,13 +71,13 @@ class EntityDefinitionRegistry
      *
      * @param class-string<Entity> $class
      *
-     * @throws EntityDefinitionException when no definition is registered for the given entity class
+     * @throws UnknownEntityDefinitionException when no definition is registered for the given entity class
      *
      * @return EntityDefinition<Entity>
      */
     public function getByEntityClass(string $class): EntityDefinition
     {
-        $entityDefinition = $this->get($this->logicalByEntityClass[$class] ?? throw EntityDefinitionException::unknownTableByEntity($class));
+        $entityDefinition = $this->get($this->logicalByEntityClass[$class] ?? throw new UnknownEntityDefinitionException($class));
         /** @var EntityDefinition<Entity> $entityDefinition */
 
         return $entityDefinition;

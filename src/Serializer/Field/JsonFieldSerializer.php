@@ -3,7 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use Symfony\Component\Uid\AbstractUid;
 
@@ -32,7 +33,7 @@ class JsonFieldSerializer extends AbstractFieldSerializer
         }
 
         if (!\is_array($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'array|\JsonSerializable', $value);
+            throw new WrongTypeException($definition, 'array|\JsonSerializable', $value);
         }
 
         return AttributeValue::create(['S' => json_encode($value, \JSON_THROW_ON_ERROR)]);
@@ -42,12 +43,12 @@ class JsonFieldSerializer extends AbstractFieldSerializer
     {
         $s = $attributeValue->getS();
         if ($s === null) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'S');
+            throw new MissingAttributeValueException($definition, 'S');
         }
 
         $decoded = json_decode($s, true, 512, \JSON_THROW_ON_ERROR);
         if (!\is_array($decoded)) {
-            throw SerializerException::wrongType(self::class, $definition, 'array', $decoded);
+            throw new WrongTypeException($definition, 'array', $decoded);
         }
 
         return $decoded;

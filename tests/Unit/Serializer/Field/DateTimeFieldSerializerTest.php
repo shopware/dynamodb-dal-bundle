@@ -6,7 +6,7 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -72,7 +72,7 @@ class DateTimeFieldSerializerTest extends TestCase
     {
         $attribute = AttributeValue::create(['BOOL' => true]);
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(MissingAttributeValueException::class);
         $this->expectExceptionMessage(\sprintf(
             'Missing expected DynamoDB attribute value of type "N" for field "%s" in item "%s"',
             self::FIELD_NAME,

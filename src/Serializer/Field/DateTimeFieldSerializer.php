@@ -3,7 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -22,7 +23,7 @@ class DateTimeFieldSerializer extends AbstractFieldSerializer
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!$value instanceof \DateTimeInterface) {
-            throw SerializerException::wrongType(self::class, $definition, \DateTimeInterface::class, $value);
+            throw new WrongTypeException($definition, \DateTimeInterface::class, $value);
         }
 
         return AttributeValue::create(['N' => (string) $value->getTimestamp()]);
@@ -44,6 +45,6 @@ class DateTimeFieldSerializer extends AbstractFieldSerializer
             return $dateTime;
         }
 
-        throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'N');
+        throw new MissingAttributeValueException($definition, 'N');
     }
 }

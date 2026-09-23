@@ -13,7 +13,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\EntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -198,14 +198,14 @@ class CursorNormalizerTest extends TestCase
     public function testDenormalizeThrowsForAnUnknownTable(): void
     {
         // A table not in the registry is a misuse the registry surfaces as its own exception.
-        $this->expectException(EntityDefinitionException::class);
+        $this->expectException(UnknownEntityDefinitionException::class);
 
         $this->normalizer->denormalize(['table' => 'unknown-table', 'primary' => ['tenantId' => ['S' => 'tenant-1']]], Cursor::class);
     }
 
     public function testNormalizeThrowsForAnUnknownTable(): void
     {
-        $this->expectException(EntityDefinitionException::class);
+        $this->expectException(UnknownEntityDefinitionException::class);
 
         $this->normalizer->normalize(new Cursor('unknown-table', new Index('tenant-1')));
     }

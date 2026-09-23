@@ -4,7 +4,9 @@ namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -37,10 +39,34 @@ abstract class AbstractFieldSerializer
      *
      * @param FieldDefinition<AbstractEntity, TargetType> $definition
      *
-     * @throws SerializerException if the provided AttributeValue does not contain the expected value type (e.g. missing "S" for a string field)
+     * @throws DALException if the provided AttributeValue does not contain the expected value type (e.g. missing "S" for a string field)
      * @throws \Throwable if deserialization fails for any other reason (e.g. invalid value format)
      *
      * @return ValueType
      */
     abstract public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed;
+
+    /**
+     * Where inside a collection a failure happened, as a document path DynamoDB addresses an element
+     * by: this element's own segment (`[2]`, `.colour`), plus whatever the failure from inside it
+     * named below that.
+     *
+     * @param string $segment This element's segment, opening on its separator
+     * @param FieldDefinition<AbstractEntity> $valueDefinition The definition the failure came out of
+     */
+    protected static function elementPath(string $segment, FieldDefinition $valueDefinition, \Throwable $previous): string
+    {
+        $inner = match (true) {
+            $previous instanceof FieldSerializationException,
+            $previous instanceof FieldDeserializationException => $previous->path,
+            default => null,
+        };
+
+        // Anything else named nothing below this element, or named it against another definition.
+        if ($inner === null || !str_starts_with($inner, $valueDefinition->getName())) {
+            return $segment;
+        }
+
+        return $segment . substr($inner, \strlen($valueDefinition->getName()));
+    }
 }

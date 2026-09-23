@@ -8,7 +8,11 @@ use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use AsyncAws\DynamoDb\Result\GetItemOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
@@ -25,7 +29,7 @@ class Serializer
      * @param EntityDefinition<Entity> $definition
      * @param GetItemOutput|array<string, AttributeValue> $output
      *
-     * @throws SerializerException if deserialization of any field fails or a required field value is missing after deserialization and denormalization
+     * @throws DALException if deserialization of any field fails or a required field value is missing after deserialization and denormalization
      *
      * @return Entity
      */
@@ -52,7 +56,7 @@ class Serializer
                 && !$fieldDefinition->hasDefaultValue()
                 && (!\array_key_exists($name, $fields) || $fields[$name] === null)
             ) {
-                throw SerializerException::requiredDeserializationFieldValueMissing($fieldDefinition);
+                throw new FieldMissingDeserializedValueException($fieldDefinition);
             }
         }
 
@@ -104,7 +108,7 @@ class Serializer
                     throw $e;
                 }
 
-                throw SerializerException::fieldDeserializationFailed($fieldDefinition->getSerializer()::class, $fieldDefinition, $attributeValue, $e);
+                throw new FieldDeserializationException($fieldDefinition, $e);
             }
         }
 
@@ -119,7 +123,7 @@ class Serializer
      * @param EntityDefinition<Entity> $definition
      * @param array<string, mixed> $fields
      *
-     * @throws SerializerException if a provided field does not exist in the definition or a required field value is missing
+     * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
      * @return SerializedResult<EntityDefinition<Entity>>
      */
@@ -142,7 +146,7 @@ class Serializer
 
             // A field name outside the definition is a typo, not a value to skip silently.
             if (!$path) {
-                throw SerializerException::unknownFieldToSerialize($definition, $name);
+                throw new UnknownFieldException($definition, $name);
             }
 
             // DynamoDB has no null attribute: an unset value is absent from a put, and removed by an update.
@@ -154,7 +158,7 @@ class Serializer
 
             // The normalizer ran before this and did not fill it, so the value is genuinely unset.
             if ($value === null && !$path->definition->hasDefaultValue()) {
-                throw SerializerException::requiredSerializationFieldValueMissing($path->definition);
+                throw new FieldMissingSerializedValueException($path->definition);
             }
 
             try {
@@ -164,13 +168,7 @@ class Serializer
                     throw $e;
                 }
 
-                throw SerializerException::fieldSerializationFailed(
-                    $path->definition->getSerializer()::class,
-                    $path->definition,
-                    $value,
-                    $e,
-                    $path->isNested() ? $path->path : null,
-                );
+                throw new FieldSerializationException($path->definition, $e, $path->path);
             }
 
             $result[$name] = new SerializedFieldResult($path, $serialized);
@@ -185,7 +183,7 @@ class Serializer
      * @param EntityDefinition<Entity> $definition
      * @param Entity|Index $key
      *
-     * @throws SerializerException if a provided field does not exist in the definition or a required field value is missing
+     * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
      * @return array<string, AttributeValue>
      */
@@ -208,10 +206,10 @@ class Serializer
             if (!isset($result[$name])) {
                 $fieldDefinition = $definition->getFieldDefinition($name);
                 if ($fieldDefinition === null) {
-                    throw SerializerException::unknownFieldToSerialize($definition, $name);
+                    throw new UnknownFieldException($definition, $name);
                 }
 
-                throw SerializerException::fieldValueMissingAfterSerialization($fieldDefinition);
+                throw new FieldMissingSerializedValueException($fieldDefinition);
             }
         }
 
@@ -251,7 +249,7 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      *
-     * @throws SerializerException if a key field does not exist in the definition or a value is missing
+     * @throws DALException if a key field does not exist in the definition or a value is missing
      *
      * @return array<string, AttributeValue>
      */

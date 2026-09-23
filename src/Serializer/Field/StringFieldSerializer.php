@@ -3,7 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -19,7 +20,7 @@ class StringFieldSerializer extends AbstractFieldSerializer
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!\is_string($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'string', $value);
+            throw new WrongTypeException($definition, 'string', $value);
         }
 
         return AttributeValue::create(['S' => $value]);
@@ -28,7 +29,7 @@ class StringFieldSerializer extends AbstractFieldSerializer
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         if (($value = $attributeValue->getS()) === null) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'S');
+            throw new MissingAttributeValueException($definition, 'S');
         }
 
         return $value;

@@ -3,7 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -19,7 +20,7 @@ class BoolFieldSerializer extends AbstractFieldSerializer
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!\is_bool($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'bool', $value);
+            throw new WrongTypeException($definition, 'bool', $value);
         }
 
         return AttributeValue::create(['BOOL' => $value]);
@@ -28,7 +29,7 @@ class BoolFieldSerializer extends AbstractFieldSerializer
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         if (($value = $attributeValue->getBool()) === null) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'BOOL');
+            throw new MissingAttributeValueException($definition, 'BOOL');
         }
 
         return $value;

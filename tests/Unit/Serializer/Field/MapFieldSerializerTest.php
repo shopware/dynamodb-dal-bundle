@@ -6,7 +6,10 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
@@ -93,7 +96,7 @@ class MapFieldSerializerTest extends TestCase
     {
         $definition = $this->createMapDefinition(new StringFieldSerializer());
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(WrongTypeException::class);
         $this->expectExceptionMessage('Expected type "array" for field "meta" in item "test_entity", got "string"');
 
         /** @phpstan-ignore-next-line argument.type (intentional wrong type to trigger exception) */
@@ -150,7 +153,7 @@ class MapFieldSerializerTest extends TestCase
 
         $attribute = AttributeValue::create(['S' => 'not-a-map']);
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(MissingAttributeValueException::class);
         $this->expectExceptionMessage('Missing expected DynamoDB attribute value of type "M" for field "meta" in item "test_entity"');
 
         $this->serializer->deserialize($definition, $attribute);
@@ -168,7 +171,7 @@ class MapFieldSerializerTest extends TestCase
         $this->serializer->deserialize($definition, $attribute);
     }
 
-    public function testSerializeWrapsNestedSerializerExceptionWithNestedPath(): void
+    public function testSerializeWrapsANestedFailureWithItsPath(): void
     {
         $definition = $this->createMapDefinition(new class extends AbstractFieldSerializer {
             public static function supports(string $type, ?string $docblockType = null): bool
@@ -178,7 +181,7 @@ class MapFieldSerializerTest extends TestCase
 
             public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
             {
-                throw SerializerException::fieldSerializationFailed(self::class, $definition, $value, nestedPath: 'inner');
+                throw new FieldSerializationException($definition, path: 'inner');
             }
 
             public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
@@ -189,14 +192,13 @@ class MapFieldSerializerTest extends TestCase
 
         try {
             $this->serializer->serialize($definition, ['outer' => 'value']);
-            static::fail('Expected SerializerException to be thrown.');
-        } catch (SerializerException $e) {
-            static::assertSame(SerializerException::FIELD_NOT_SERIALIZABLE, $e->getErrorCode());
-            static::assertSame('meta.value.inner', $e->getParameters()['nestedPath'] ?? null);
+            static::fail('Expected a FieldSerializationException to be thrown.');
+        } catch (FieldSerializationException $e) {
+            static::assertSame('meta.outer.inner', $e->path);
         }
     }
 
-    public function testDeserializeWrapsNestedSerializerExceptionWithNestedPath(): void
+    public function testDeserializeWrapsANestedFailureWithItsPath(): void
     {
         $definition = $this->createMapDefinition(new class extends AbstractFieldSerializer {
             public static function supports(string $type, ?string $docblockType = null): bool
@@ -211,22 +213,55 @@ class MapFieldSerializerTest extends TestCase
 
             public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
             {
-                throw SerializerException::fieldDeserializationFailed(self::class, $definition, $attributeValue, nestedPath: 'inner');
+                throw new FieldDeserializationException($definition, path: 'inner');
             }
         });
 
         try {
             $this->serializer->deserialize($definition, AttributeValue::create(['M' => ['outer' => ['S' => 'value']]]));
-            static::fail('Expected SerializerException to be thrown.');
-        } catch (SerializerException $e) {
-            static::assertSame(SerializerException::FIELD_NOT_DESERIALIZABLE, $e->getErrorCode());
-            static::assertSame('meta.value.inner', $e->getParameters()['nestedPath'] ?? null);
+            static::fail('Expected a FieldDeserializationException to be thrown.');
+        } catch (FieldDeserializationException $e) {
+            static::assertSame('meta.outer.inner', $e->path);
         }
     }
 
     /**
      * Map of lists: array<string, list<string>>
      */
+    /**
+     * Every level adds the element it was on, so the path addresses the value that actually failed —
+     * the entry under `second`, its second element — rather than the map field around it.
+     */
+    public function testAFailureInAMapOfListsIsPathedToTheElement(): void
+    {
+        $definition = $this->createMapOfListsDefinition();
+
+        try {
+            $this->serializer->serialize($definition, ['first' => ['a'], 'second' => ['b', 123]]);
+            static::fail('Expected a FieldSerializationException');
+        } catch (FieldSerializationException $e) {
+            static::assertSame('groups.second[1]', $e->path);
+            static::assertSame('Field "groups.second[1]" in item "test_entity" could not be serialized', $e->getMessage());
+        }
+    }
+
+    public function testAFailureDeserializingAMapOfListsIsPathedToTheElement(): void
+    {
+        $definition = $this->createMapOfListsDefinition();
+
+        $attribute = AttributeValue::create(['M' => [
+            'first' => ['L' => [['S' => 'a']]],
+            'second' => ['L' => [['S' => 'b'], ['N' => '7']]],
+        ]]);
+
+        try {
+            $this->serializer->deserialize($definition, $attribute);
+            static::fail('Expected a FieldDeserializationException');
+        } catch (FieldDeserializationException $e) {
+            static::assertSame('groups.second[1]', $e->path);
+        }
+    }
+
     public function testSerializeMapOfLists(): void
     {
         $stringSerializer = new StringFieldSerializer();
@@ -310,6 +345,21 @@ class MapFieldSerializerTest extends TestCase
         $result = $this->serializer->deserialize($definition, $attribute);
 
         static::assertSame(['outer' => ['inner' => 'v'], 'other' => ['k' => 'x']], $result);
+    }
+
+    /**
+     * `groups: array<string, list<string>>`, named the way the definition builder names a nested value
+     * definition — after the property, at every level.
+     */
+    private function createMapOfListsDefinition(): FieldDefinition
+    {
+        $leaf = new FieldDefinition('groups.value', 'string', false, false, null, new StringFieldSerializer());
+        $listValueDef = new FieldDefinition('groups.value', 'array', true, false, null, new ListFieldSerializer(), $leaf);
+
+        $definition = new FieldDefinition('groups', 'array', false, false, null, new MapFieldSerializer(), $listValueDef);
+        new EntityDefinition('test_entity', 'test_entity', CustomerEntity::class, null, ['groups' => $definition], new KeySchema('groups'));
+
+        return $definition;
     }
 
     private function createMapDefinition(?AbstractFieldSerializer $valueSerializer = null): FieldDefinition

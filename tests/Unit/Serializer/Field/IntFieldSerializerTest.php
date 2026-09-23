@@ -6,7 +6,7 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Serializer\Field\IntFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -55,7 +55,7 @@ class IntFieldSerializerTest extends TestCase
     {
         $attribute = AttributeValue::create(['S' => 'no-number']);
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(MissingAttributeValueException::class);
         $this->expectExceptionMessage('for field "counter" in item "customer"');
 
         $this->serializer->deserialize($this->definition, $attribute);

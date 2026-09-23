@@ -4,7 +4,8 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass;
 
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 
 /**
@@ -22,7 +23,7 @@ class MoneyFieldSerializer extends AbstractFieldSerializer
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!$value instanceof Money) {
-            throw SerializerException::wrongType(self::class, $definition, Money::class, $value);
+            throw new WrongTypeException($definition, Money::class, $value);
         }
 
         return AttributeValue::create(['S' => \sprintf('%d %s', $value->cents, $value->currency)]);
@@ -31,7 +32,7 @@ class MoneyFieldSerializer extends AbstractFieldSerializer
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         if (($value = $attributeValue->getS()) === null) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'S');
+            throw new MissingAttributeValueException($definition, 'S');
         }
 
         [$cents, $currency] = explode(' ', $value, 2);

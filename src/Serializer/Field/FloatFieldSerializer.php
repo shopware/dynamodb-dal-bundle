@@ -3,7 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -19,7 +20,7 @@ class FloatFieldSerializer extends AbstractFieldSerializer
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!\is_float($value) && !\is_int($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'float', $value);
+            throw new WrongTypeException($definition, 'float', $value);
         }
 
         return AttributeValue::create(['N' => json_encode($value, \JSON_THROW_ON_ERROR)]);
@@ -28,7 +29,7 @@ class FloatFieldSerializer extends AbstractFieldSerializer
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         if (($value = $attributeValue->getN()) === null) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'N');
+            throw new MissingAttributeValueException($definition, 'N');
         }
 
         return (float) $value;

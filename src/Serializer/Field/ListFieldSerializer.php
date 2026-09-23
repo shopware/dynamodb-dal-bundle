@@ -4,7 +4,10 @@ namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\ArrayTypeParser;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -30,7 +33,7 @@ class ListFieldSerializer extends AbstractFieldSerializer
         }
 
         if (!\is_array($value)) {
-            throw SerializerException::wrongType(self::class, $definition, 'array', $value);
+            throw new WrongTypeException($definition, 'array', $value);
         }
 
         $l = [];
@@ -44,12 +47,7 @@ class ListFieldSerializer extends AbstractFieldSerializer
             try {
                 $l[] = $valueDef->getSerializer()->serialize($valueDef, $v);
             } catch (\Throwable $e) {
-                $nestedPath = $valueDef->getName();
-                if ($e instanceof SerializerException && ($prevPath = $e->getParameters()['nestedPath'] ?? null) !== null) {
-                    $nestedPath .= '.' . $prevPath;
-                }
-
-                throw SerializerException::fieldSerializationFailed($valueDef->getSerializer()::class, $valueDef, $v, $e, $nestedPath);
+                throw new FieldSerializationException($definition, $e, self::elementPath('[' . \count($l) . ']', $valueDef, $e));
             }
         }
 
@@ -65,13 +63,13 @@ class ListFieldSerializer extends AbstractFieldSerializer
 
         $list = $attributeValue->getL();
         if ($list === [] && !isset($attributeValue->requestBody()['L'])) {
-            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'L');
+            throw new MissingAttributeValueException($definition, 'L');
         }
 
         $result = [];
         foreach ($list as $nested) {
             if (!$nested instanceof AttributeValue) {
-                throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'L');
+                throw new MissingAttributeValueException($definition, 'L');
             }
 
             if ($nested->getNull() === true) {
@@ -83,12 +81,7 @@ class ListFieldSerializer extends AbstractFieldSerializer
             try {
                 $result[] = $valueDef->getSerializer()->deserialize($valueDef, $nested);
             } catch (\Throwable $e) {
-                $nestedPath = $valueDef->getName();
-                if ($e instanceof SerializerException && ($prevPath = $e->getParameters()['nestedPath'] ?? null) !== null) {
-                    $nestedPath .= '.' . $prevPath;
-                }
-
-                throw SerializerException::fieldDeserializationFailed($valueDef->getSerializer()::class, $valueDef, $nested, $e, $nestedPath);
+                throw new FieldDeserializationException($definition, $e, self::elementPath('[' . \count($result) . ']', $valueDef, $e));
             }
         }
 

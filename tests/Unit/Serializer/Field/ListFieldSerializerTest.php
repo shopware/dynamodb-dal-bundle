@@ -6,7 +6,10 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
+use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
@@ -96,7 +99,7 @@ class ListFieldSerializerTest extends TestCase
     {
         $definition = $this->createStringListDefinition();
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(WrongTypeException::class);
         $this->expectExceptionMessage('Expected type "array" for field "items" in item "' . self::ENTITY_NAME . '", got "string"');
 
         /** @phpstan-ignore-next-line argument.type (intentional wrong type to trigger exception) */
@@ -165,7 +168,7 @@ class ListFieldSerializerTest extends TestCase
 
         $attribute = AttributeValue::create(['S' => 'not-a-list']);
 
-        $this->expectException(SerializerException::class);
+        $this->expectException(MissingAttributeValueException::class);
 
         $this->serializer->deserialize($definition, $attribute);
     }
@@ -252,9 +255,9 @@ class ListFieldSerializerTest extends TestCase
     }
 
     /**
-     * Nested list serialization failure includes nested path in exception
+     * Nested list serialization failure names the path of the element it happened on
      */
-    public function testSerializeNestedListWrongTypeIncludesNestedPath(): void
+    public function testSerializeNestedListNamesThePathOfTheFailingElement(): void
     {
         $definition = $this->createNestedListDefinition();
 
@@ -262,13 +265,49 @@ class ListFieldSerializerTest extends TestCase
 
         try {
             $this->serializer->serialize($definition, $value);
-            static::fail('Expected SerializerException');
-        } catch (SerializerException $e) {
-            static::assertSame(SerializerException::FIELD_NOT_SERIALIZABLE, $e->errorCode);
-            static::assertStringContainsString('matrix.value', $e->getMessage());
+            static::fail('Expected a FieldSerializationException');
+        } catch (FieldSerializationException $e) {
             static::assertStringContainsString(self::ENTITY_NAME, $e->getMessage());
-            static::assertArrayHasKey('nestedPath', $e->getParameters());
-            static::assertSame('matrix.value', $e->getParameters()['nestedPath']);
+            static::assertSame('matrix[1]', $e->path);
+        }
+    }
+
+    /**
+     * Every level adds the index it was on, so a failure two lists deep addresses the element that
+     * actually failed rather than the field around it.
+     */
+    public function testAFailureInsideANestedListIsPathedThroughEveryIndex(): void
+    {
+        $definition = $this->createNestedListDefinition();
+
+        try {
+            $this->serializer->serialize($definition, [['a', 'b'], ['c', 123]]);
+            static::fail('Expected a FieldSerializationException');
+        } catch (FieldSerializationException $e) {
+            static::assertSame('matrix[1][1]', $e->path);
+            static::assertSame(
+                'Field "matrix[1][1]" in item "' . self::ENTITY_NAME . '" could not be serialized',
+                $e->getMessage(),
+            );
+        }
+    }
+
+    public function testAFailureDeserializingANestedListIsPathedThroughEveryIndex(): void
+    {
+        $definition = $this->createNestedListDefinition();
+
+        $attribute = AttributeValue::create([
+            'L' => [
+                ['L' => [['S' => 'a']]],
+                ['L' => [['S' => 'b'], ['N' => '7']]],
+            ],
+        ]);
+
+        try {
+            $this->serializer->deserialize($definition, $attribute);
+            static::fail('Expected a FieldDeserializationException');
+        } catch (FieldDeserializationException $e) {
+            static::assertSame('matrix[1][1]', $e->path);
         }
     }
 

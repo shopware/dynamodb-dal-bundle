@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Exception\EntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -40,7 +40,7 @@ class EntityDefinitionRegistryTest extends TestCase
 
         static::assertFalse($registry->has('order'));
 
-        $this->expectException(EntityDefinitionException::class);
+        $this->expectException(UnknownEntityDefinitionException::class);
         $registry->get('order');
     }
 
@@ -48,7 +48,7 @@ class EntityDefinitionRegistryTest extends TestCase
     {
         $registry = new EntityDefinitionRegistry(['order' => $this->definition('order', 'prod-order', OrderEntity::class)]);
 
-        $this->expectException(EntityDefinitionException::class);
+        $this->expectException(UnknownEntityDefinitionException::class);
         $registry->getByTableName('prod-unknown');
     }
 

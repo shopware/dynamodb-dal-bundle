@@ -42,14 +42,18 @@ class DefinitionBuilderTest extends TestCase
 
     /**
      * A class entities extend is not an entity: it holds the attributes they inherit, and compiling it
-     * would claim the same table its subclasses do. Abstractness is read before the attributes are, so
-     * a base carrying a perfectly valid `#[Table]` is still passed over.
+     * would claim the same name and table its subclasses do. Abstractness is read before the attributes
+     * are, so a base carrying a perfectly valid `#[Table]` is refused all the same.
      */
-    public function testBuildsNothingForAnAbstractClass(): void
+    public function testRefusesAnAbstractClass(): void
     {
         $builder = new DefinitionBuilder(self::SERIALIZERS);
 
-        static::assertNull($builder->build(AbstractCatalogEntity::class, self::TABLE));
+        static::expectExceptionObject(new \LogicException(
+            'Entity ' . AbstractCatalogEntity::class . ' is abstract; configure the entities extending it instead',
+        ));
+
+        $builder->build(AbstractCatalogEntity::class, self::TABLE);
     }
 
     public function testRefusesAClassThatIsNotAnEntity(): void
