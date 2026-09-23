@@ -1,0 +1,45 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity;
+
+use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Attribute\Field;
+use Shopware\DynamodbDalBundle\Attribute\Table;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * An entity whose key and timestamps a normalizer fills in. `pk` is composed from two other fields,
+ * `id` and `createdAt` are generated on first write, and `label` is filled in on read for rows stored
+ * before it existed — the three jobs {@see \Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer}
+ * describes.
+ */
+#[Table(name: 'normalized', hashKey: 'pk', rangeKey: 'id', normalizer: NormalizedEntityNormalizer::class)]
+class NormalizedEntity extends AbstractEntity
+{
+    #[Field]
+    public string $pk;
+
+    #[Field]
+    public Uuid $id;
+
+    #[Field]
+    public string $tenantId;
+
+    #[Field]
+    public string $kind;
+
+    #[Field]
+    public \DateTimeImmutable $createdAt;
+
+    #[Field]
+    public string $label;
+
+    public static function create(string $tenantId, string $kind): self
+    {
+        $entity = new self();
+        $entity->tenantId = $tenantId;
+        $entity->kind = $kind;
+
+        return $entity;
+    }
+}

@@ -1,0 +1,23 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Client\Input;
+
+use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
+use Symfony\Component\DependencyInjection\Attribute\Exclude;
+
+/**
+ * @template-covariant Entity of AbstractEntity
+ */
+#[Exclude]
+final class PutInput
+{
+    /**
+     * @param Entity $entity - Entity to upsert
+     */
+    public function __construct(
+        public readonly AbstractEntity $entity,
+        public readonly ?FilterInterface $conditionExpression = null,
+    ) {
+    }
+}

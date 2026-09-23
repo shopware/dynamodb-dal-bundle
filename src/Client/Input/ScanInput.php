@@ -1,0 +1,28 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Client\Input;
+
+use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
+use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
+use Symfony\Component\DependencyInjection\Attribute\Exclude;
+
+/**
+ * A read request for scanning a table via a filter expression.
+ */
+#[Exclude]
+final class ScanInput
+{
+    /**
+     * @param ?FilterInterface $filter - scan's `FilterExpression`. Filter is applied after reading an entry
+     * @param ?bool $consistentRead - scan's `ConsistentRead`. Strongly consistent read; off by default (eventually consistent reads are cheaper)
+     * @param ?Cursor $cursor - scan's `ExclusiveStartKey`. Resumes the scan after a previous boundary item; `null` starts from the beginning
+     * @param ?int $limit - limit the amount of results returned
+     */
+    public function __construct(
+        public readonly ?FilterInterface $filter = null,
+        public readonly ?bool $consistentRead = null,
+        public readonly ?Cursor $cursor = null,
+        public readonly ?int $limit = null,
+    ) {
+    }
+}

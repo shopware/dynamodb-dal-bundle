@@ -1,0 +1,36 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Serializer\Field;
+
+use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
+use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+
+/**
+ * @extends AbstractFieldSerializer<float, 'float'>
+ */
+class FloatFieldSerializer extends AbstractFieldSerializer
+{
+    public static function supports(string $type, ?string $docblockType = null): bool
+    {
+        return $type === 'float';
+    }
+
+    public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
+    {
+        if (!\is_float($value) && !\is_int($value)) {
+            throw SerializerException::wrongType(self::class, $definition, 'float', $value);
+        }
+
+        return AttributeValue::create(['N' => json_encode($value, \JSON_THROW_ON_ERROR)]);
+    }
+
+    public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
+    {
+        if (($value = $attributeValue->getN()) === null) {
+            throw SerializerException::fieldAttributeValueMissing(self::class, $attributeValue, $definition, 'N');
+        }
+
+        return (float) $value;
+    }
+}

@@ -1,0 +1,433 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Tests\Integration\DynamoDb;
+
+use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
+use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
+use PHPUnit\Framework\Attributes\CoversClass;
+use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
+use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Criteria\Filter;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\NormalizedEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
+
+/**
+ * The write engine against real tables: which API a given set of inputs takes, what a condition
+ * expression does when it holds and when it does not, and what lands back on the entity afterwards.
+ */
+#[CoversClass(WriterClient::class)]
+class WriterClientTest extends DynamoDbTestCase
+{
+    public function testPutSingleWritesTheItem(): void
+    {
+        $this->writer()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'written')));
+
+        static::assertSame('written', $this->read('a')?->name);
+    }
+
+    public function testPutBackfillsThePassedEntity(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+
+        $this->writer()->put($this->definition('normalized'), new PutInput($entity));
+
+        static::assertSame(self::TENANT . '#invoice', $entity->pk);
+        static::assertTrue(isset($entity->id));
+        static::assertSame(1_700_000_000, $entity->createdAt->getTimestamp());
+    }
+
+    public function testPutBacksFillsANormalizationGeneratedKeyMatchingTheStoredRow(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+
+        $this->writer()->put($this->definition('normalized'), new PutInput($entity));
+
+        $read = $this->client()->get(new GetInput([
+            NormalizedEntity::class => [new Index($entity->pk, $entity->id)],
+        ]))->first();
+
+        static::assertInstanceOf(NormalizedEntity::class, $read);
+        static::assertTrue($entity->id->equals($read->id));
+        static::assertSame($entity->pk, $read->pk);
+    }
+
+    public function testPutSeveralItemsWritesThemAllViaBatchWrite(): void
+    {
+        $this->writer()->put(
+            $this->definition('record'),
+            new PutInput(RecordEntity::create(self::TENANT, 'a')),
+            new PutInput(RecordEntity::create(self::TENANT, 'b')),
+            new PutInput(RecordEntity::create(self::TENANT, 'c')),
+        );
+
+        static::assertSame(3, $this->countRecords());
+    }
+
+    /**
+     * `BatchWriteItem` caps at 25 operations, so a larger set has to be chunked.
+     */
+    public function testPutMoreThanTheBatchLimitChunksAndWritesEveryItem(): void
+    {
+        $inputs = [];
+        for ($i = 0; $i < 60; ++$i) {
+            $inputs[] = new PutInput(RecordEntity::create(self::TENANT, \sprintf('id-%02d', $i)));
+        }
+
+        $this->writer()->put($this->definition('record'), ...$inputs);
+
+        static::assertSame(60, $this->countRecords());
+    }
+
+    public function testPutSingleWithConditionExpressionThrowsWhenTheConditionFails(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'first')));
+
+        static::expectException(ConditionalCheckFailedException::class);
+
+        $this->writer()->put($definition, new PutInput(
+            RecordEntity::create(self::TENANT, 'a', name: 'second'),
+            Filter::notExists('id'),
+        ));
+    }
+
+    public function testPutSeveralWithAConditionFallsBackToAnAtomicTransaction(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'b', name: 'taken')));
+
+        try {
+            $this->writer()->put(
+                $definition,
+                new PutInput(RecordEntity::create(self::TENANT, 'a'), Filter::notExists('id')),
+                new PutInput(RecordEntity::create(self::TENANT, 'b'), Filter::notExists('id')),
+            );
+            static::fail('The conflicting condition should have cancelled the transaction.');
+        } catch (TransactionCanceledException) {
+            // Expected; what matters is that neither write landed.
+        }
+
+        static::assertNull($this->read('a'));
+        static::assertSame('taken', $this->read('b')?->name);
+    }
+
+    public function testUpdateSingleSetsFields(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before', counter: 1)));
+
+        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'after']));
+
+        $read = $this->read('a');
+        static::assertSame('after', $read?->name);
+        static::assertSame(1, $read?->counter, 'an update must leave the fields it was not given alone');
+    }
+
+    public function testUpdateWithNullValueRemovesTheAttribute(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set')));
+
+        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => null]));
+
+        static::assertNull($this->read('a')?->name);
+    }
+
+    public function testUpdateSetsAndRemovesFieldsInOneExpression(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set', counter: 1)));
+
+        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), [
+            'name' => null,
+            'counter' => 9,
+        ]));
+
+        $read = $this->read('a');
+        static::assertNull($read?->name);
+        static::assertSame(9, $read?->counter);
+    }
+
+    public function testUpdateByEntitySetsFieldsAndBacksFillsTheEntity(): void
+    {
+        $definition = $this->definition('normalized');
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed']));
+
+        static::assertSame('renamed', $entity->label);
+    }
+
+    public function testUpdateSeveralItemsWritesThemAllViaTransaction(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put(
+            $definition,
+            new PutInput(RecordEntity::create(self::TENANT, 'a')),
+            new PutInput(RecordEntity::create(self::TENANT, 'b')),
+        );
+
+        $this->writer()->update(
+            $definition,
+            new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'one']),
+            new UpdateInput(new Index(self::TENANT, 'b'), ['name' => 'two']),
+        );
+
+        static::assertSame('one', $this->read('a')?->name);
+        static::assertSame('two', $this->read('b')?->name);
+    }
+
+    public function testUpdateSeveralByEntityBacksFillsEachEntity(): void
+    {
+        $definition = $this->definition('normalized');
+        $first = NormalizedEntity::create(self::TENANT, 'first');
+        $second = NormalizedEntity::create(self::TENANT, 'second');
+        $this->writer()->put($definition, new PutInput($first), new PutInput($second));
+
+        $this->writer()->update(
+            $definition,
+            new UpdateInput($first, ['label' => 'one']),
+            new UpdateInput($second, ['label' => 'two']),
+        );
+
+        static::assertSame('one', $first->label);
+        static::assertSame('two', $second->label);
+    }
+
+    public function testUpdateSingleWithConditionThrowsWhenTheConditionFails(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Done)));
+
+        static::expectException(ConditionalCheckFailedException::class);
+
+        $this->writer()->update($definition, new UpdateInput(
+            new Index(self::TENANT, 'a'),
+            ['name' => 'nope'],
+            Filter::equals('status', RecordStatus::Open),
+        ));
+    }
+
+    public function testDeleteSingleRemovesTheItem(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a')));
+
+        $this->writer()->delete($definition, new DeleteInput(new Index(self::TENANT, 'a')));
+
+        static::assertNull($this->read('a'));
+    }
+
+    public function testDeleteSingleIsIdempotentForAnAbsentKey(): void
+    {
+        $this->writer()->delete($this->definition('record'), new DeleteInput(new Index(self::TENANT, 'never-written')));
+
+        static::assertSame(0, $this->countRecords());
+    }
+
+    public function testDeleteByEntityReadsTheKeyOffTheEntity(): void
+    {
+        $definition = $this->definition('record');
+        $entity = RecordEntity::create(self::TENANT, 'a');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->delete($definition, new DeleteInput($entity));
+
+        static::assertNull($this->read('a'));
+    }
+
+    public function testDeleteSeveralItemsRemovesThemAllViaBatchWrite(): void
+    {
+        $definition = $this->definition('record');
+        foreach (['a', 'b', 'c'] as $id) {
+            $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+        }
+
+        $this->writer()->delete(
+            $definition,
+            new DeleteInput(new Index(self::TENANT, 'a')),
+            new DeleteInput(new Index(self::TENANT, 'b')),
+        );
+
+        static::assertSame(1, $this->countRecords());
+        static::assertNotNull($this->read('c'));
+    }
+
+    public function testDeleteMoreThanTheBatchLimitChunksAndRemovesEveryItem(): void
+    {
+        $definition = $this->definition('record');
+        $inputs = [];
+        $deletes = [];
+        for ($i = 0; $i < 60; ++$i) {
+            $id = \sprintf('id-%02d', $i);
+            $inputs[] = new PutInput(RecordEntity::create(self::TENANT, $id));
+            $deletes[] = new DeleteInput(new Index(self::TENANT, $id));
+        }
+        $this->writer()->put($definition, ...$inputs);
+
+        $this->writer()->delete($definition, ...$deletes);
+
+        static::assertSame(0, $this->countRecords());
+    }
+
+    public function testDeleteSingleWithConditionThrowsWhenTheConditionFails(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open)));
+
+        static::expectException(ConditionalCheckFailedException::class);
+
+        $this->writer()->delete($definition, new DeleteInput(
+            new Index(self::TENANT, 'a'),
+            Filter::equals('status', RecordStatus::Done),
+        ));
+    }
+
+    public function testDeleteSeveralWithAConditionFallsBackToAnAtomicTransaction(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put(
+            $definition,
+            new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open)),
+            new PutInput(RecordEntity::create(self::TENANT, 'b', RecordStatus::Done)),
+        );
+
+        try {
+            $this->writer()->delete(
+                $definition,
+                new DeleteInput(new Index(self::TENANT, 'a'), Filter::equals('status', RecordStatus::Open)),
+                new DeleteInput(new Index(self::TENANT, 'b'), Filter::equals('status', RecordStatus::Open)),
+            );
+            static::fail('The failing condition should have cancelled the transaction.');
+        } catch (TransactionCanceledException) {
+            // Expected; neither delete may have landed.
+        }
+
+        static::assertSame(2, $this->countRecords());
+    }
+
+    public function testTransactWriteAppliesPutUpdateAndDeleteTogether(): void
+    {
+        $definition = $this->definition('record');
+        $this->writer()->put(
+            $definition,
+            new PutInput(RecordEntity::create(self::TENANT, 'update-me', name: 'before')),
+            new PutInput(RecordEntity::create(self::TENANT, 'delete-me')),
+        );
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'new')))
+            ->with(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'update-me'), ['name' => 'after']))
+            ->with(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'delete-me'))));
+
+        static::assertNotNull($this->read('new'));
+        static::assertSame('after', $this->read('update-me')?->name);
+        static::assertNull($this->read('delete-me'));
+    }
+
+    public function testTransactWriteSpansSeveralTables(): void
+    {
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')))
+            ->with(ArchiveEntity::class, new PutInput(ArchiveEntity::create('arch-1', 'kept'))));
+
+        static::assertNotNull($this->read('a'));
+
+        $archived = $this->client()->get(new GetInput([ArchiveEntity::class => [new Index('arch-1')]]))->first();
+        static::assertInstanceOf(ArchiveEntity::class, $archived);
+        static::assertSame('kept', $archived->label);
+    }
+
+    public function testTransactWriteIsAtomicAndRollsBackWhenAConditionFails(): void
+    {
+        $this->writer()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'taken')));
+
+        try {
+            $this->writer()->transactWrite(new TransactWriteInput()
+                ->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'fresh')))
+                ->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'taken'), Filter::notExists('id'))));
+            static::fail('The failing condition should have cancelled the transaction.');
+        } catch (TransactionCanceledException) {
+            // Expected.
+        }
+
+        static::assertNull($this->read('fresh'), 'the sibling write has to be rolled back with the transaction');
+    }
+
+    public function testTransactWriteUpdateByEntityBacksFillsTheEntity(): void
+    {
+        $definition = $this->definition('normalized');
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'transacted'])));
+
+        static::assertSame('transacted', $entity->label);
+    }
+
+    /**
+     * A transaction caps at 100 operations, so a larger set is chunked — and stops being atomic across
+     * the chunks, which is exactly why the limit is worth pinning down.
+     */
+    public function testTransactWriteChunksBeyondTheTransactionLimit(): void
+    {
+        $input = new TransactWriteInput();
+        for ($i = 0; $i < 120; ++$i) {
+            $input = $input->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, \sprintf('id-%03d', $i))));
+        }
+
+        $this->writer()->transactWrite($input);
+
+        static::assertSame(120, $this->countRecords());
+    }
+
+    private function writer(): WriterClient
+    {
+        $writer = $this->container()->get('test.' . WriterClient::class);
+        static::assertInstanceOf(WriterClient::class, $writer);
+
+        return $writer;
+    }
+
+    private function read(string $id): ?RecordEntity
+    {
+        $entity = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, $id)]]))->first();
+        static::assertTrue($entity === null || $entity instanceof RecordEntity);
+
+        /** @var ?RecordEntity $entity */
+        return $entity;
+    }
+
+    private function countRecords(): int
+    {
+        return $this->client()->count($this->definition('record'), new ScanInput());
+    }
+
+    /**
+     * @param array<AbstractEntity> $entities
+     *
+     * @return list<string>
+     */
+    private function sortedIds(array $entities): array
+    {
+        $ids = [];
+        foreach ($entities as $entity) {
+            static::assertInstanceOf(RecordEntity::class, $entity);
+            $ids[] = $entity->id;
+        }
+        sort($ids);
+
+        return $ids;
+    }
+}

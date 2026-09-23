@@ -1,0 +1,97 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Criteria;
+
+use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\ExpressionException;
+use Shopware\DynamodbDalBundle\Exception\SerializerException;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+
+class ExpressionCompileContext
+{
+    /**
+     * @var array<string, AttributeValue>
+     */
+    public array $values = [];
+
+    /**
+     * @var array<string, string>
+     */
+    public array $names = [];
+
+    /**
+     * Set by And/Or after `compile()` to mark whether their output is a multi-clause boolean
+     * expression. A sibling And/Or reads this to decide whether to wrap the child in `(...)`
+     * for precedence (e.g. `a AND (b OR c)`). Top-level callers leave it untouched: DynamoDB's
+     * KeyConditionExpression rejects an outer `(...)`, so we never wrap unconditionally.
+     */
+    public bool $isCompound = false;
+
+    public function __construct(
+        public readonly EntityDefinition $definition,
+        public readonly string $prefix,
+    ) {
+    }
+
+    /**
+     * Register the path with placeholder names under `#{prefix}_{N}` placeholder
+     */
+    public function attribute(string $fieldName): string
+    {
+        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw ExpressionException::unknownField($this->definition, $fieldName);
+
+        $this->names = [...$this->names, ...$path->getExpressionAttributeNames()];
+
+        return $path->getExpression();
+    }
+
+    /**
+     * Serialize the value via the (nested) field's serializer and register it under a unique `:{prefix}_{path}_{N}` placeholder.
+     *
+     * $useValueFieldDefinition is for DynamoDB functions that compare one collection element instead of the collection field itself.
+     */
+    public function placeholder(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
+    {
+        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw ExpressionException::unknownField($this->definition, $fieldName);
+        $field = $path->definition;
+
+        if ($useValueFieldDefinition) {
+            $field = $field->getValueFieldDefinition() ?? $field;
+        }
+
+        if ($value === null) {
+            throw ExpressionException::nullFilterValue($field);
+        }
+
+        try {
+            $attributeValue = $field->getSerializer()->serialize($field, $value);
+        } catch (\Throwable $e) {
+            if ($e instanceof DALException) {
+                throw $e;
+            }
+
+            throw SerializerException::fieldSerializationFailed($field->getSerializer()::class, $field, $value, $e);
+        }
+
+        $placeholder = $path->getAttributeValueName($this->prefix . '_' . \count($this->values));
+        $this->values[$placeholder] = $attributeValue;
+
+        return $placeholder;
+    }
+
+    /**
+     * Register a raw number under a unique `:{prefix}_{N}` placeholder, bypassing the field serializer.
+     *
+     * DynamoDB functions like `size()` evaluate to a number regardless of the compared attribute's
+     * own type (a map, list, string, …), so their operand cannot be serialized via that field.
+     */
+    public function numberPlaceholder(int|float $value): string
+    {
+        $placeholder = ":{$this->prefix}_" . \count($this->values);
+        $this->values[$placeholder] = AttributeValue::create(['N' => (string) $value]);
+
+        return $placeholder;
+    }
+}

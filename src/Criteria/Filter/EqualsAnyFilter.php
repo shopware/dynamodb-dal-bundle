@@ -1,0 +1,39 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Criteria\Filter;
+
+use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
+use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+
+class EqualsAnyFilter implements FilterInterface
+{
+    /**
+     * @var list<mixed>
+     */
+    public readonly array $values;
+
+    /**
+     * @param list<mixed> $values
+     */
+    public function __construct(
+        public readonly string $fieldName,
+        array $values,
+    ) {
+        $this->values = array_values($values);
+    }
+
+    public function compile(ExpressionCompileContext $context): ?string
+    {
+        if ($this->values === []) {
+            return null;
+        }
+
+        $fieldName = $this->fieldName;
+        $placeholders = implode(', ', array_map(
+            static fn (mixed $value): string => $context->placeholder($fieldName, $value),
+            $this->values,
+        ));
+
+        return "{$context->attribute($fieldName)} IN ({$placeholders})";
+    }
+}
