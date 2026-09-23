@@ -20,7 +20,7 @@ class DefinitionCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         // symfony.noFindTaggedServiceIdsCall: intended here, this is build time resolution
-        $builder = new DefinitionBuilder($container->findTaggedServiceIds(AbstractFieldSerializer::class));
+        $builder = new DefinitionBuilder(array_keys($container->findTaggedServiceIds(AbstractFieldSerializer::class)));
 
         foreach ($this->configuredEntities($container) as $entityClass => $table) {
             // An entities are not services, remove them just in case

@@ -47,28 +47,10 @@ class DALBaselineRequiredFieldsCommand
 
         ksort($baseline);
 
-        $baseline = $this->rangeKeysRecursive($baseline);
         $json = json_encode($baseline, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
         $output->writeln($json);
 
         return Command::SUCCESS;
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     *
-     * @return array<string, mixed>
-     */
-    private function rangeKeysRecursive(array $data): array
-    {
-        ksort($data);
-        foreach (array_keys($data) as $key) {
-            if (\is_array($data[$key])) {
-                $data[$key] = $this->rangeKeysRecursive($data[$key]);
-            }
-        }
-
-        return $data;
     }
 
     /**

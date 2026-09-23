@@ -22,6 +22,7 @@ use Symfony\Contracts\HttpClient\ResponseStreamInterface;
 final class CallerStampingHttpClient implements HttpClientInterface
 {
     private const string DAL_NAMESPACE = 'Shopware\\DynamodbDalBundle\\';
+    private const string TARGET_HEADER = 'x-amz-target';
 
     public function __construct(
         private HttpClientInterface $inner,
@@ -33,10 +34,13 @@ final class CallerStampingHttpClient implements HttpClientInterface
      */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
-        if ($this->isDynamoDbRequest($options['headers'] ?? [])) {
+        $headers = $options['headers'] ?? [];
+        if (is_iterable($headers) && $this->isDynamoDbRequest($headers)) {
             $caller = $this->findCaller();
             if ($caller !== null) {
-                $options['extra']['dynamo_caller'] = $caller;
+                $extra = \is_array($options['extra'] ?? null) ? $options['extra'] : [];
+                $extra['dynamo_caller'] = $caller;
+                $options['extra'] = $extra;
             }
         }
 
@@ -60,23 +64,33 @@ final class CallerStampingHttpClient implements HttpClientInterface
     }
 
     /**
-     * @param iterable<int|string, mixed> $headers
+     * @param iterable<mixed, mixed> $headers
      */
     private function isDynamoDbRequest(iterable $headers): bool
     {
         foreach ($headers as $key => $value) {
-            $name = \is_int($key) ? strtolower(strtok((string) $value, ':') ?: '') : strtolower((string) $key);
-            if ($name !== 'x-amz-target') {
+            // Symfony takes headers both as a `name => value` map and as raw `'name: value'` lines.
+            $line = \is_string($key) ? $key . ': ' . self::headerValue($value) : self::headerValue($value);
+            if (stripos($line, self::TARGET_HEADER . ':') !== 0) {
                 continue;
             }
 
-            $headerPrefixLength = \strlen('x-amz-target:');
-            $headerValue = \is_int($key) ? trim(substr((string) $value, $headerPrefixLength)) : (\is_array($value) ? ($value[0] ?? '') : (string) $value);
-
-            return str_starts_with((string) $headerValue, 'DynamoDB_');
+            return str_starts_with(trim(substr($line, \strlen(self::TARGET_HEADER) + 1)), 'DynamoDB_');
         }
 
         return false;
+    }
+
+    /**
+     * A header's value as one string; a name may carry a list of values, of which the first is ours.
+     */
+    private static function headerValue(mixed $value): string
+    {
+        if (\is_array($value)) {
+            $value = $value[0] ?? null;
+        }
+
+        return \is_scalar($value) ? (string) $value : '';
     }
 
     /**

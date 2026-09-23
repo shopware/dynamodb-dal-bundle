@@ -38,7 +38,8 @@ class ShopwareDynamodbDalBundle extends AbstractBundle
      */
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
-        $builder->setParameter(DefinitionCompilerPass::ENTITIES_PARAMETER, $config['entities'] ?? []);
+        $entities = $config['entities'] ?? [];
+        $builder->setParameter(DefinitionCompilerPass::ENTITIES_PARAMETER, \is_array($entities) ? $entities : []);
 
         $container->import('../config/services.php');
 

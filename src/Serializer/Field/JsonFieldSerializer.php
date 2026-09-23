@@ -15,7 +15,7 @@ use Symfony\Component\Uid\AbstractUid;
  *
  * @internal
  *
- * @extends AbstractFieldSerializer<array<string, mixed>|\JsonSerializable, 'array'|class-string>
+ * @extends AbstractFieldSerializer<array<array-key, mixed>|\JsonSerializable, 'array'|class-string>
  */
 class JsonFieldSerializer extends AbstractFieldSerializer
 {

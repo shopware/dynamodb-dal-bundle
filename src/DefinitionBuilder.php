@@ -22,7 +22,7 @@ use Symfony\Component\DependencyInjection\Reference;
 final readonly class DefinitionBuilder
 {
     /**
-     * @param array<string, array<string, mixed>> $fieldSerializers Service id => tag attributes of every service tagged as an {@see AbstractFieldSerializer}
+     * @param list<string> $fieldSerializers Service id of every service tagged as an {@see AbstractFieldSerializer}
      */
     public function __construct(
         private array $fieldSerializers
@@ -301,9 +301,9 @@ final readonly class DefinitionBuilder
      */
     private function findFieldSerializer(string $phpType, ?string $docblockType): string|false
     {
-        return array_find_key(
+        return array_find(
             $this->fieldSerializers,
-            static fn (array $tags, string $serviceId): bool => is_subclass_of($serviceId, AbstractFieldSerializer::class, true)
+            static fn (string $serviceId): bool => is_subclass_of($serviceId, AbstractFieldSerializer::class, true)
                 && $serviceId::supports($phpType, $docblockType),
         ) ?? false;
     }

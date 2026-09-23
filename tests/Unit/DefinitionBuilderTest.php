@@ -33,11 +33,11 @@ class DefinitionBuilderTest extends TestCase
     private const string TABLE = 'catalog_table';
 
     private const array SERIALIZERS = [
-        StringFieldSerializer::class => [],
-        IntFieldSerializer::class => [],
-        DateTimeFieldSerializer::class => [],
-        ListFieldSerializer::class => [],
-        MapFieldSerializer::class => [],
+        StringFieldSerializer::class,
+        IntFieldSerializer::class,
+        DateTimeFieldSerializer::class,
+        ListFieldSerializer::class,
+        MapFieldSerializer::class,
     ];
 
     /**
@@ -162,14 +162,14 @@ class DefinitionBuilderTest extends TestCase
      */
     public function testSkipsServiceIdsThatAreNotFieldSerializers(): void
     {
-        $fields = $this->fieldDefinitions(new DefinitionBuilder([\stdClass::class => []] + self::SERIALIZERS));
+        $fields = $this->fieldDefinitions(new DefinitionBuilder([\stdClass::class, ...self::SERIALIZERS]));
 
         static::assertEquals(new Reference(StringFieldSerializer::class), $fields['tenantId']->getArgument('$serializer'));
     }
 
     public function testFieldWithoutASupportingSerializerFailsTheBuild(): void
     {
-        $builder = new DefinitionBuilder([StringFieldSerializer::class => []]);
+        $builder = new DefinitionBuilder([StringFieldSerializer::class]);
 
         static::expectException(\LogicException::class);
         static::expectExceptionMessage('Entity property ' . CatalogEntity::class . '::$createdAt is not supported by any serializer');

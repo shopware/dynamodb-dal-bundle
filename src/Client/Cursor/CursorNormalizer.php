@@ -166,12 +166,12 @@ final class CursorNormalizer implements NormalizerInterface, DenormalizerInterfa
      * Rebuilds an {@see Index} from its `{fieldName: {S|N|B}}` scalar map for the given key schema.
      *
      * @param EntityDefinition<AbstractEntity> $definition
-     * @param array<string, array<string, mixed>> $scalars
+     * @param array<string, array<array-key, mixed>> $scalars
      */
     private function deserializeKey(EntityDefinition $definition, KeySchema $keySchema, array $scalars, ?string $index = null): Index
     {
         $deserialized = $this->serializer->deserializeFields($definition, array_map(
-            static fn (array $scalar): AttributeValue => AttributeValue::create($scalar),
+            self::toAttributeValue(...),
             $scalars,
         ));
 
@@ -197,7 +197,7 @@ final class CursorNormalizer implements NormalizerInterface, DenormalizerInterfa
     /**
      * @param mixed $fields - a `{fieldName: {S|N|B: value}}` map, or null
      *
-     * @return array<string, array<string, mixed>>
+     * @return array<string, array<array-key, mixed>>
      */
     private function scalarFields(mixed $fields): array
     {
@@ -213,5 +213,25 @@ final class CursorNormalizer implements NormalizerInterface, DenormalizerInterfa
         }
 
         return $scalars;
+    }
+
+    /**
+     * A key field's scalar wrapper as an {@see AttributeValue}. A DynamoDB key is always `S`, `N`
+     * or `B`, so anything else a cursor carries is dropped rather than trusted: a tampered cursor
+     * then fails on the value its key schema is missing.
+     *
+     * @param array<array-key, mixed> $scalar
+     */
+    private static function toAttributeValue(array $scalar): AttributeValue
+    {
+        $string = $scalar['S'] ?? null;
+        $number = $scalar['N'] ?? null;
+        $binary = $scalar['B'] ?? null;
+
+        return AttributeValue::create([
+            'S' => \is_string($string) ? $string : null,
+            'N' => \is_string($number) ? $number : null,
+            'B' => \is_string($binary) ? $binary : null,
+        ]);
     }
 }

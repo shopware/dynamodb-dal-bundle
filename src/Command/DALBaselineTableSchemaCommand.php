@@ -73,7 +73,7 @@ class DALBaselineTableSchemaCommand
     /**
      * @param array<string, EntityDefinition<AbstractEntity>> $definitionsByName
      *
-     * @return array<string, array{hashKey: string, rangeKey: string|null, globalSecondaryIndexes: array<string, array{hashKey: string, rangeKey: string|null}>}>|null
+     * @return array<string, array{globalSecondaryIndexes: array<string, array{hashKey: string|null, rangeKey: string|null}>, hashKey: string|null, rangeKey: string|null}>|null
      */
     private function buildSchemaFromTables(array $definitionsByName, SymfonyStyle $io): ?array
     {
@@ -102,13 +102,15 @@ class DALBaselineTableSchemaCommand
                 $gsi[$indexName] = $this->extractHashAndRangeFromKeySchema($index->getKeySchema());
             }
 
+            ksort($gsi);
+
             $actual[$entityName] = [
-                ...$this->extractHashAndRangeFromKeySchema($table->getKeySchema()),
                 'globalSecondaryIndexes' => $gsi,
+                ...$this->extractHashAndRangeFromKeySchema($table->getKeySchema()),
             ];
         }
 
-        return $this->rangeKeysRecursive($actual);
+        return $actual;
     }
 
     /**
@@ -132,22 +134,5 @@ class DALBaselineTableSchemaCommand
             'hashKey' => $hashKey,
             'rangeKey' => $rangeKey,
         ];
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     *
-     * @return array<string, mixed>
-     */
-    private function rangeKeysRecursive(array $data): array
-    {
-        ksort($data);
-        foreach (array_keys($data) as $key) {
-            if (\is_array($data[$key])) {
-                $data[$key] = $this->rangeKeysRecursive($data[$key]);
-            }
-        }
-
-        return $data;
     }
 }

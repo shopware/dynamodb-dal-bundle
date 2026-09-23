@@ -19,14 +19,42 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Serializer timings are pushed in by {@see TraceableSerializer} during the request.
  *
+ * A traced request is untyped all the way down — headers, body and response content are whatever
+ * the wire carried — so every value the panel shows is narrowed out of it here, once, into the two
+ * row shapes below.
+ *
+ * @phpstan-type DynamoOperation array{
+ *     operation: string,
+ *     table: string|null,
+ *     index: string|null,
+ *     request: array<array-key, mixed>,
+ *     duration_ms: float,
+ *     item_count: int|null,
+ *     error: string|null,
+ *     caller_class: string|null,
+ *     caller_method: string|null,
+ *     caller_file: string|null,
+ *     caller_line: int|null,
+ * }
+ * @phpstan-type SerializerOperation array{
+ *     operation: string,
+ *     entity_name: string,
+ *     entity_class: string,
+ *     duration_ms: float,
+ *     caller_class: class-string|null,
+ *     caller_method: string|null,
+ * }
+ *
  * @internal
  *
  * @codeCoverageIgnore
  */
 class DynamoDbDataCollector extends AbstractDataCollector
 {
+    private const string TARGET_HEADER = 'x-amz-target';
+
     /**
-     * @var list<array<string, mixed>>
+     * @var list<SerializerOperation>
      */
     private array $serializerOperations = [];
 
@@ -36,7 +64,7 @@ class DynamoDbDataCollector extends AbstractDataCollector
     }
 
     /**
-     * @param array<string, mixed> $operation
+     * @param SerializerOperation $operation
      */
     public function addSerializerOperation(array $operation): void
     {
@@ -156,7 +184,7 @@ class DynamoDbDataCollector extends AbstractDataCollector
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<DynamoOperation>
      */
     private function extractDynamoOperations(): array
     {
@@ -166,29 +194,33 @@ class DynamoDbDataCollector extends AbstractDataCollector
 
         $operations = [];
         foreach ($this->httpClient->getTracedRequests() as $trace) {
-            $target = $this->extractAmzTarget($trace['options']['headers'] ?? []);
+            $options = self::arrayOrEmpty($trace['options'] ?? null);
+            $headers = $options['headers'] ?? [];
+            $target = is_iterable($headers) ? $this->extractAmzTarget($headers) : null;
             if ($target === null || !str_starts_with($target, 'DynamoDB_')) {
                 continue;
             }
 
             $operation = explode('.', $target, 2)[1] ?? $target;
-            $request = $this->decodeJson($trace['options']['body'] ?? null) ?? [];
-            $content = \is_array($trace['content'] ?? null) ? $trace['content'] : [];
-            $info = $trace['info'] ?? [];
-            $caller = $trace['options']['extra']['dynamo_caller'] ?? [];
+            $request = $this->decodeJson($options['body'] ?? null) ?? [];
+            $content = self::arrayOrEmpty($trace['content'] ?? null);
+            $info = self::arrayOrEmpty($trace['info'] ?? null);
+            $caller = self::arrayOrEmpty(self::arrayOrEmpty($options['extra'] ?? null)['dynamo_caller'] ?? null);
+            $totalTime = $info['total_time'] ?? null;
+            $callerLine = $caller['line'] ?? null;
 
             $operations[] = [
                 'operation' => $operation,
-                'table' => $request['TableName'] ?? null,
-                'index' => $request['IndexName'] ?? null,
+                'table' => self::stringOrNull($request['TableName'] ?? null),
+                'index' => self::stringOrNull($request['IndexName'] ?? null),
                 'request' => $request,
-                'duration_ms' => isset($info['total_time']) ? (float) $info['total_time'] * 1000 : 0.0,
+                'duration_ms' => is_numeric($totalTime) ? (float) $totalTime * 1000 : 0.0,
                 'item_count' => $this->extractItemCount($operation, $content),
                 'error' => $this->extractError($info, $content),
-                'caller_class' => $caller['class'] ?? null,
-                'caller_method' => $caller['method'] ?? null,
-                'caller_file' => $caller['file'] ?? null,
-                'caller_line' => $caller['line'] ?? null,
+                'caller_class' => self::stringOrNull($caller['class'] ?? null),
+                'caller_method' => self::stringOrNull($caller['method'] ?? null),
+                'caller_file' => self::stringOrNull($caller['file'] ?? null),
+                'caller_line' => \is_int($callerLine) ? $callerLine : null,
             ];
         }
 
@@ -196,24 +228,37 @@ class DynamoDbDataCollector extends AbstractDataCollector
     }
 
     /**
-     * @param iterable<int|string, mixed> $headers
+     * @param iterable<mixed, mixed> $headers
      */
     private function extractAmzTarget(iterable $headers): ?string
     {
         foreach ($headers as $key => $value) {
-            $header = \is_int($key) ? (string) $value : $key . ': ' . (\is_array($value) ? ($value[0] ?? '') : (string) $value);
-            if (stripos($header, 'x-amz-target:') === 0) {
-                $headerPrefixLength = \strlen('x-amz-target:');
-
-                return trim(substr($header, $headerPrefixLength));
+            // Symfony takes headers both as a `name => value` map and as raw `'name: value'` lines.
+            $line = \is_string($key) ? $key . ': ' . self::headerValue($value) : self::headerValue($value);
+            if (stripos($line, self::TARGET_HEADER . ':') !== 0) {
+                continue;
             }
+
+            return trim(substr($line, \strlen(self::TARGET_HEADER) + 1));
         }
 
         return null;
     }
 
     /**
-     * @return array<string, mixed>|null
+     * A header's value as one string; a name may carry a list of values, of which the first is ours.
+     */
+    private static function headerValue(mixed $value): string
+    {
+        if (\is_array($value)) {
+            $value = $value[0] ?? null;
+        }
+
+        return \is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * @return array<array-key, mixed>|null
      */
     private function decodeJson(mixed $body): ?array
     {
@@ -231,12 +276,14 @@ class DynamoDbDataCollector extends AbstractDataCollector
     }
 
     /**
-     * @param array<string, mixed> $content
+     * @param array<array-key, mixed> $content
      */
     private function extractItemCount(string $operation, array $content): ?int
     {
         if ($operation === 'Query' || $operation === 'Scan') {
-            return isset($content['Count']) ? (int) $content['Count'] : null;
+            $count = $content['Count'] ?? null;
+
+            return is_numeric($count) ? (int) $count : null;
         }
 
         if ($operation === 'GetItem') {
@@ -247,23 +294,36 @@ class DynamoDbDataCollector extends AbstractDataCollector
     }
 
     /**
-     * @param array<string, mixed> $info
-     * @param array<string, mixed> $content
+     * @param array<array-key, mixed> $info
+     * @param array<array-key, mixed> $content
      */
     private function extractError(array $info, array $content): ?string
     {
-        $httpCode = (int) ($info['http_code'] ?? 0);
+        $code = $info['http_code'] ?? null;
+        $httpCode = is_numeric($code) ? (int) $code : 0;
         if ($httpCode < 400) {
             return null;
         }
 
-        if (isset($content['__type']) || isset($content['message']) || isset($content['Message'])) {
-            $type = isset($content['__type']) ? (string) $content['__type'] : null;
-            $message = (string) ($content['message'] ?? $content['Message'] ?? '');
-
-            return trim(($type !== null ? $type . ': ' : '') . $message);
+        $type = self::stringOrNull($content['__type'] ?? null);
+        $message = self::stringOrNull($content['message'] ?? null) ?? self::stringOrNull($content['Message'] ?? null);
+        if ($type === null && $message === null) {
+            return \sprintf('HTTP %d', $httpCode);
         }
 
-        return \sprintf('HTTP %d', $httpCode);
+        return trim(($type !== null ? $type . ': ' : '') . ($message ?? ''));
+    }
+
+    /**
+     * @return array<array-key, mixed>
+     */
+    private static function arrayOrEmpty(mixed $value): array
+    {
+        return \is_array($value) ? $value : [];
+    }
+
+    private static function stringOrNull(mixed $value): ?string
+    {
+        return \is_string($value) ? $value : null;
     }
 }
