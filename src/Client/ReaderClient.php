@@ -69,31 +69,49 @@ class ReaderClient
         }
 
         $idx = 0;
-        foreach (array_chunk($pairs, self::BATCH_GET_LIMIT) as $chunk) {
-            /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: ?bool}> $requestItems */
-            $requestItems = [];
-            foreach ($chunk as [$physicalTable, $keyFields]) {
-                $requestItems[$physicalTable] ??= ['Keys' => [], 'ConsistentRead' => $input->consistentRead];
-                $requestItems[$physicalTable]['Keys'][] = $keyFields;
+        foreach ($this->batchGet($definitions, $pairs, $input->consistentRead) as [$definition, $item]) {
+            $entity = $this->serializer->deserialize($definition, $item);
+            if ($entity !== null) {
+                yield $idx++ => $entity;
             }
+        }
+    }
 
-            // BatchGetItem may return only part of a chunk under throttling; retry the leftover keys.
-            while ($requestItems !== []) {
-                $output = $this->client->batchGetItem(['RequestItems' => $requestItems]);
-                $responses = $output->getResponses();
+    /**
+     * @TODO should become part of GetInput
+     * 
+     * Reads the given entities back into themselves.
+     *
+     * @param array<class-string<AbstractEntity>, list<AbstractEntity>> $entitiesByClass - same shape as {@see GetInput::$keysByClass}, by instance
+     */
+    public function refresh(array $entitiesByClass): void
+    {
+        // BatchGetItem answers per table, in no order, and does not echo the request, so every entity is
+        // indexed by its key up front to match a row back to the instance it belongs to.
+        $definitions = [];
+        $pairs = [];
+        /** @var array<string, array<string, AbstractEntity>> $entities - physical table, then key */
+        $entities = [];
+        foreach ($entitiesByClass as $class => $classEntities) {
+            $definition = $this->definitionRegistry->getByEntityClass($class);
+            $table = $definition->getTable();
+            $definitions[$table] = $definition;
 
-                // Responses come back keyed by physical table; walking the requested definitions instead of
-                // the raw response deserializes every item with the definition its keys were built from.
-                foreach ($definitions as $physicalTable => $definition) {
-                    foreach ($responses[$physicalTable] ?? [] as $item) {
-                        $entity = $this->serializer->deserialize($definition, $item);
-                        if ($entity !== null) {
-                            yield $idx++ => $entity;
-                        }
-                    }
-                }
+            foreach ($classEntities as $entity) {
+                $key = $this->serializer->serializeKey($definition, $entity);
 
-                $requestItems = $output->getUnprocessedKeys();
+                $entities[$table][$this->serializer->hashKey($definition, $key)] = $entity;
+                $pairs[] = [$table, $key];
+            }
+        }
+
+        // ensure consistent read, because a write may have been to a replica that has not yet propagated to the
+        foreach ($this->batchGet($definitions, $pairs, true) as [$definition, $item]) {
+            $entity = $entities[$definition->getTable()][$this->serializer->hashKey($definition, $item)] ?? null;
+
+            // A row deleted between the write and this read comes back as nothing at all, existing entity stays as is
+            if ($entity !== null) {
+                $this->serializer->deserialize($definition, $item, $entity);
             }
         }
     }
@@ -160,6 +178,44 @@ class ReaderClient
         ]);
 
         return $this->serializer->deserialize($definition, $output->getItem());
+    }
+
+    /**
+     * Runs the keys as `BatchGetItem`s chunked at 100, re-requesting whatever DynamoDB reports back as
+     * unprocessed, and yields each returned item with the definition its key was built from. Responses are
+     * keyed by physical table, so walking the requested definitions is what ties an item to its definition.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param array<string, EntityDefinition<Entity>> $definitions - keyed by physical table
+     * @param list<array{string, array<string, AttributeValue>}> $pairs - physical table and serialized key
+     *
+     * @return \Generator<int, array{EntityDefinition<Entity>, array<string, AttributeValue>}>
+     */
+    private function batchGet(array $definitions, array $pairs, ?bool $consistentRead): \Generator
+    {
+        foreach (array_chunk($pairs, self::BATCH_GET_LIMIT) as $chunk) {
+            /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: ?bool}> $requestItems */
+            $requestItems = [];
+            foreach ($chunk as [$physicalTable, $keyFields]) {
+                $requestItems[$physicalTable] ??= ['Keys' => [], 'ConsistentRead' => $consistentRead];
+                $requestItems[$physicalTable]['Keys'][] = $keyFields;
+            }
+
+            // BatchGetItem may return only part of a chunk under throttling; retry the leftover keys.
+            while ($requestItems !== []) {
+                $output = $this->client->batchGetItem(['RequestItems' => $requestItems]);
+                $responses = $output->getResponses();
+
+                foreach ($definitions as $physicalTable => $definition) {
+                    foreach ($responses[$physicalTable] ?? [] as $item) {
+                        yield [$definition, $item];
+                    }
+                }
+
+                $requestItems = $output->getUnprocessedKeys();
+            }
+        }
     }
 
     /**

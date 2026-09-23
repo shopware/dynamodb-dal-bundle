@@ -196,6 +196,32 @@ class UpdateExpressionTest extends DynamoDbTestCase
         static::assertSame(['g' => ['replaced', 'two']], $this->read('a')?->groups);
     }
 
+    /**
+     * Why the entity is refreshed from the row rather than from what was sent: `meta.first` is a document
+     * path, not a property, so there is nothing on the entity to assign it to. Only the row knows the
+     * written entry and its untouched siblings at once.
+     */
+    public function testUpdateKeyedByTheEntityRefreshesTheWholeMapItWroteOneEntryOf(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a');
+        $entity->meta = ['first' => 'one', 'second' => 'two'];
+        $this->put($entity);
+
+        $this->client()->update($this->definition('record'), new UpdateInput($entity, ['meta.first' => 'one-renewed']));
+
+        static::assertSame(['first' => 'one-renewed', 'second' => 'two'], $entity->meta);
+    }
+
+    public function testUpdateKeyedByTheEntityRefreshesAListItReplacedOneElementOf(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a', tags: ['first', 'second']);
+        $this->put($entity);
+
+        $this->client()->update($this->definition('record'), new UpdateInput($entity, ['tags[1]' => 'replaced']));
+
+        static::assertSame(['first', 'replaced'], $entity->tags);
+    }
+
     private function put(RecordEntity $entity): void
     {
         $this->client()->put($this->definition('record'), new PutInput($entity));

@@ -27,6 +27,14 @@ class SerializedFieldResult
         return $this->path->definition;
     }
 
+    /**
+     * Whether this addresses a spot inside an attribute (`meta.first`, `tags[1]`) rather than a whole one.
+     */
+    public function isNested(): bool
+    {
+        return $this->path->isNested();
+    }
+
     public function getValue(): ?AttributeValue
     {
         return $this->value;

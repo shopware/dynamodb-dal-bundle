@@ -29,7 +29,7 @@ final class TraceableSerializer extends Serializer
     ) {
     }
 
-    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output): ?AbstractEntity
+    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output, ?AbstractEntity $entity = null): ?AbstractEntity
     {
         // Force-resolve lazy AsyncAws results before timing so the HTTP round-trip is
         // attributed to the HTTP profiler, not to the serializer.
@@ -37,7 +37,7 @@ final class TraceableSerializer extends Serializer
             $output->resolve();
         }
 
-        return $this->trace('deserialize', $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output));
+        return $this->trace('deserialize', $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output, $entity));
     }
 
     public function deserializeFields(EntityDefinition $definition, array $output): array

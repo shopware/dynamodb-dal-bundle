@@ -18,6 +18,14 @@ class ArchiveEntity extends AbstractEntity
     #[Field]
     public string $label = '';
 
+    /**
+     * So a transaction can write a nested path on this table too, not only on the record one.
+     *
+     * @var array<string, string>
+     */
+    #[Field]
+    public array $meta = [];
+
     public static function create(string $id, string $label = ''): self
     {
         $entity = new self();

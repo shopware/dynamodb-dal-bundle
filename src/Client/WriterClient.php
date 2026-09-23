@@ -15,6 +15,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\DynamoDb\DynamoDbClient;
+use AsyncAws\DynamoDb\Enum\ReturnValue;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use AsyncAws\DynamoDb\ValueObject\CancellationReason;
@@ -48,6 +49,7 @@ class WriterClient
         protected readonly Serializer $serializer,
         protected readonly ExpressionCompiler $expressionCompiler,
         protected readonly EntityDefinitionRegistry $definitionRegistry,
+        protected readonly ReaderClient $reader,
     ) {
     }
 
@@ -78,7 +80,7 @@ class WriterClient
                 ...$expression->getExpressionAttributes(),
             ])->resolve();
 
-            $result->apply($inputs[0]->entity);
+            $this->applySerialized($inputs[0]->entity, $result);
 
             return;
         }
@@ -93,8 +95,13 @@ class WriterClient
     }
 
     /**
-     * Updates the given items. When an input is keyed by an entity the serialized result is applied back onto it
-     * once the request succeeds (see {@see self::put()}) so normalization-generated values are reflected.
+     * Updates the given items. An update writes only the fields it names, so unlike {@see self::put()}.
+     * 
+     * {@see UpdateInput::$refresh} decides how updates are applied to the existing entity:
+     * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
+     * 2. `true` = entity changes are applied, if necessary a readback is performed.
+     * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
+     * Readbacks are only necessary if an update for a nested path is performed.
      *
      * This operation is atomic and uses {@see self::transactWrite} for batch writes, since
      * `BatchWriteItem` cannot update items.
@@ -110,16 +117,21 @@ class WriterClient
         if (\count($inputs) === 1) {
             $result = $this->serializer->serialize($definition, $inputs[0]->fields);
             $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
+            // update entity if the caller did not explicitly disallowed it
+            $entity = $inputs[0]->refresh !== false && $inputs[0]->key instanceof AbstractEntity ? $inputs[0]->key : null;
 
-            $this->client->updateItem([
+            $output = $this->client->updateItem([
                 'TableName' => $definition->getTable(),
                 'Key' => $this->serializer->serializeKey($definition, $inputs[0]->key),
+                ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
                 ...$expression->getExpression('condition'),
                 ...$this->merge($result->getUpdateExpression(), $expression->getExpressionAttributes()),
-            ])->resolve();
+            ]);
 
-            if ($inputs[0]->key instanceof AbstractEntity) {
-                $result->apply($inputs[0]->key);
+            $output->resolve();
+
+            if ($entity) {
+                $this->serializer->deserialize($definition, $output->getAttributes(), $entity);
             }
 
             return;
@@ -158,8 +170,13 @@ class WriterClient
 
     /**
      * Write entities to different tables as one transaction.
-     * Once the transaction succeeds the serialized result of every put, and of every update keyed by an entity,
-     * is applied back onto that entity (see {@see self::put()}).
+     * Once the transaction succeeds the serialized result of every put is applied back onto its entity (see {@see self::put()}).
+     * Every update keyed by an entity is backfilled based on {@see UpdateInput::$refresh}:
+     * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
+     * 2. `true` = entity changes are applied, if necessary a readback is performed.
+     * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
+     * Readbacks are only necessary if an update for a nested path is performed.
+     * 
      * Transactional writes are limited to 100 operations per batch.
      * A `TransactionConflict` cancellation is retried with backoff; any other cancellation reason is rethrown.
      *
@@ -171,6 +188,8 @@ class WriterClient
     {
         /** @var list<array{SerializedResult, AbstractEntity}> $applies */
         $applies = [];
+        /** @var array<class-string<AbstractEntity>, list<AbstractEntity>> $refreshes */
+        $refreshes = [];
         $writeRequests = [];
 
         foreach ($input->operations as $entityClass => $operations) {
@@ -199,8 +218,12 @@ class WriterClient
                         ...$this->merge($result->getUpdateExpression(), $expression->getExpressionAttributes()),
                     ]]);
 
-                    if ($operation->key instanceof AbstractEntity) {
-                        $applies[] = [$result, $operation->key];
+                    if ($operation->refresh !== false && $operation->key instanceof AbstractEntity) {
+                        if ($operation->refresh === true && $result->hasNestedFields()) {
+                            $refreshes[$entityClass][] = $operation->key;
+                        } else {
+                            $applies[] = [$result, $operation->key];
+                        }
                     }
                 }
 
@@ -225,8 +248,26 @@ class WriterClient
         }
 
         foreach ($applies as [$result, $entity]) {
-            $result->apply($entity);
+            $this->applySerialized($entity, $result);
         }
+
+        $this->reader->refresh($refreshes);
+    }
+
+    /**
+     * @param SerializedResult<EntityDefinition<AbstractEntity>> $result
+     */
+    private function applySerialized(AbstractEntity $entity, SerializedResult $result): void
+    {
+        $definition = $result->getEntityDefinition();
+
+        $fields = array_filter(
+            $result->getNormalizedFields(),
+            static fn (string $name): bool => $definition->getFieldDefinition($name) !== null,
+            \ARRAY_FILTER_USE_KEY,
+        );
+
+        $entity->setVars($this->serializer->denormalize($definition, $fields));
     }
 
     /**
@@ -301,7 +342,7 @@ class WriterClient
         }
 
         foreach ($puts as [$result, $entity]) {
-            $result->apply($entity);
+            $this->applySerialized($entity, $result);
         }
     }
 

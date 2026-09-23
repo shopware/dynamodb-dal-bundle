@@ -81,6 +81,21 @@ class SerializerTest extends TestCase
         static::assertSame('test-required', $result->getRequired());
     }
 
+    public function testDeserializeFillsAGivenEntityInsteadOfANewOne(): void
+    {
+        $entity = new NormalEntity()->setAutofilledId('stale')->setName('stale');
+
+        $result = $this->serializer->deserialize($this->definition, [
+            'autofilledId' => new AttributeValue(['S' => 'fresh']),
+            'required' => new AttributeValue(['S' => 'test-required']),
+        ], $entity);
+
+        static::assertSame($entity, $result);
+        static::assertSame('fresh', $entity->getAutofilledId());
+        // Absent from the item, so absent from the entity: a whole item is the truth, not a patch.
+        static::assertNull($entity->getName());
+    }
+
     public function testDeserializeWithOnlyRequiredFields(): void
     {
         $result = $this->serializer->deserialize($this->definition, [
@@ -414,6 +429,53 @@ class SerializerTest extends TestCase
 
         static::assertInstanceOf(NormalEntity::class, $result);
         static::assertSame('y', $result->getAutofilledId());
+    }
+
+    /**
+     * The point of the hash: what a read sends and what it gets back have to land on the same string, or a
+     * batched response cannot be paired with the request it answers.
+     */
+    public function testHashKeyDerivesTheSameStringFromAnEntityAnIndexAndTheRowItself(): void
+    {
+        $entity = new NormalEntity()->setAutofilledId('id-1')->setRequired('req');
+
+        $fromEntity = $this->serializer->hashKey($this->definition, $entity);
+        $fromIndex = $this->serializer->hashKey($this->definition, new Index('id-1'));
+        $fromRow = $this->serializer->hashKey($this->definition, [
+            'autofilledId' => new AttributeValue(['S' => 'id-1']),
+            'name' => new AttributeValue(['S' => 'not part of the key']),
+        ]);
+
+        static::assertSame($fromEntity, $fromIndex);
+        static::assertSame($fromEntity, $fromRow);
+    }
+
+    public function testHashKeyTellsDifferentKeysApart(): void
+    {
+        static::assertNotSame(
+            $this->serializer->hashKey($this->definition, new Index('id-1')),
+            $this->serializer->hashKey($this->definition, new Index('id-2')),
+        );
+    }
+
+    /**
+     * A composite key hashes both halves, so two rows sharing a partition key stay distinct.
+     */
+    public function testHashKeyCoversTheSortKeyToo(): void
+    {
+        $definition = $this->keyedDefinition();
+        $tenant = new AttributeValue(['S' => 'tenant-1']);
+
+        $first = $this->serializer->hashKey($definition, [
+            'tenantId' => $tenant,
+            'createdAt' => new AttributeValue(['N' => '1700000000']),
+        ]);
+        $second = $this->serializer->hashKey($definition, [
+            'tenantId' => $tenant,
+            'createdAt' => new AttributeValue(['N' => '1700000001']),
+        ]);
+
+        static::assertNotSame($first, $second);
     }
 
     public function testDeserializeKeyWithHashOnlyKey(): void

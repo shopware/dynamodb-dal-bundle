@@ -51,27 +51,18 @@ class SerializedResultTest extends TestCase
         ], $result->getExpressions());
     }
 
-    public function testApply(): void
+    /**
+     * Handed on in the row's shape; turning it back into entity values is the writer's job, not this one's.
+     */
+    public function testGetNormalizedFieldsReturnsWhatWasSerialized(): void
     {
         $definition = $this->createEntityDefinition();
+        $fields = ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'];
 
-        $idField = new SerializedFieldResult(
-            $this->parse($definition, 'autofilledId'),
-            new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
-        );
-        $nameField = new SerializedFieldResult($this->parse($definition, 'name'), new AttributeValue(['S' => 'test']));
+        $result = new SerializedResult($definition, [], $fields);
 
-        $result = new SerializedResult(
-            $definition,
-            ['autofilledId' => $idField, 'name' => $nameField],
-            ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'],
-        );
-
-        $entity = new NormalEntity();
-        $result->apply($entity);
-
-        static::assertSame('00000000-0000-0000-0000-000000000000', $entity->getAutofilledId());
-        static::assertSame('test', $entity->getName());
+        static::assertSame($fields, $result->getNormalizedFields());
+        static::assertSame($definition, $result->getEntityDefinition());
     }
 
     /**

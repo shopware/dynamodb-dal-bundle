@@ -17,6 +17,7 @@ use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\NormalizedEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\NormalizedEntityNormalizer;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
 
@@ -58,6 +59,19 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertInstanceOf(NormalizedEntity::class, $read);
         static::assertTrue($entity->id->equals($read->id));
         static::assertSame($entity->pk, $read->pk);
+    }
+
+    public function testPutLeavesTheEntitysOwnValuesIntact(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a', name: 'kept', counter: 3, tags: ['x']);
+        $entity->meta = ['k' => 'v'];
+
+        $this->writer()->put($this->definition('record'), new PutInput($entity));
+
+        static::assertSame('kept', $entity->name);
+        static::assertSame(3, $entity->counter);
+        static::assertSame(['x'], $entity->tags);
+        static::assertSame(['k' => 'v'], $entity->meta);
     }
 
     public function testPutSeveralItemsWritesThemAllViaBatchWrite(): void
@@ -157,7 +171,7 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertSame(9, $read?->counter);
     }
 
-    public function testUpdateByEntitySetsFieldsAndBacksFillsTheEntity(): void
+    public function testUpdateByEntityRefreshesTheEntityFromTheStoredRow(): void
     {
         $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
@@ -166,6 +180,39 @@ class WriterClientTest extends DynamoDbTestCase
         $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed']));
 
         static::assertSame('renamed', $entity->label);
+    }
+
+    /**
+     * The refresh reads the whole row, not just what was written, so a field this update never mentioned
+     * arrives too.
+     */
+    public function testUpdateByEntityRefreshesFieldsItNeverWrote(): void
+    {
+        $definition = $this->definition('normalized');
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $stored = $this->readNormalized($entity);
+        static::assertNotNull($stored);
+
+        // Somebody else moves the row on, then this update touches an unrelated field.
+        $this->writer()->update($definition, new UpdateInput(new Index($stored->pk, $stored->id), ['kind' => 'credit']));
+        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed']));
+
+        static::assertSame('renamed', $entity->label);
+        static::assertSame('credit', $entity->kind);
+    }
+
+    public function testUpdateByIndexWritesTheRowAndHasNoEntityToRefresh(): void
+    {
+        $definition = $this->definition('normalized');
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->update($definition, new UpdateInput(new Index($entity->pk, $entity->id), ['label' => 'renamed']));
+
+        static::assertSame('renamed', $this->readNormalized($entity)?->label);
+        static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
     }
 
     public function testUpdateSeveralItemsWritesThemAllViaTransaction(): void
@@ -187,7 +234,7 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertSame('two', $this->read('b')?->name);
     }
 
-    public function testUpdateSeveralByEntityBacksFillsEachEntity(): void
+    public function testUpdateSeveralByEntityBackfillsEachEntity(): void
     {
         $definition = $this->definition('normalized');
         $first = NormalizedEntity::create(self::TENANT, 'first');
@@ -364,7 +411,7 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertNull($this->read('fresh'), 'the sibling write has to be rolled back with the transaction');
     }
 
-    public function testTransactWriteUpdateByEntityBacksFillsTheEntity(): void
+    public function testTransactWriteUpdateByEntityBackfillsTheEntity(): void
     {
         $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
@@ -374,6 +421,112 @@ class WriterClientTest extends DynamoDbTestCase
             ->with(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'transacted'])));
 
         static::assertSame('transacted', $entity->label);
+    }
+
+    public function testUpdateOptedOutOfTheRefreshWritesTheRowAndLeavesTheEntityAlone(): void
+    {
+        $definition = $this->definition('normalized');
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed'], refresh: false));
+
+        static::assertSame('renamed', $this->readNormalized($entity)?->label);
+        static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
+    }
+
+    /**
+     * The readback spans the tables the transaction touched, matching each row to the entity it was keyed
+     * by rather than to whichever came back first.
+     */
+    public function testTransactWriteBackfillsEntitiesAcrossTables(): void
+    {
+        $record = RecordEntity::create(self::TENANT, 'a');
+        $record->meta = ['first' => 'one'];
+        $archive = ArchiveEntity::create('arch-1');
+        $archive->meta = ['first' => 'uno'];
+        $this->writer()->put($this->definition('record'), new PutInput($record));
+        $this->writer()->put($this->definition('archive'), new PutInput($archive));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new UpdateInput($record, ['meta.first' => 'one-renewed']))
+            ->with(ArchiveEntity::class, new UpdateInput($archive, ['meta.first' => 'uno-renewed'])));
+
+        static::assertSame(['first' => 'one-renewed'], $record->meta);
+        static::assertSame(['first' => 'uno-renewed'], $archive->meta);
+    }
+
+    /**
+     * A whole attribute is written with exactly the value that was sent, so the entity is filled from that
+     * and the transaction costs no read. The untouched `counter` is the proof: a readback would have picked
+     * up the out-of-band write, applying what was sent cannot.
+     */
+    public function testTransactWriteAppliesWholeAttributesWithoutReadingTheRowBack(): void
+    {
+        $definition = $this->definition('record');
+        $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
+        $this->writer()->put($definition, new PutInput($entity));
+
+        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['counter' => 9]));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new UpdateInput($entity, ['name' => 'after'])));
+
+        static::assertSame('after', $entity->name);
+        static::assertSame(0, $entity->counter);
+        static::assertSame(9, $this->read('a')?->counter);
+    }
+
+    /**
+     * An attribute written as null is removed from the row, and the property goes with it.
+     */
+    public function testTransactWriteAppliesARemovedAttributeAsNullOnTheEntity(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
+        $this->writer()->put($this->definition('record'), new PutInput($entity));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new UpdateInput($entity, ['name' => null])));
+
+        static::assertNull($entity->name);
+        static::assertNull($this->read('a')?->name);
+    }
+
+    /**
+     * `refresh: null` buys no read, so a nested path leaves its attribute behind — but the whole attributes
+     * written alongside it still apply.
+     */
+    public function testTransactWriteWithoutAReadbackStillAppliesWholeAttributes(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
+        $entity->meta = ['first' => 'one', 'second' => 'two'];
+        $this->writer()->put($this->definition('record'), new PutInput($entity));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new UpdateInput($entity, [
+                'name' => 'after',
+                'meta.first' => 'one-renewed',
+            ], refresh: null)));
+
+        static::assertSame('after', $entity->name);
+        static::assertSame(['first' => 'one', 'second' => 'two'], $entity->meta);
+        static::assertSame('one-renewed', $this->read('a')?->meta['first'] ?? null);
+    }
+
+    /**
+     * A nested path is why the row has to be read back rather than reconstructed: `meta.first` is not a
+     * property, so nothing local can say what `meta` holds after the write.
+     */
+    public function testTransactWriteBackfillsAWholeMapItWroteOneEntryOf(): void
+    {
+        $entity = RecordEntity::create(self::TENANT, 'a');
+        $entity->meta = ['first' => 'one', 'second' => 'two'];
+        $this->writer()->put($this->definition('record'), new PutInput($entity));
+
+        $this->writer()->transactWrite(new TransactWriteInput()
+            ->with(RecordEntity::class, new UpdateInput($entity, ['meta.first' => 'one-renewed'])));
+
+        static::assertSame(['first' => 'one-renewed', 'second' => 'two'], $entity->meta);
     }
 
     /**
@@ -407,6 +560,17 @@ class WriterClientTest extends DynamoDbTestCase
 
         /** @var ?RecordEntity $entity */
         return $entity;
+    }
+
+    private function readNormalized(NormalizedEntity $entity): ?NormalizedEntity
+    {
+        $read = $this->client()->get(new GetInput([
+            NormalizedEntity::class => [new Index($entity->pk, $entity->id)],
+        ]))->first();
+        static::assertTrue($read === null || $read instanceof NormalizedEntity);
+
+        /** @var ?NormalizedEntity $read */
+        return $read;
     }
 
     private function countRecords(): int

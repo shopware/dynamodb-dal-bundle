@@ -18,7 +18,7 @@ use Symfony\Component\DependencyInjection\Container;
  * Drives the real {@see Serializer} against a compiled {@see EntityDefinition} — its real normalizer and
  * field serializers, no mocks — and asserts the {@see SerializedResult} it produces: that
  * `getUpdateExpression()` builds the right SET / REMOVE / combined clauses with matching placeholder
- * maps, and that `apply()` writes the normalized values back onto an entity.
+ * maps.
  */
 #[CoversClass(Serializer::class)]
 #[CoversClass(SerializedResult::class)]
@@ -100,50 +100,6 @@ class SerializerTest extends TestCase
 
         static::assertSame('SET #meta.#kind = :sv_meta_2ekind', $expression['UpdateExpression']);
         static::assertSame(['#meta' => 'meta', '#kind' => 'kind'], $expression['ExpressionAttributeNames'] ?? null);
-    }
-
-    public function testApplyWritesSetValuesBackOntoTheEntity(): void
-    {
-        $entity = RecordEntity::create('tenant-1', 'a', name: 'before');
-
-        $this->serializer()->serialize($this->definition('record'), ['name' => 'after'])->apply($entity);
-
-        static::assertSame('after', $entity->name);
-    }
-
-    public function testApplyClearsRemovedValuesOnTheEntity(): void
-    {
-        $entity = RecordEntity::create('tenant-1', 'a', name: 'before');
-
-        $this->serializer()->serialize($this->definition('record'), ['name' => null])->apply($entity);
-
-        static::assertNull($entity->name);
-    }
-
-    public function testApplyRoundTripsAFullEntitysNormalizedValues(): void
-    {
-        $entity = RecordEntity::create('tenant-1', 'a', name: 'kept', counter: 3, tags: ['x']);
-        $entity->meta = ['k' => 'v'];
-
-        $this->serializer()->serialize($this->definition('record'), $entity)->apply($entity);
-
-        static::assertSame('tenant-1', $entity->tenantId);
-        static::assertSame('a', $entity->id);
-        static::assertSame('kept', $entity->name);
-        static::assertSame(3, $entity->counter);
-        static::assertSame(['x'], $entity->tags);
-        static::assertSame(['k' => 'v'], $entity->meta);
-    }
-
-    public function testApplyWritesWhatTheNormalizerGeneratedOntoTheEntity(): void
-    {
-        $entity = NormalizedEntity::create('tenant-1', 'invoice');
-
-        $this->serializer()->serialize($this->definition('normalized'), $entity)->apply($entity);
-
-        static::assertSame('tenant-1#invoice', $entity->pk);
-        static::assertTrue(isset($entity->id));
-        static::assertSame(1_700_000_000, $entity->createdAt->getTimestamp());
     }
 
     private function serializer(): Serializer

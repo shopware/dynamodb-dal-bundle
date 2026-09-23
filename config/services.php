@@ -44,6 +44,7 @@ return static function (ContainerConfigurator $container): void {
             service(Serializer::class),
             service(ExpressionCompiler::class),
             service(EntityDefinitionRegistry::class),
+            service(ReaderClient::class),
         ]);
 
     $services->set(Client::class)

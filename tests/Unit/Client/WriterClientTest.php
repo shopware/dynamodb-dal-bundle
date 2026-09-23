@@ -5,21 +5,29 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\PrefixingNormalizer;
 use AsyncAws\Core\Test\ResultMockFactory;
 use AsyncAws\DynamoDb\DynamoDbClient;
+use AsyncAws\DynamoDb\Enum\ReturnValue;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
+use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\BatchWriteItemOutput;
+use AsyncAws\DynamoDb\Result\PutItemOutput;
 use AsyncAws\DynamoDb\Result\TransactWriteItemsOutput;
+use AsyncAws\DynamoDb\Result\UpdateItemOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
 use AsyncAws\DynamoDb\ValueObject\WriteRequest;
@@ -62,9 +70,18 @@ class WriterClientTest extends TestCase
         $this->serializer->method('serialize')->willReturn($this->serializedResult());
         $this->serializer->method('serializeKey')
             ->willReturn(['autofilledId' => new AttributeValue(['S' => self::SERIALIZED_ID])]);
+        // The definitions here carry no shape-changing normalizer, so denormalizing is the identity —
+        // stubbed rather than mocked away, since the write-back runs through it.
+        $this->serializer->method('denormalize')->willReturnArgument(1);
 
         $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
-        $this->writer = new WriterClient($this->client, $this->serializer, new ExpressionCompiler(), $registry);
+        $this->writer = new WriterClient(
+            $this->client,
+            $this->serializer,
+            new ExpressionCompiler(),
+            $registry,
+            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler(), $registry),
+        );
     }
 
     public function testPutWithoutInputsIsANoOp(): void
@@ -93,6 +110,36 @@ class WriterClientTest extends TestCase
         $this->writer->delete($this->definition);
     }
 
+    /**
+     * What a write serialized is the row's shape. Applied back unchanged it would land on a property typed
+     * for the other side of the normalizer — harmless while one only fills missing values in, a type error
+     * once one converts between representations. A real serializer, so the round trip is the real one.
+     */
+    public function testPutWritesTheEntitysShapeRatherThanTheStoredOne(): void
+    {
+        $definition = NormalEntity::createDefinition(new PrefixingNormalizer());
+        $serializer = new Serializer();
+        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
+
+        $writer = new WriterClient(
+            $this->client,
+            $serializer,
+            new ExpressionCompiler(),
+            $registry,
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
+        );
+
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        $entity = $this->entity('a')->setName('test');
+
+        $writer->put($definition, new PutInput($entity));
+
+        static::assertSame('test', $entity->getName());
+    }
+
     public function testPutWithAConditionOnSeveralInputsFallsBackToTransactWriteItems(): void
     {
         $this->client->expects(static::never())->method('batchWriteItem');
@@ -118,6 +165,165 @@ class WriterClientTest extends TestCase
 
         static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
         static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+    }
+
+    /**
+     * An update names only some fields, so the returned row is the only thing that can say what the entity
+     * now looks like.
+     */
+    public function testUpdateKeyedByAnEntityAsksForTheWholeNewItemAndAppliesIt(): void
+    {
+        $entity = $this->entity('a');
+        $item = ['autofilledId' => new AttributeValue(['S' => 'refreshed'])];
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ReturnValues'] ?? null) === ReturnValue::ALL_NEW))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => $item]));
+
+        // The returned row goes onto the entity the caller passed in, not onto a new instance.
+        $this->serializer->expects(static::once())
+            ->method('deserialize')
+            ->with($this->definition, $item, $entity);
+
+        $this->writer->update($this->definition, new UpdateInput($entity, ['name' => 'after']));
+    }
+
+    /**
+     * Nothing to apply the row to, so nothing is asked for — ALL_NEW costs no capacity, but it does cost
+     * response bytes.
+     */
+    public function testUpdateKeyedByAnIndexAsksForNothingBack(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static fn (array $args): bool => !\array_key_exists('ReturnValues', $args)))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
+
+        $this->serializer->expects(static::never())->method('deserialize');
+
+        $this->writer->update($this->definition, new UpdateInput(new Index('a'), ['name' => 'after']));
+    }
+
+    /**
+     * A whole attribute is written with exactly the value that was sent, so the entity is filled from the
+     * serialized result and the transaction is not followed by a read at all.
+     */
+    public function testUpdateOfSeveralAppliesWholeAttributesWithoutAReadback(): void
+    {
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::never())->method('batchGetItem');
+
+        $entityA = $this->entity('a');
+        $entityB = $this->entity('b');
+
+        $this->writer->update(
+            $this->definition,
+            new UpdateInput($entityA, ['name' => 'one']),
+            new UpdateInput($entityB, ['name' => 'two']),
+        );
+
+        static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
+        static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+    }
+
+    /**
+     * A nested path is the one case the serialized result cannot answer, so it costs a read — strongly
+     * consistent, since an eventually consistent one could answer from a replica that has not seen the
+     * transaction and backfill a stale row.
+     */
+    public function testUpdateOfSeveralReadsBackWhenAPathDescendsIntoAnAttribute(): void
+    {
+        $definition = MapDefinition::create();
+
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::once())
+            ->method('batchGetItem')
+            ->with(static::callback(static function (array $args) use ($definition): bool {
+                $request = $args['RequestItems'][$definition->getTable()] ?? null;
+
+                return \is_array($request)
+                    && $request['ConsistentRead'] === true
+                    && \count($request['Keys']) === 2;
+            }))
+            ->willReturn(ResultMockFactory::create(BatchGetItemOutput::class, ['responses' => [], 'unprocessedKeys' => []]));
+
+        $this->nestedWriter($definition)->update(
+            $definition,
+            new UpdateInput($this->entity('a'), ['settings.colour' => 'red']),
+            new UpdateInput($this->entity('b'), ['settings.colour' => 'blue']),
+        );
+    }
+
+    /**
+     * `refresh: null` buys no read, so the same nested update leaves that attribute behind instead.
+     */
+    public function testUpdateOfSeveralWithoutAReadbackNeverReadsBackForANestedPath(): void
+    {
+        $definition = MapDefinition::create();
+
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::never())->method('batchGetItem');
+
+        $this->nestedWriter($definition)->update(
+            $definition,
+            new UpdateInput($this->entity('a'), ['settings.colour' => 'red'], refresh: null),
+            new UpdateInput($this->entity('b'), ['settings.colour' => 'blue'], refresh: null),
+        );
+    }
+
+    public function testUpdateOptedOutOfTheRefreshAsksForNothingBack(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static fn (array $args): bool => !\array_key_exists('ReturnValues', $args)))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
+
+        $this->serializer->expects(static::never())->method('deserialize');
+
+        $this->writer->update($this->definition, new UpdateInput($this->entity('a'), ['name' => 'after'], refresh: false));
+    }
+
+    public function testUpdateOfSeveralOptedOutOfTheRefreshReadsNothingBack(): void
+    {
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::never())->method('batchGetItem');
+
+        $this->writer->update(
+            $this->definition,
+            new UpdateInput($this->entity('a'), ['name' => 'one'], refresh: false),
+            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: false),
+        );
+    }
+
+    /**
+     * Keyed by an index there is no entity to fill, so the transaction is not followed by a read.
+     */
+    public function testUpdateOfSeveralByIndexReadsNothingBack(): void
+    {
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::never())->method('batchGetItem');
+
+        $this->writer->update(
+            $this->definition,
+            new UpdateInput(new Index('a'), ['name' => 'one']),
+            new UpdateInput(new Index('b'), ['name' => 'two']),
+        );
     }
 
     public function testDeleteWithAConditionOnSeveralInputsFallsBackToTransactWriteItems(): void
@@ -236,6 +442,40 @@ class WriterClientTest extends TestCase
 
         static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
         static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+    }
+
+    /**
+     * A writer whose serializer answers every `serialize()` with a path that descends into an attribute,
+     * which {@see MapDefinition} is the only fixture able to express.
+     *
+     * @param EntityDefinition<NormalEntity> $definition
+     */
+    private function nestedWriter(EntityDefinition $definition): WriterClient
+    {
+        $path = FieldPath::tryParse($definition, 'settings.colour');
+        static::assertNotNull($path);
+
+        $serializer = $this->createMock(Serializer::class);
+        $serializer->method('serialize')->willReturn(new SerializedResult(
+            $definition,
+            ['settings.colour' => new SerializedFieldResult($path, new AttributeValue(['S' => 'red']))],
+            ['settings.colour' => 'red'],
+        ));
+        $serializer->method('serializeKey')
+            ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): array => [
+                'settings' => new AttributeValue(['S' => spl_object_hash((object) $key)]),
+            ]);
+        $serializer->method('denormalize')->willReturnArgument(1);
+
+        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
+
+        return new WriterClient(
+            $this->client,
+            $serializer,
+            new ExpressionCompiler(),
+            $registry,
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
+        );
     }
 
     private function entity(string $id): NormalEntity

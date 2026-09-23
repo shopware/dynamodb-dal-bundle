@@ -2,14 +2,13 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer;
 
-use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * @internal
  *
- * @template Definition of EntityDefinition = EntityDefinition
+ * @template-covariant Definition of EntityDefinition = EntityDefinition
  */
 class SerializedResult
 {
@@ -28,6 +27,22 @@ class SerializedResult
     public function getEntityDefinition(): EntityDefinition
     {
         return $this->definition;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getNormalizedFields(): array
+    {
+        return $this->normalizedFields;
+    }
+
+    /**
+     * Whether any field addresses a spot inside an attribute.
+     */
+    public function hasNestedFields(): bool
+    {
+        return array_any($this->fields, static fn (SerializedFieldResult $field): bool => $field->isNested());
     }
 
     /**
@@ -133,10 +148,5 @@ class SerializedResult
         }
 
         return $expression;
-    }
-
-    public function apply(AbstractEntity $entity): void
-    {
-        $entity->setVars($this->normalizedFields);
     }
 }

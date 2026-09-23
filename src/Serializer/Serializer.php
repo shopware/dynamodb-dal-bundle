@@ -30,12 +30,13 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      * @param GetItemOutput|array<string, AttributeValue> $output
+     * @param Entity|null $entity - If provided backfills to this entity instead of creating a new one
      *
      * @throws DALException if deserialization of any field fails or a required field value is missing after deserialization and denormalization
      *
      * @return Entity
      */
-    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output): ?AbstractEntity
+    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output, ?AbstractEntity $entity = null): ?AbstractEntity
     {
         if ($output instanceof GetItemOutput) {
             $output = $output->getItem();
@@ -62,7 +63,7 @@ class Serializer
             }
         }
 
-        return $definition->createInstance()->setVars($fields);
+        return ($entity ?? $definition->createInstance())->setVars($fields);
     }
 
     /**
@@ -219,6 +220,40 @@ class Serializer
     }
 
     /**
+     * A stable identity for an item's primary key
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param EntityDefinition<Entity> $definition
+     * @param Entity|Index|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
+     *
+     * @throws DALException if a key field does not exist in the definition or a value is missing
+     */
+    public function hashKey(EntityDefinition $definition, AbstractEntity|Index|array $key): string
+    {
+        if (!\is_array($key)) {
+            $key = $this->serializeKey($definition, $key);
+        }
+
+        $parts = [];
+        foreach ($definition->getKeySchema()->getFields() as $field) {
+            $value = $key[$field] ?? null;
+
+            // A key attribute is only ever a string, number or binary.
+            $parts[] = match (true) {
+                $value === null => '',
+                $value->getS() !== null => 'S:' . $value->getS(),
+                $value->getN() !== null => 'N:' . $value->getN(),
+                $value->getB() !== null => 'B:' . base64_encode($value->getB()),
+                // partition and sort keys are always one of the above, so this is only defensive.
+                default => '',
+            };
+        }
+
+        return implode("\0", $parts);
+    }
+
+    /**
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
@@ -272,7 +307,7 @@ class Serializer
      *
      * @return array<string, mixed>
      */
-    protected function normalize(EntityDefinition $definition, array $fields): mixed
+    public function normalize(EntityDefinition $definition, array $fields): mixed
     {
         if (!$definition->getNormalizer()) {
             return $fields;
@@ -291,7 +326,7 @@ class Serializer
      *
      * @return array<string, mixed>
      */
-    protected function denormalize(EntityDefinition $definition, array $fields): mixed
+    public function denormalize(EntityDefinition $definition, array $fields): mixed
     {
         if (!$definition->getNormalizer()) {
             return $fields;
