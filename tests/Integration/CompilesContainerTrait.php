@@ -60,6 +60,7 @@ trait CompilesContainerTrait
         $container = new ContainerBuilder(new EnvPlaceholderParameterBag([
             'kernel.environment' => 'test',
             'kernel.debug' => false,
+            'kernel.build_dir' => sys_get_temp_dir(),
         ]));
 
         $bundle = new ShopwareDynamodbDalBundle();
