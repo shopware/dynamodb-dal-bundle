@@ -1,10 +1,10 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Criteria;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiler;
-use Shopware\DynamodbDalBundle\Criteria\Filter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\AndFilter;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\Filter;
+use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;

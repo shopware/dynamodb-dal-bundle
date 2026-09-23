@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria;
+namespace Shopware\DynamodbDalBundle\Expression;
 
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 

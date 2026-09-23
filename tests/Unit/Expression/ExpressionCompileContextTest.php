@@ -1,10 +1,10 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Criteria;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
-use Shopware\DynamodbDalBundle\Criteria\Filter;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
@@ -505,7 +505,7 @@ class ExpressionCompileContextTest extends TestCase
     /**
      * @return array{0: ?string, 1: ExpressionCompileContext}
      */
-    private function compile(FilterInterface $filter, ?EntityDefinition $definition = null): array
+    private function compile(ExpressionInterface $filter, ?EntityDefinition $definition = null): array
     {
         $context = new ExpressionCompileContext(
             $definition ?? NormalEntity::createDefinition(),

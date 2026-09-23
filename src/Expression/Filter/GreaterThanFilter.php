@@ -1,11 +1,11 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria\Filter;
+namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class GreaterThanFilter implements FilterInterface
+class GreaterThanFilter implements ExpressionInterface
 {
     public function __construct(
         public readonly string $fieldName,

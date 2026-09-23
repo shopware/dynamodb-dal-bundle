@@ -7,9 +7,9 @@ use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiledResult;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
@@ -310,7 +310,7 @@ class WriterClient
         return array_any($inputs, static fn ($input): bool => (bool) $input->conditionExpression);
     }
 
-    private function compileExpression(EntityDefinition $definition, ?FilterInterface $expression): ExpressionCompiledResult
+    private function compileExpression(EntityDefinition $definition, ?ExpressionInterface $expression): ExpressionCompiledResult
     {
         if ($expression) {
             return $this->expressionCompiler->compile($definition, $expression);

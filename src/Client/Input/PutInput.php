@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
@@ -17,7 +17,7 @@ final class PutInput
      */
     public function __construct(
         public readonly AbstractEntity $entity,
-        public readonly ?FilterInterface $conditionExpression = null,
+        public readonly ?ExpressionInterface $conditionExpression = null,
     ) {
     }
 }

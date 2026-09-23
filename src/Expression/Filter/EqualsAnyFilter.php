@@ -1,11 +1,11 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria\Filter;
+namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class EqualsAnyFilter implements FilterInterface
+class EqualsAnyFilter implements ExpressionInterface
 {
     /**
      * @var list<mixed>

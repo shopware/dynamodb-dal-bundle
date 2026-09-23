@@ -10,8 +10,8 @@ use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\Filter;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\DynamoDbTestKernel;
@@ -204,7 +204,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
     /**
      * @param array<string, mixed> $fields - keyed by path, so a key may address one map entry
      */
-    private function update(string $id, array $fields, ?FilterInterface $condition = null): void
+    private function update(string $id, array $fields, ?ExpressionInterface $condition = null): void
     {
         $this->client()->update($this->definition('record'), new UpdateInput(new Index(self::TENANT, $id), $fields, $condition));
     }

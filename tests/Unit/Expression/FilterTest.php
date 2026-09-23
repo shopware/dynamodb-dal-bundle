@@ -1,22 +1,22 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Criteria;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\Filter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\AndFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\BeginsWithFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\BetweenFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\ContainsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\EqualsAnyFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\EqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\ExistsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\GreaterThanFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\GreaterThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\LessThanFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\LessThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\NotFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\OrFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\SizeEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter;
+use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\EqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanOrEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\LessThanFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\LessThanOrEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\SizeEqualsFilter;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

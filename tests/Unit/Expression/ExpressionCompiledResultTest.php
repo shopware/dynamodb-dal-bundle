@@ -1,8 +1,8 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Criteria;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiledResult;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;

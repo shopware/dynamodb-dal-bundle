@@ -1,10 +1,10 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria\Contract;
+namespace Shopware\DynamodbDalBundle\Expression\Contract;
 
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-interface FilterInterface
+interface ExpressionInterface
 {
     /**
      * Compile this filter into a DynamoDB FilterExpression fragment.

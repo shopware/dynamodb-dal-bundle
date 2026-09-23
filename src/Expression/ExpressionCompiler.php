@@ -1,13 +1,13 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria;
+namespace Shopware\DynamodbDalBundle\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * Compiles a {@see FilterInterface} into an {@see ExpressionCompiledResult}.
+ * Compiles a {@see ExpressionInterface} into an {@see ExpressionCompiledResult}.
  *
  * Each `compile()` call results a result containing expression attributes that are unique
  * and can be merged with other results into one list without colliding keys.
@@ -25,7 +25,7 @@ class ExpressionCompiler implements ResetInterface
      */
     private int $sequence = 0;
 
-    public function compile(EntityDefinition $definition, FilterInterface $filter): ExpressionCompiledResult
+    public function compile(EntityDefinition $definition, ExpressionInterface $filter): ExpressionCompiledResult
     {
         $context = new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
 

@@ -1,23 +1,23 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria\Filter;
+namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class OrFilter implements FilterInterface
+class OrFilter implements ExpressionInterface
 {
     /**
-     * @var list<FilterInterface>
+     * @var list<ExpressionInterface>
      */
     public array $filters;
 
-    public function __construct(FilterInterface ...$filters)
+    public function __construct(ExpressionInterface ...$filters)
     {
         $this->filters = array_values($filters);
     }
 
-    public function or(FilterInterface ...$filters): self
+    public function or(ExpressionInterface ...$filters): self
     {
         $filters = array_values($filters);
         $this->filters = array_values(array_merge($this->filters, $filters));

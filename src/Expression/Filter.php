@@ -1,28 +1,28 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria;
+namespace Shopware\DynamodbDalBundle\Expression;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\Filter\AndFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\BeginsWithFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\BetweenFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\ContainsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\EqualsAnyFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\EqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\ExistsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\GreaterThanFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\GreaterThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\LessThanFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\LessThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\NotFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\OrFilter;
-use Shopware\DynamodbDalBundle\Criteria\Filter\SizeEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\EqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanOrEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\LessThanFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\LessThanOrEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\SizeEqualsFilter;
 
 /**
- * Static factory for building filter trees passed to {@see Criteria}:
+ * Static factory for building expression trees passed to the client inputs:
  *
  * ```
- * $criteria = new Criteria(
+ * $input = new ScanInput(
  *     filter: Filter::and(
  *         Filter::equals('name', 'something'),
  *         Filter::or(
@@ -97,17 +97,17 @@ final class Filter
         return new SizeEqualsFilter($fieldName, $value);
     }
 
-    public static function and(FilterInterface ...$filters): AndFilter
+    public static function and(ExpressionInterface ...$filters): AndFilter
     {
         return new AndFilter(...$filters);
     }
 
-    public static function or(FilterInterface ...$filters): OrFilter
+    public static function or(ExpressionInterface ...$filters): OrFilter
     {
         return new OrFilter(...$filters);
     }
 
-    public static function not(FilterInterface $filter): NotFilter
+    public static function not(ExpressionInterface $filter): NotFilter
     {
         return new NotFilter($filter);
     }

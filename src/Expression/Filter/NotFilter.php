@@ -1,14 +1,14 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Criteria\Filter;
+namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class NotFilter implements FilterInterface
+class NotFilter implements ExpressionInterface
 {
     public function __construct(
-        public readonly FilterInterface $filter,
+        public readonly ExpressionInterface $filter,
     ) {
     }
 

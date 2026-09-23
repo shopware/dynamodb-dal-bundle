@@ -8,8 +8,8 @@ use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Cursor\CursorNormalizer;
 use Shopware\DynamodbDalBundle\Client\Index;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiler;
-use Shopware\DynamodbDalBundle\Criteria\Filter;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Field\BackedEnumFieldSerializer;
@@ -164,7 +164,7 @@ class BundleIntegrationTest extends TestCase
         static::assertEquals($entity->getVars(), $restored->getVars());
     }
 
-    public function testCriteriaCompileAgainstTheCompiledDefinition(): void
+    public function testExpressionCompilesAgainstTheCompiledDefinition(): void
     {
         $compiler = $this->container()->get('test.' . ExpressionCompiler::class);
         static::assertInstanceOf(ExpressionCompiler::class, $compiler);

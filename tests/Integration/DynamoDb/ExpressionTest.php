@@ -8,9 +8,9 @@ use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
-use Shopware\DynamodbDalBundle\Criteria\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiler;
-use Shopware\DynamodbDalBundle\Criteria\Filter;
+use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
 
@@ -22,7 +22,7 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
  */
 #[CoversClass(ExpressionCompiler::class)]
 #[CoversClass(Filter::class)]
-class CriteriaTest extends DynamoDbTestCase
+class ExpressionTest extends DynamoDbTestCase
 {
     public function testEqualsAnyMatchesEveryListedValue(): void
     {
@@ -280,7 +280,7 @@ class CriteriaTest extends DynamoDbTestCase
     /**
      * @return list<string>
      */
-    private function scan(FilterInterface $filter): array
+    private function scan(ExpressionInterface $filter): array
     {
         return $this->ids($this->client()->search($this->definition('record'), new ScanInput($filter))->toArray(), sorted: true);
     }
