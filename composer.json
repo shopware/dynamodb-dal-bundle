@@ -27,9 +27,7 @@
         "symfony/dependency-injection": "^7.3 || ^8.0",
         "symfony/http-foundation": "^7.3 || ^8.0",
         "symfony/http-kernel": "^7.3 || ^8.0",
-        "symfony/serializer": "^7.3 || ^8.0",
-        "symfony/service-contracts": "^3.5",
-        "symfony/uid": "^7.3 || ^8.0"
+        "symfony/service-contracts": "^3.5"
     },
     "require-dev": {
         "async-aws/async-aws-bundle": "^1.17",
@@ -42,7 +40,9 @@
         "phpunit/phpunit": "^13.2.2",
         "symfony/framework-bundle": "^7.3 || ^8.0",
         "symfony/http-client": "^7.3 || ^8.0",
+        "symfony/serializer": "^7.3 || ^8.0",
         "symfony/stopwatch": "^7.3 || ^8.0",
+        "symfony/uid": "^7.3 || ^8.0",
         "symfony/web-profiler-bundle": "^7.3 || ^8.0",
         "symfony/yaml": "^7.3 || ^8.0"
     },
@@ -67,6 +67,8 @@
     ],
     "suggest": {
         "async-aws/async-aws-bundle": "Provides the AsyncAws DynamoDbClient service the DAL clients autowire",
+        "symfony/serializer": "Registers CursorNormalizer to (de)normalize pagination cursors",
+        "symfony/uid": "Enables Symfony Uid (Uuid/Ulid) entity properties",
         "symfony/framework-bundle": "Needed for the profiler panel (DynamoDbDataCollector)",
         "symfony/web-profiler-bundle": "Renders the DynamoDB profiler panel"
     }
