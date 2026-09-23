@@ -40,10 +40,6 @@ final class MapDefinition
             new KeySchema('settings'),
         );
 
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
-
         return $definition;
     }
 

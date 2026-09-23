@@ -31,8 +31,7 @@ class SerializerTest extends TestCase
     protected function setUp(): void
     {
         $this->container = $this->compileContainer(
-            ['record' => 'phpunit-record', 'normalized' => 'phpunit-normalized'],
-            [RecordEntity::class, NormalizedEntity::class],
+            [RecordEntity::class => 'phpunit-record', NormalizedEntity::class => 'phpunit-normalized'],
             [NormalizedEntityNormalizer::class],
             [Serializer::class],
         );

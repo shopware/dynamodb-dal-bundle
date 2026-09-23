@@ -10,36 +10,15 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 
 /**
- * Tags every registered {@see AbstractEntity} and {@see AbstractFieldSerializer} so
- * {@see DefinitionCompilerPass} finds them.
- *
- * It walks the container's definitions rather than relying on `registerForAutoconfiguration()`,
- * because autoconfiguration only ever reaches services an application registered with
- * `autoconfigure: true`. An entity declared as a plain service — one explicit definition, a service
- * file that does not turn autoconfiguration on, a `ChildDefinition` — would otherwise be silently
- * absent from the DAL, with the first symptom a missing `dal.definition.<name>` service at runtime.
- *
- * Tagging a service twice would have {@see DefinitionCompilerPass} compile it twice, so a definition
- * that already carries the tag (from an application's own service file, or from autoconfiguration
- * where it is enabled) is left alone.
+ * Tags every registered {@see AbstractFieldSerializer} so {@see DefinitionCompilerPass} finds it.
  */
 class ServiceTaggingPass implements CompilerPassInterface
 {
-    /**
-     * The tag names match the class names, which is what {@see DefinitionCompilerPass} looks for.
-     *
-     * @var list<class-string>
-     */
-    private const array TAGGED_BASE_CLASSES = [
-        AbstractEntity::class,
-        AbstractFieldSerializer::class,
-    ];
-
     public function process(ContainerBuilder $container): void
     {
         foreach ($container->getDefinitions() as $definition) {
             // An abstract definition is a template, never a service of its own.
-            if ($definition->isAbstract()) {
+            if ($definition->isAbstract() || $definition->hasTag(AbstractFieldSerializer::class)) {
                 continue;
             }
 
@@ -48,10 +27,9 @@ class ServiceTaggingPass implements CompilerPassInterface
                 continue;
             }
 
-            foreach (self::TAGGED_BASE_CLASSES as $baseClass) {
-                if (!$definition->hasTag($baseClass) && is_subclass_of($class, $baseClass, true)) {
-                    $definition->addTag($baseClass);
-                }
+            // The tag name matches the class name, which is what DefinitionCompilerPass looks for.
+            if (is_subclass_of($class, AbstractFieldSerializer::class, true)) {
+                $definition->addTag(AbstractFieldSerializer::class);
             }
         }
     }

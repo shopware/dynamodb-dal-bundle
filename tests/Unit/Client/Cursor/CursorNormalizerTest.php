@@ -321,10 +321,6 @@ class CursorNormalizerTest extends TestCase
             ['statusCreatedAtIndex' => new IndexSchema('statusCreatedAtIndex', hashKey: 'status', rangeKey: 'createdAt')],
         );
 
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
-
         return $definition;
     }
 }

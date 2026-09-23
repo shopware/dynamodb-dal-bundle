@@ -10,8 +10,8 @@ use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\ParameterBag\EnvPlaceholderParameterBag;
 
 /**
- * Compiles a container holding nothing but this bundle and the entity classes under test, registered
- * the way an application registers its own. Cheaper than booting a kernel, and it needs no DynamoDB.
+ * Compiles a container holding nothing but this bundle, configured with the entities under test the
+ * way an application configures its own. Cheaper than booting a kernel, and it needs no DynamoDB.
  */
 trait CompilesContainerTrait
 {
@@ -20,28 +20,47 @@ trait CompilesContainerTrait
      * reference by building the service again, so the back-reference every field definition holds to
      * its entity definition would come out as a second instance.
      *
-     * @param array<string, string> $tables - logical entity name => physical table name
-     * @param list<class-string> $entityClasses
+     * @param array<class-string, string> $entities - entity class => physical table name, the bundle's own configuration
      * @param list<class-string> $services - anything the entities reference, such as a normalizer
      * @param list<string> $public - bundle services to expose, readable back as `test.<id>`
      * @param ?\Closure(ContainerBuilder): void $configure - last word on the container before it compiles
      */
     private function compileContainer(
-        array $tables,
-        array $entityClasses,
+        array $entities,
         array $services = [],
         array $public = [],
         ?\Closure $configure = null,
     ): Container {
-        $parameters = [
+        $container = $this->compileContainerBuilder($entities, $services, $public, $configure);
+
+        $class = 'DalTestContainer' . str_replace('.', '', uniqid('', true));
+        eval('?>' . new PhpDumper($container)->dump(['class' => $class]));
+
+        /** @var Container $dumped */
+        $dumped = new $class();
+
+        return $dumped;
+    }
+
+    /**
+     * The builder behind {@see compileContainer()}, for a test that needs to see the services a
+     * dumped container no longer distinguishes — a private one among them.
+     *
+     * @param array<class-string, string> $entities - entity class => physical table name, the bundle's own configuration
+     * @param list<class-string> $services - anything the entities reference, such as a normalizer
+     * @param list<string> $public - bundle services to expose, readable back as `test.<id>`
+     * @param ?\Closure(ContainerBuilder): void $configure - last word on the container before it compiles
+     */
+    private function compileContainerBuilder(
+        array $entities,
+        array $services = [],
+        array $public = [],
+        ?\Closure $configure = null,
+    ): ContainerBuilder {
+        $container = new ContainerBuilder(new EnvPlaceholderParameterBag([
             'kernel.environment' => 'test',
             'kernel.debug' => false,
-        ];
-        foreach ($tables as $name => $table) {
-            $parameters[\sprintf('env(DYNAMODB_TABLE_%s)', strtoupper($name))] = $table;
-        }
-
-        $container = new ContainerBuilder(new EnvPlaceholderParameterBag($parameters));
+        ]));
 
         $bundle = new ShopwareDynamodbDalBundle();
         $bundle->build($container);
@@ -49,18 +68,13 @@ trait CompilesContainerTrait
         $extension = $bundle->getContainerExtension();
         static::assertNotNull($extension);
         $container->registerExtension($extension);
-        $container->loadFromExtension($extension->getAlias(), []);
+        $container->loadFromExtension($extension->getAlias(), ['entities' => $entities]);
 
         // What the AsyncAws bundle would provide; nothing compiled here ever reaches it.
         $container->register(DynamoDbClient::class)->setSynthetic(true);
 
         foreach ($services as $service) {
             $container->register($service)->setPublic(true);
-        }
-
-        // Registered plain — no tag, no autoconfiguration. Picking these up is the bundle's job.
-        foreach ($entityClasses as $entityClass) {
-            $container->register($entityClass);
         }
 
         $configure?->__invoke($container);
@@ -71,12 +85,6 @@ trait CompilesContainerTrait
 
         $container->compile(true);
 
-        $class = 'DalTestContainer' . str_replace('.', '', uniqid('', true));
-        eval('?>' . new PhpDumper($container)->dump(['class' => $class]));
-
-        /** @var Container $dumped */
-        $dumped = new $class();
-
-        return $dumped;
+        return $container;
     }
 }

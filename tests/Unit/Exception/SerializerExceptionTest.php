@@ -229,8 +229,8 @@ class SerializerExceptionTest extends TestCase
             new StringFieldSerializer(),
         );
 
-        /** @var EntityDefinition<CustomerEntity> $entityDefinition */
-        $entityDefinition = new EntityDefinition(
+        // Constructing it is what gives the field definition its back-reference.
+        new EntityDefinition(
             'customer',
             'customer',
             CustomerEntity::class,
@@ -238,8 +238,6 @@ class SerializerExceptionTest extends TestCase
             [$name => $fieldDefinition],
             new KeySchema('tenantId', 'label'),
         );
-
-        $fieldDefinition->setEntityDefinition($entityDefinition);
 
         return $fieldDefinition;
     }

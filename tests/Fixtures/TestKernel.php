@@ -14,6 +14,7 @@ use Shopware\DynamodbDalBundle\Profiler\DynamoDbDataCollector;
 use Shopware\DynamodbDalBundle\Profiler\TraceableSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\ShopwareDynamodbDalBundle;
+use Shopware\DynamodbDalBundle\Tests\Fixtures\Entity\TestEntity;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\TwigBundle\TwigBundle;
@@ -105,6 +106,10 @@ class TestKernel extends BaseKernel
         $isDev = $this->environment === 'dev';
 
         $builder->setParameter('env(DYNAMODB_TABLE_TEST)', 'test-table');
+
+        $container->extension('shopware_dynamodb_dal', [
+            'entities' => [TestEntity::class => '%env(DYNAMODB_TABLE_TEST)%'],
+        ]);
 
         $container->extension('framework', [
             'secret' => 'test',

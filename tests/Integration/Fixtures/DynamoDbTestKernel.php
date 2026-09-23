@@ -11,6 +11,9 @@ use Shopware\DynamodbDalBundle\Criteria\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\ShopwareDynamodbDalBundle;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\NormalizedEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -83,9 +86,13 @@ class DynamoDbTestKernel extends BaseKernel
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
     {
-        foreach (self::TABLES as $name => $table) {
-            $builder->setParameter(\sprintf('env(DYNAMODB_TABLE_%s)', strtoupper($name)), $table);
-        }
+        $container->extension('shopware_dynamodb_dal', [
+            'entities' => [
+                RecordEntity::class => self::TABLES['record'],
+                ArchiveEntity::class => self::TABLES['archive'],
+                NormalizedEntity::class => self::TABLES['normalized'],
+            ],
+        ]);
 
         $container->extension('framework', [
             'secret' => 'test',

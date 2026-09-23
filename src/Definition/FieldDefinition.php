@@ -95,7 +95,7 @@ class FieldDefinition
     }
 
     /**
-     * @internal - Dependency injection only
+     * @internal - Called by {@see EntityDefinition::__construct()}
      */
     public function setEntityDefinition(EntityDefinition $entityDefinition): void
     {

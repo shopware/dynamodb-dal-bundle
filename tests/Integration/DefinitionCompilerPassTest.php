@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Attribute\Table;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
+use Shopware\DynamodbDalBundle\DefinitionBuilder;
 use Shopware\DynamodbDalBundle\DefinitionCompilerPass;
 use Shopware\DynamodbDalBundle\ServiceTaggingPass;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
@@ -17,6 +18,7 @@ use Shopware\DynamodbDalBundle\Serializer\Field\IntFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\AbstractBaseEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithArrayWithoutDocblockEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithCustomTypeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithListFieldEntity;
@@ -41,10 +43,10 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\ValidEnti
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\WrongNormalizerEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 #[CoversClass(DefinitionCompilerPass::class)]
+#[CoversClass(DefinitionBuilder::class)]
 #[CoversClass(ServiceTaggingPass::class)]
 class DefinitionCompilerPassTest extends TestCase
 {
@@ -103,13 +105,39 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertNull($definition->getIndex('doesNotExist'));
     }
 
-    public function testSkipsAbstractEntityWhenTagged(): void
+    /**
+     * An entity is one service. Its fields, key schema and indexes are values of that service rather
+     * than services of their own: nothing ever resolves them on their own, and as separate services
+     * the back-reference each field definition holds to its entity definition would be circular.
+     */
+    public function testRegistersASingleServicePerEntity(): void
     {
-        /** @var EntityDefinition<ValidEntity> $definition */
-        $definition = $this->compileDefinition(AbstractEntity::class, ValidEntity::class);
+        $container = $this->compileContainerBuilder([KeyAwareEntity::class => self::TABLE]);
 
-        static::assertSame('phpunit_test', $definition->getName());
-        static::assertSame(ValidEntity::class, $definition->getClass());
+        $ids = array_values(array_filter(
+            $container->getServiceIds(),
+            static fn (string $id): bool => str_starts_with($id, 'dal.definition'),
+        ));
+
+        static::assertSame(['dal.definition.phpunit_test'], $ids);
+    }
+
+    /**
+     * The configured table reaches the definition verbatim, so an application points its entity at
+     * whichever environment variable it names the table with and the container resolves it.
+     */
+    public function testTakesTheTableFromTheConfiguration(): void
+    {
+        $container = $this->compileContainer(
+            [ValidEntity::class => '%env(DYNAMODB_TABLE_PHPUNIT)%'],
+            configure: static function (ContainerBuilder $container): void {
+                $container->setParameter('env(DYNAMODB_TABLE_PHPUNIT)', 'from-the-environment');
+            },
+        );
+
+        $definition = $container->get('dal.definition.phpunit_test');
+        static::assertInstanceOf(EntityDefinition::class, $definition);
+        static::assertSame('from-the-environment', $definition->getTable());
     }
 
     public function testMissingTableAttribute(): void
@@ -303,59 +331,59 @@ class DefinitionCompilerPassTest extends TestCase
     }
 
     /**
-     * The registration an application is most likely to have: one plain service definition, no tag and
-     * no autoconfiguration. {@see ServiceTaggingPass} is what makes it reach the DAL.
+     * Configuring an entity is all an application does; it registers nothing, and an entity it never
+     * configured is simply not part of the DAL.
      */
-    public function testCompilesAnEntityRegisteredWithoutATagOrAutoconfiguration(): void
+    public function testCompilesOnlyTheConfiguredEntities(): void
     {
-        $definition = $this->compileDefinition(ValidEntity::class);
+        $container = $this->compileContainer([ValidEntity::class => self::TABLE]);
 
-        static::assertSame(ValidEntity::class, $definition->getClass());
-    }
-
-    public function testCompilesAnEntityTheApplicationTaggedItself(): void
-    {
-        $definition = $this->compileWith(static function (ContainerBuilder $container): void {
-            $container->register(ValidEntity::class)->addTag(AbstractEntity::class);
-        });
-
-        static::assertSame(ValidEntity::class, $definition?->getClass());
-    }
-
-    public function testCompilesAnEntityRegisteredWithAutoconfigurationStillOn(): void
-    {
-        $definition = $this->compileWith(static function (ContainerBuilder $container): void {
-            $container->register(ValidEntity::class)->setAutoconfigured(true);
-        });
-
-        static::assertSame(ValidEntity::class, $definition?->getClass());
+        static::assertTrue($container->has('dal.definition.phpunit_test'));
+        static::assertFalse($container->has(ValidEntity::class));
     }
 
     /**
-     * A child definition carries no class of its own, so the tagging pass has to follow it up to the
-     * parent — child definitions are only resolved after this pass has run.
+     * An application is free to have its entities inside its own service glob. A service of an entity
+     * class is a trap — a controller argument typed as one would be autowired to an empty instance
+     * instead of being resolved from the request — so the pass takes it back out.
      */
-    public function testCompilesAnEntityRegisteredAsAChildDefinition(): void
+    public function testRemovesAnEntityTheApplicationAlsoRegisteredAsAService(): void
     {
-        $definition = $this->compileWith(static function (ContainerBuilder $container): void {
-            $container->register('app.entity.template', ValidEntity::class)->setAbstract(true);
-            $container->setDefinition(ValidEntity::class, new ChildDefinition('app.entity.template'));
-        });
+        $container = $this->compileContainerBuilder(
+            [ValidEntity::class => self::TABLE],
+            configure: static function (ContainerBuilder $container): void {
+                $container->register(ValidEntity::class)->setPublic(true);
+            },
+        );
 
-        static::assertSame(ValidEntity::class, $definition?->getClass());
+        static::assertFalse($container->has(ValidEntity::class));
+        static::assertTrue($container->has('dal.definition.phpunit_test'));
+    }
+
+    public function testAConfiguredClassThatDoesNotExist(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entity App\Entity\NotHere is configured as an entity but does not exist'));
+
+        /** @phpstan-ignore-next-line argument.type (a class that deliberately does not exist) */
+        $this->compileContainer(['App\Entity\NotHere' => self::TABLE]);
+    }
+
+    public function testAConfiguredClassThatIsNotAnEntity(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entity ' . \stdClass::class . ' is configured as an entity but does not extend ' . AbstractEntity::class));
+
+        $this->compileContainer([\stdClass::class => self::TABLE]);
     }
 
     /**
-     * An abstract definition is a template rather than a service, so tagging it would have the DAL
-     * compile a definition for something that is never instantiated.
+     * A base its entities extend carries attributes for them to inherit; compiling it would claim the
+     * same name and table they do.
      */
-    public function testIgnoresAnAbstractEntityDefinition(): void
+    public function testAConfiguredAbstractEntity(): void
     {
-        $definition = $this->compileWith(static function (ContainerBuilder $container): void {
-            $container->register('app.entity.template', ValidEntity::class)->setAbstract(true);
-        });
+        static::expectExceptionObject(new \LogicException('Entity ' . AbstractBaseEntity::class . ' is abstract; configure the entities extending it instead'));
 
-        static::assertNull($definition);
+        $this->compileContainer([AbstractBaseEntity::class => self::TABLE]);
     }
 
     /**
@@ -458,30 +486,8 @@ class DefinitionCompilerPassTest extends TestCase
     }
 
     /**
-     * Compiles a container whose entity registration `$configure` has the last word over, and returns
-     * the definition the pass built — or null when it built none.
-     *
-     * @param \Closure(ContainerBuilder): void $configure
-     *
-     * @return EntityDefinition<AbstractEntity>|null
-     */
-    private function compileWith(\Closure $configure): ?EntityDefinition
-    {
-        $container = $this->compileContainer(['phpunit_test' => self::TABLE], [], [], [], $configure);
-
-        if (!$container->has('dal.definition.phpunit_test')) {
-            return null;
-        }
-
-        $definition = $container->get('dal.definition.phpunit_test');
-        static::assertInstanceOf(EntityDefinition::class, $definition);
-
-        return $definition;
-    }
-
-    /**
-     * Anything passed that is not an entity — a field serializer, say — is registered as a plain
-     * service, untagged, exactly as an application would.
+     * Every entity passed is configured against the same table; anything else — a field serializer,
+     * say — is registered as a plain service, untagged, exactly as an application would.
      *
      * @param class-string ...$classes
      *
@@ -490,11 +496,15 @@ class DefinitionCompilerPassTest extends TestCase
     private function compileDefinition(string ...$classes): EntityDefinition
     {
         $isEntity = static fn (string $class): bool => is_subclass_of($class, AbstractEntity::class, true);
-        $entities = array_values(array_filter($classes, $isEntity));
+
+        $entities = [];
+        foreach (array_filter($classes, $isEntity) as $entityClass) {
+            $entities[$entityClass] = self::TABLE;
+        }
+
         $services = array_values(array_filter($classes, static fn (string $class): bool => !$isEntity($class)));
 
-        $definition = $this->compileContainer(['phpunit_test' => self::TABLE], $entities, $services)
-            ->get('dal.definition.phpunit_test');
+        $definition = $this->compileContainer($entities, $services)->get('dal.definition.phpunit_test');
 
         static::assertInstanceOf(EntityDefinition::class, $definition);
 

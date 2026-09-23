@@ -119,10 +119,6 @@ class NormalEntity extends AbstractEntity
             new KeySchema('autofilledId'),
         );
 
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
-
         return $definition;
     }
 }

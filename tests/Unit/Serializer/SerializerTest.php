@@ -338,9 +338,6 @@ class SerializerTest extends TestCase
             ],
             new KeySchema('autofilledId'),
         );
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
 
         $result = $this->serializer->deserialize($definition, [
             'name' => new AttributeValue(['S' => 'only-name']),
@@ -365,9 +362,6 @@ class SerializerTest extends TestCase
             ],
             new KeySchema('required'),
         );
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
 
         $this->expectException(SerializerException::class);
         $this->expectExceptionMessage('Missing required value for field');
@@ -389,9 +383,6 @@ class SerializerTest extends TestCase
             ],
             new KeySchema('id'),
         );
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
 
         $result = $this->serializer->serialize($definition, ['id' => 'x']);
 
@@ -412,9 +403,6 @@ class SerializerTest extends TestCase
             ],
             new KeySchema('autofilledId'),
         );
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
 
         $result = $this->serializer->deserialize($definition, [
             'autofilledId' => new AttributeValue(['S' => 'y']),
@@ -608,10 +596,6 @@ class SerializerTest extends TestCase
             new KeySchema('tenantId', 'createdAt'),
             ['statusCreatedAtIndex' => new IndexSchema('statusCreatedAtIndex', hashKey: 'status', rangeKey: 'createdAt')],
         );
-
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
 
         return $definition;
     }

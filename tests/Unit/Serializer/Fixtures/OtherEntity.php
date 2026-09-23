@@ -56,10 +56,6 @@ class OtherEntity extends AbstractEntity
             new KeySchema('otherId'),
         );
 
-        foreach ($definition->getFieldDefinitions() as $fieldDefinition) {
-            $fieldDefinition->setEntityDefinition($definition);
-        }
-
         return $definition;
     }
 }

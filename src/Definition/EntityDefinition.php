@@ -29,7 +29,14 @@ class EntityDefinition
         private readonly KeySchema $keySchema,
         private readonly array $indexes = [],
     ) {
-        $this->fieldDefinitions = iterator_to_array($fieldDefinitions);
+        $definitions = [];
+        foreach ($fieldDefinitions as $key => $fieldDefinition) {
+            // backreference to the entity definition
+            $fieldDefinition->setEntityDefinition($this);
+            $definitions[$key] = $fieldDefinition;
+        }
+
+        $this->fieldDefinitions = $definitions;
     }
 
     /**
