@@ -1,0 +1,43 @@
+{
+    "name": "shopware/dynamodb-dal-bundle",
+    "description": "A data abstraction layer for DynamoDB",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Michel Bade",
+            "email": "m.bade@shopware.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Shopware\\DynamodbDalBundle\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Shopware\\DynamodbDalBundle\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95.2",
+        "phpstan/extension-installer": "^1.4.3",
+        "phpstan/phpstan": "^2.1.55",
+        "phpstan/phpstan-phpunit": "^2.0.16",
+        "phpstan/phpstan-strict-rules": "^2.0.11",
+        "phpunit/phpunit": "^13.2.2"
+    },
+    "scripts": {
+        "ecs": "php-cs-fixer fix --dry-run --diff",
+        "ecs:fix": "php-cs-fixer fix",
+        "phpstan": "phpstan analyze --memory-limit=512M -c phpstan.dist.neon",
+        "phpunit": "phpunit"
+    },
+    "config": {
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    }
+}

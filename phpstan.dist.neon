@@ -1,0 +1,23 @@
+parameters:
+    level: 8
+    tmpDir: .cache/phpstan
+
+    paths:
+        - src/
+
+    bootstrapFiles:
+        - tests/bootstrap.php
+
+    treatPhpDocTypesAsCertain: false
+    inferPrivatePropertyTypeFromConstructor: true
+    reportUnmatchedIgnoredErrors: true
+    checkFunctionNameCase: true
+    checkInternalClassCaseSensitivity: true
+    reportAnyTypeWideningInVarTag: true
+    reportMaybesInMethodSignatures: false
+
+    strictRules:
+        booleansInConditions: false
+        booleansInLoopConditions: false
+        disallowedEmpty: false
+        disallowedShortTernary: false
