@@ -4,7 +4,6 @@ namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\Cursor\CursorNormalizer;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -21,7 +20,6 @@ use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\UidFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Uid\AbstractUid;
 
 return static function (ContainerConfigurator $container): void {
@@ -54,26 +52,6 @@ return static function (ContainerConfigurator $container): void {
             service(ReaderClient::class),
             service(WriterClient::class),
         ]);
-
-    // symfony/serializer is optional, so CursorNormalizer is only registered when it is installed.
-    if (interface_exists(NormalizerInterface::class)) {
-        $services->set('.shopware_dynamodb_dal.lazy.serializer', Serializer::class)
-            ->factory('current')
-            ->args([[service(Serializer::class)]])
-            ->lazy();
-
-        $services->set('.shopware_dynamodb_dal.lazy.definition_registry', EntityDefinitionRegistry::class)
-            ->factory('current')
-            ->args([[service(EntityDefinitionRegistry::class)]])
-            ->lazy();
-
-        $services->set(CursorNormalizer::class)
-            ->args([
-                service('.shopware_dynamodb_dal.lazy.serializer'),
-                service('.shopware_dynamodb_dal.lazy.definition_registry'),
-            ])
-            ->tag('serializer.normalizer');
-    }
 
     // Order matters: the compiler pass takes the first serializer that claims a property's type, so
     // the narrow ones come before JsonFieldSerializer, which accepts any remaining array or

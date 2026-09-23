@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 
 use Shopware\DynamodbDalBundle\Client\Client;
+use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
@@ -13,6 +14,7 @@ use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -57,8 +59,8 @@ class ClientTest extends TestCase
             ->method('search')
             ->with($this->definition, $query)
             ->willReturnCallback(static function () use ($a, $b): \Generator {
-                yield $a;
-                yield $b;
+                yield ['autofilledId' => new AttributeValue(['S' => 'a'])] => $a;
+                yield ['autofilledId' => new AttributeValue(['S' => 'b'])] => $b;
             });
 
         $result = $this->client->search($this->definition, $query);
@@ -66,7 +68,7 @@ class ClientTest extends TestCase
         static::assertSame([$a, $b], $result->toArray());
     }
 
-    public function testReadBuildsAQueryPageCursorViaCursorForFromTheReaderStream(): void
+    public function testPageBuildsTheNextTokenFromTheRawKeyTheReaderYields(): void
     {
         $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
         $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
@@ -76,17 +78,15 @@ class ClientTest extends TestCase
         $this->reader->expects(static::once())->method('search')
             ->with($this->definition, $query)
             ->willReturnCallback(static function () use ($a, $b): \Generator {
-                yield $a;
-                yield $b;
+                yield ['autofilledId' => new AttributeValue(['S' => 'a'])] => $a;
+                yield ['autofilledId' => new AttributeValue(['S' => 'b'])] => $b;
             });
 
         $page = $this->client->search($this->definition, $query)->page();
 
         static::assertSame([$a], $page->items);
-        static::assertNotNull($page->nextCursor);
-        static::assertSame('normal', $page->nextCursor->table);
-        static::assertSame('a', $page->nextCursor->primaryKey->hashValue);
-        static::assertNull($page->nextCursor->indexKey);
+        static::assertNotNull($page->next);
+        static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'a'])], Cursor::decode($page->next)->key);
     }
 
     public function testGetStreamsWhateverTheReaderGetYields(): void

@@ -5,9 +5,6 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
-use Shopware\DynamodbDalBundle\Client\Cursor\CursorNormalizer;
-use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
@@ -62,7 +59,6 @@ class BundleIntegrationTest extends TestCase
         static::assertInstanceOf(Client::class, $container->get('test.' . Client::class));
         static::assertInstanceOf(Serializer::class, $container->get('test.' . Serializer::class));
         static::assertInstanceOf(ExpressionCompiler::class, $container->get('test.' . ExpressionCompiler::class));
-        static::assertInstanceOf(CursorNormalizer::class, $container->get('test.' . CursorNormalizer::class));
     }
 
     public function testEntityDefinitionIsCompiledFromTheAttributes(): void
@@ -184,30 +180,6 @@ class BundleIntegrationTest extends TestCase
         static::assertStringContainsString('#nested.#a[0]', $result->expression);
         static::assertArrayHasKey('#status', $result->names);
         static::assertCount(4, $result->values);
-    }
-
-    public function testCursorNormalizerRoundTripsACursor(): void
-    {
-        $normalizer = $this->container()->get('test.' . CursorNormalizer::class);
-        static::assertInstanceOf(CursorNormalizer::class, $normalizer);
-
-        $id = Uuid::v7();
-        $createdAt = new \DateTimeImmutable('@1700000000');
-
-        $cursor = new Cursor(
-            'test',
-            new Index($id, $createdAt),
-            new Index(TestStatus::Open, $createdAt, 'status-index'),
-        );
-
-        $restored = $normalizer->denormalize($normalizer->normalize($cursor), Cursor::class);
-
-        static::assertInstanceOf(Cursor::class, $restored);
-        static::assertSame('test', $restored->table);
-        static::assertEquals($id, $restored->primaryKey->hashValue);
-        static::assertEquals($createdAt, $restored->primaryKey->rangeValue);
-        static::assertSame('status-index', $restored->indexKey?->index);
-        static::assertSame(TestStatus::Open, $restored->indexKey?->hashValue);
     }
 
     private static function removeDirectory(string $directory): void

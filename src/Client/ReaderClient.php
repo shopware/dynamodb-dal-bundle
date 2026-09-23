@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
@@ -83,24 +84,43 @@ class ReaderClient
     }
 
     /**
+     * Streams the matches, each keyed by its raw start key: the item's table key attributes, plus the index key
+     * attributes for a GSI query — exactly what DynamoDB takes as `ExclusiveStartKey` to resume after it.
+     *
+     * A backward cursor reads the query in reverse from its key, so the stream runs towards the start.
+     *
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
      *
-     * @return \Generator<int, Entity>
+     * @throws InvalidCursorException if the query's cursor is not a token of this query
+     *
+     * @return \Generator<array<string, AttributeValue>, Entity>
      */
     public function search(EntityDefinition $definition, ScanInput|QueryInput $query): \Generator
     {
-        $exclusiveStartKey = $query->cursor !== null ? $this->serializer->serializeCursor($definition, $query->cursor) : null;
-        $input = $this->createSearchInput($definition, $query, $exclusiveStartKey);
+        $keyFields = $definition->getKeySchema()->getFields();
+        if ($query instanceof QueryInput && $query->index !== null) {
+            $keyFields = [...$keyFields, ...$definition->getIndex($query->index)?->keySchema->getFields() ?? []];
+        }
+        $keyFields = array_fill_keys($keyFields, true);
+
+        $cursor = $query->cursor !== null ? Cursor::decode($query->cursor) : null;
+        if ($cursor !== null && (array_diff_key($cursor->key, $keyFields) !== [] || array_diff_key($keyFields, $cursor->key) !== [])) {
+            throw new InvalidCursorException('its key does not match the table or index queried');
+        }
+
+        if ($cursor !== null && $cursor->backward && $query instanceof ScanInput) {
+            throw new InvalidCursorException('a scan cannot be read backward');
+        }
+
+        $input = $this->createSearchInput($definition, $query, $cursor);
         $output = $input instanceof DynamoDbScanInput ? $this->client->scan($input) : $this->client->query($input);
 
-        $idx = 0;
         foreach ($output->getItems() as $item) {
             $entity = $this->serializer->deserialize($definition, $item);
             if ($entity !== null) {
-                yield $idx => $entity;
-                ++$idx;
+                yield array_intersect_key($item, $keyFields) => $entity;
             }
         }
     }
@@ -208,10 +228,13 @@ class ReaderClient
      * Builds (but does not run) the async-aws `query`/`scan` input; only a {@see QueryInput} adds the key
      * condition, sort direction and index name.
      *
-     * @param array<string, AttributeValue>|null $exclusiveStartKey
+     * @param Cursor|array<string, AttributeValue>|null $start - a resume position; a backward {@see Cursor} flips the sort direction
      */
-    private function createSearchInput(EntityDefinition $definition, ScanInput|QueryInput $search, ?array $exclusiveStartKey = null): DynamoDbQueryInput|DynamoDbScanInput
+    private function createSearchInput(EntityDefinition $definition, ScanInput|QueryInput $search, Cursor|array|null $start = null): DynamoDbQueryInput|DynamoDbScanInput
     {
+        $backward = $start instanceof Cursor && $start->backward;
+        $exclusiveStartKey = $start instanceof Cursor ? $start->key : $start;
+
         $filterResult = $search->filter !== null ? $this->expressionCompiler->compile($definition, $search->filter) : new ExpressionCompiledResult();
 
         if ($search instanceof QueryInput) {
@@ -220,7 +243,7 @@ class ReaderClient
 
             $input = new DynamoDbQueryInput();
             $input->setKeyConditionExpression($keyResult->expression);
-            $input->setScanIndexForward($search->forward);
+            $input->setScanIndexForward($search->forward !== $backward);
             $input->setIndexName($search->index);
         } else {
             $input = new DynamoDbScanInput();

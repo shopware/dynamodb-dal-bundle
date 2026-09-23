@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
+use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
@@ -15,6 +15,7 @@ use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -162,6 +163,21 @@ class ReaderClientTest extends TestCase
         iterator_to_array($this->reader->search($this->definition, $query), false);
     }
 
+    public function testSearchKeysEachEntityByItsRawStartKey(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $itemA = [...$this->item('a'), 'required' => new AttributeValue(['S' => 'req'])];
+
+        $this->dynamo->method('scan')->willReturn(self::scanOutput([$itemA]));
+        $this->serializer->method('deserialize')->willReturn($a);
+
+        // Only the key attributes survive: they are the ExclusiveStartKey to resume after this item.
+        foreach ($this->reader->search($this->definition, new ScanInput()) as $key => $entity) {
+            static::assertEquals($this->item('a'), $key);
+            static::assertSame($a, $entity);
+        }
+    }
+
     public function testSearchResumesFromTheIncomingCursorAsExclusiveStartKey(): void
     {
         $output = self::scanOutput();
@@ -174,14 +190,46 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn($output);
 
-        $cursor = new Cursor('normal', new Index('cursor-id'));
+        $cursor = new Cursor($this->item('cursor-id'))->encode();
 
-        // The reader turns the cursor into the ExclusiveStartKey via the serializer; mirror that here.
-        $this->serializer->expects(static::once())
-            ->method('serializeCursor')
-            ->with($this->definition, $cursor)
-            ->willReturn(['autofilledId' => new AttributeValue(['S' => 'cursor-id'])]);
+        iterator_to_array($this->reader->search($this->definition, new ScanInput(cursor: $cursor)), false);
+    }
 
+    public function testSearchReadsABackwardCursorInReverse(): void
+    {
+        $output = self::queryOutput();
+        $this->dynamo->expects(static::once())
+            ->method('query')
+            ->with(static::callback(static function (DynamoDbQueryInput $input): bool {
+                static::assertFalse($input->getScanIndexForward());
+                static::assertSame('cursor-id', ($input->getExclusiveStartKey()['autofilledId'] ?? null)?->getS());
+
+                return true;
+            }))
+            ->willReturn($output);
+
+        $cursor = new Cursor($this->item('cursor-id'), backward: true)->encode();
+
+        iterator_to_array($this->reader->search($this->definition, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor)), false);
+    }
+
+    public function testSearchRejectsACursorOfAnotherKeySchema(): void
+    {
+        $this->dynamo->expects(static::never())->method('scan');
+
+        $cursor = new Cursor(['tenantId' => new AttributeValue(['S' => 'x'])])->encode();
+
+        $this->expectException(InvalidCursorException::class);
+        iterator_to_array($this->reader->search($this->definition, new ScanInput(cursor: $cursor)), false);
+    }
+
+    public function testSearchRejectsABackwardCursorOnAScan(): void
+    {
+        $this->dynamo->expects(static::never())->method('scan');
+
+        $cursor = new Cursor($this->item('cursor-id'), backward: true)->encode();
+
+        $this->expectException(InvalidCursorException::class);
         iterator_to_array($this->reader->search($this->definition, new ScanInput(cursor: $cursor)), false);
     }
 

@@ -3,7 +3,6 @@
 namespace Shopware\DynamodbDalBundle\Serializer;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
@@ -279,25 +278,6 @@ class Serializer
         $rangeValue = $keySchema->rangeKey !== null ? ($deserialized[$keySchema->rangeKey] ?? null) : null;
 
         return new Index($deserialized[$keySchema->hashKey] ?? null, $rangeValue);
-    }
-
-    /**
-     * @template Entity of AbstractEntity
-     *
-     * @param EntityDefinition<Entity> $definition
-     *
-     * @throws DALException if a key field does not exist in the definition or a value is missing
-     *
-     * @return array<string, AttributeValue>
-     */
-    public function serializeCursor(EntityDefinition $definition, Cursor $cursor): array
-    {
-        $fields = $cursor->primaryKey->getFields($definition);
-        if ($cursor->indexKey !== null) {
-            $fields = [...$fields, ...$cursor->indexKey->getFields($definition)];
-        }
-
-        return $this->serialize($definition, $fields)->getFields();
     }
 
     /**

@@ -5,7 +5,6 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration\DynamoDb;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
@@ -147,7 +146,7 @@ class ClientTest extends DynamoDbTestCase
         static::assertSame(1, $this->client()->count($definition, new ScanInput(Filter::equals('name', 'match'))));
     }
 
-    public function testPageWithNoLimitReturnsAllItemsAndNoCursor(): void
+    public function testPageWithNoLimitReturnsAllItemsAndNoNextToken(): void
     {
         $definition = $this->definition('record');
         foreach (['a', 'b'] as $id) {
@@ -157,10 +156,10 @@ class ClientTest extends DynamoDbTestCase
         $page = $this->client()->search($definition, new ScanInput())->page();
 
         static::assertCount(2, $page->items);
-        static::assertNull($page->nextCursor);
+        static::assertNull($page->next);
     }
 
-    public function testPageReturnsNoCursorWhenResultsFitOnePage(): void
+    public function testPageReturnsNoNextTokenWhenResultsFitOnePage(): void
     {
         $definition = $this->definition('record');
         foreach (['a', 'b'] as $id) {
@@ -170,17 +169,17 @@ class ClientTest extends DynamoDbTestCase
         $page = $this->client()->search($definition, new QueryInput(Filter::equals('tenantId', self::TENANT), limit: 5))->page();
 
         static::assertCount(2, $page->items);
-        static::assertNull($page->nextCursor);
+        static::assertNull($page->next);
     }
 
-    public function testPageResumesAcrossACursorWithoutSkippingOrRepeating(): void
+    public function testPageResumesAcrossATokenWithoutSkippingOrRepeating(): void
     {
         $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
             $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
-        $query = static fn (?Cursor $cursor): QueryInput => new QueryInput(
+        $query = static fn (?string $cursor): QueryInput => new QueryInput(
             Filter::equals('tenantId', self::TENANT),
             cursor: $cursor,
             limit: 2,
@@ -188,11 +187,11 @@ class ClientTest extends DynamoDbTestCase
 
         $first = $this->client()->search($definition, $query(null))->page();
         static::assertCount(2, $first->items);
-        static::assertNotNull($first->nextCursor);
+        static::assertNotNull($first->next);
 
-        $second = $this->client()->search($definition, $query($first->nextCursor))->page();
+        $second = $this->client()->search($definition, $query($first->next))->page();
         static::assertCount(1, $second->items);
-        static::assertNull($second->nextCursor);
+        static::assertNull($second->next);
 
         static::assertSame(['a', 'b', 'c'], $this->sortedIds([...$first->items, ...$second->items]));
     }

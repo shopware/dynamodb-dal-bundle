@@ -2,7 +2,6 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer;
 
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
@@ -535,15 +534,6 @@ class SerializerTest extends TestCase
         ]));
     }
 
-    public function testSerializeCursorWithPrimaryKeyOnly(): void
-    {
-        $cursor = new Cursor('normal', new Index('id-1'));
-
-        $fields = $this->serializer->serializeCursor($this->definition, $cursor);
-
-        static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'id-1'])], $fields);
-    }
-
     public function testDeserializeKeyThrowsWhenAKeyValueCannotBeDeserialized(): void
     {
         // The createdAt range key is an N-typed field; an S value cannot be deserialized into it.
@@ -584,61 +574,8 @@ class SerializerTest extends TestCase
         $this->serializer->serializeKey($definition, new Index(null, null));
     }
 
-    public function testSerializeCursorMergesPrimaryAndIndexKeys(): void
-    {
-        $definition = $this->keyedDefinition();
-        $createdAt = new \DateTimeImmutable('2026-06-02T10:00:00+00:00');
-
-        $cursor = new Cursor(
-            'order',
-            new Index('tenant-1', $createdAt),
-            new Index('waiting', $createdAt, 'statusCreatedAtIndex'),
-        );
-
-        $fields = $this->serializer->serializeCursor($definition, $cursor);
-
-        static::assertEquals([
-            'tenantId' => new AttributeValue(['S' => 'tenant-1']),
-            'createdAt' => new AttributeValue(['N' => (string) $createdAt->getTimestamp()]),
-            'status' => new AttributeValue(['S' => 'waiting']),
-        ], $fields);
-    }
-
-    public function testSerializeCursorThrowsWhenAKeyValueIsNull(): void
-    {
-        // serializeCursor goes through serialize(), which refuses a null value for a required key field —
-        // so an incomplete ExclusiveStartKey cannot be produced from a null primary key value.
-        $definition = $this->keyedDefinition();
-        $cursor = new Cursor('order', new Index(null, null));
-
-        static::expectException(FieldMissingSerializedValueException::class);
-
-        $this->serializer->serializeCursor($definition, $cursor);
-    }
-
-    public function testSerializeCursorWithAnUnknownIndexYieldsAnEmptyKey(): void
-    {
-        // An index name the definition does not declare resolves to no key fields; serializeCursor returns
-        // only the primary key fields (the unknown index contributes nothing).
-        $definition = $this->keyedDefinition();
-        $createdAt = new \DateTimeImmutable('2026-06-02T10:00:00+00:00');
-
-        $cursor = new Cursor(
-            'order',
-            new Index('tenant-1', $createdAt),
-            new Index('waiting', $createdAt, 'doesNotExist'),
-        );
-
-        $fields = $this->serializer->serializeCursor($definition, $cursor);
-
-        static::assertEquals([
-            'tenantId' => new AttributeValue(['S' => 'tenant-1']),
-            'createdAt' => new AttributeValue(['N' => (string) $createdAt->getTimestamp()]),
-        ], $fields);
-    }
-
     /**
-     * A definition with a hash + range primary key and a GSI, for key/cursor (de)serialization.
+     * A definition with a hash + range primary key and a GSI, for key (de)serialization.
      *
      * @return EntityDefinition<NormalEntity>
      */

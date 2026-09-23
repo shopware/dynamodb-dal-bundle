@@ -73,7 +73,6 @@ class Client
     {
         return new SearchOutput(
             $this->reader->search($definition, $query),
-            $definition,
             $query,
         );
     }

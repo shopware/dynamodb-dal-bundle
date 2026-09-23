@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
  * any of them throws — there is no buffering, so a large scan never accumulates its rows in memory.
  *
  * @template Entity of AbstractEntity
+ * @template Key - what the source keys each entity by; consumers only ever see positions
  *
  * @implements \IteratorAggregate<int, Entity>
  */
@@ -22,7 +23,7 @@ abstract class ReadOutput implements \IteratorAggregate
     /**
      * @internal
      *
-     * @param \Generator<int, Entity> $source
+     * @param \Generator<Key, Entity> $source
      */
     public function __construct(
         private readonly \Generator $source,
@@ -30,21 +31,17 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
-     * Streams the result exactly once. Throws if this output has already been consumed by an earlier
-     * `getIterator()`/`toArray()`/`first()`/`page()` — build a new result from the same query to read
-     * it again.
+     * Streams the result exactly once, keyed by position. Throws if this output has already been consumed
+     * by an earlier `getIterator()`/`toArray()`/`first()`/`page()` — build a new result from the same query
+     * to read it again.
      *
      * @return \Generator<int, Entity>
      */
     public function getIterator(): \Generator
     {
-        if ($this->consumed) {
-            throw new \LogicException('This read result has already been consumed; a ReadOutput streams its source once and cannot be re-read. Run the query again for a fresh result.');
+        foreach ($this->stream() as $entity) {
+            yield $entity;
         }
-
-        $this->consumed = true;
-
-        yield from $this->source;
     }
 
     /**
@@ -68,21 +65,16 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
-     * Reads at most `$limit` entities from the stream (fewer if it is exhausted first), pulling only as
-     * far as needed. Consumes the output like the other terminals.
-     *
-     * @return list<Entity>
+     * @return \Generator<Key, Entity>
      */
-    protected function take(int $limit): array
+    protected function stream(): \Generator
     {
-        $taken = [];
-        foreach ($this->getIterator() as $entity) {
-            $taken[] = $entity;
-            if (\count($taken) >= $limit) {
-                break;
-            }
+        if ($this->consumed) {
+            throw new \LogicException('This read result has already been consumed; a ReadOutput streams its source once and cannot be re-read. Run the query again for a fresh result.');
         }
 
-        return $taken;
+        $this->consumed = true;
+
+        yield from $this->source;
     }
 }

@@ -4,7 +4,6 @@ namespace Shopware\DynamodbDalBundle\Tests\Fixtures;
 
 use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\Cursor\CursorNormalizer;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -53,7 +52,6 @@ class TestKernel extends BaseKernel
         Serializer::class,
         ExpressionCompiler::class,
         EntityDefinitionRegistry::class,
-        CursorNormalizer::class,
     ];
 
     /**

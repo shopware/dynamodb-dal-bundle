@@ -3,16 +3,17 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
+use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * @template Entity of AbstractEntity
  *
- * @extends ReadOutput<Entity>
+ * @extends ReadOutput<Entity, array<string, AttributeValue>|int>
  */
 #[Exclude]
 final class SearchOutput extends ReadOutput
@@ -20,44 +21,59 @@ final class SearchOutput extends ReadOutput
     /**
      * @internal
      *
-     * @param \Generator<int, Entity> $source
-     * @param EntityDefinition<Entity> $definition
+     * @param \Generator<array<string, AttributeValue>|int, Entity> $source - each entity keyed by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed by position (a test double) streams all the same, but its tokens are refused when used
      */
     public function __construct(
         \Generator $source,
-        private readonly EntityDefinition $definition,
         private readonly ScanInput|QueryInput $search,
     ) {
         parent::__construct($source);
     }
 
     /**
-     * Returns all items requested until $limit is reached. If items are left, a {@see Cursor} is returned,
-     * allowing to continue fetching items for the next page.
+     * Returns all items requested until $limit is reached, with tokens for the neighbouring pages.
+     *
+     * Going back is the same query read in reverse from the first item, so it needs no history of the pages visited before.
      *
      * @return Page<Entity>
      */
     public function page(): Page
     {
-        $limit = $this->search->limit;
-        $index = $this->search instanceof QueryInput ? $this->search->index : null;
+        $cursor = $this->search->cursor !== null ? Cursor::decode($this->search->cursor) : null;
+        $backward = $cursor !== null && $cursor->backward;
+        $limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
 
-        if ($limit === null) {
-            $items = $this->toArray();
+        $items = [];
+        $keys = [];
+        $hasMore = false;
+        foreach ($this->stream() as $key => $entity) {
+            if ($limit !== null && \count($items) >= $limit) {
+                $hasMore = true;
 
-            return new Page($items, null);
+                break;
+            }
+
+            $items[] = $entity;
+            $keys[] = \is_array($key) ? $key : [];
         }
 
-        $limit = max(1, $limit);
+        // A backward read runs from the current page towards the start; restore the query's order.
+        if ($backward) {
+            $items = array_reverse($items);
+            $keys = array_reverse($keys);
+        }
 
-        $items = $this->take($limit + 1);
-        $hasNextPage = \count($items) > $limit;
-        $visible = \array_slice($items, 0, $limit);
+        // Having come back from a later page, there always is a next one — and a previous one only if more
+        // items were left before; reading forward it is the other way around. A scan has no order to reverse,
+        // so it never offers a previous page.
+        $hasNext = $backward || $hasMore;
+        $hasPrevious = $this->search instanceof QueryInput && ($backward ? $hasMore : $cursor !== null);
 
-        $nextCursor = $hasNextPage && $visible !== []
-            ? Cursor::from($this->definition, $visible[array_key_last($visible)], $index)
-            : null;
-
-        return new Page($visible, $nextCursor);
+        return new Page(
+            $items,
+            $hasNext && $keys !== [] ? new Cursor($keys[array_key_last($keys)])->encode() : null,
+            $hasPrevious && $keys !== [] ? new Cursor($keys[0], backward: true)->encode() : null,
+            $keys,
+        );
     }
 }
