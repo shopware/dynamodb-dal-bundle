@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Cursor\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -329,6 +330,86 @@ class ReaderClientTest extends TestCase
         static::assertSame([$normal, $other], $entities);
     }
 
+    public function testRefreshDeserializesEachReturnedRowIntoTheEntityItBelongsTo(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
+        $itemA = $this->item('a');
+        $itemB = $this->item('b');
+
+        $this->stubEntityKeySerialization();
+
+        $this->dynamo->expects(static::once())
+            ->method('batchGetItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertTrue($args['RequestItems'][self::TABLE]['ConsistentRead']);
+                static::assertCount(2, $args['RequestItems'][self::TABLE]['Keys']);
+
+                return true;
+            }))
+            // Rows come back in no particular order.
+            ->willReturn(self::batchGetItemOutput([self::TABLE => [$itemB, $itemA]]));
+
+        $deserialized = [];
+        $this->serializer->expects(static::exactly(2))->method('deserialize')->willReturnCallback(
+            static function (EntityDefinition $definition, array $item, ?AbstractEntity $entity) use (&$deserialized): ?AbstractEntity {
+                $deserialized[] = [$item, $entity];
+
+                return $entity;
+            },
+        );
+
+        $this->reader->refresh(new RefreshInput([$a, $b], consistentRead: true));
+
+        static::assertSame([[$itemB, $b], [$itemA, $a]], $deserialized);
+    }
+
+    public function testRefreshOfASingleEntityIssuesOneGetItemIntoThatEntity(): void
+    {
+        $entity = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $item = $this->item('a');
+
+        $this->stubEntityKeySerialization();
+
+        $this->dynamo->expects(static::once())
+            ->method('getItem')
+            ->with(static::callback(static function (array $request): bool {
+                // Eventually consistent unless asked otherwise, like get().
+                static::assertNull($request['ConsistentRead']);
+
+                return true;
+            }))
+            ->willReturn(self::getItemOutput($item));
+        $this->dynamo->expects(static::never())->method('batchGetItem');
+
+        $this->serializer->expects(static::once())->method('deserialize')->with($this->definition, $item, $entity)->willReturn($entity);
+
+        $this->reader->refresh(new RefreshInput([$entity]));
+    }
+
+    public function testRefreshLeavesAnEntityWithoutARowUntouched(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
+        $itemA = $this->item('a');
+
+        $this->stubEntityKeySerialization();
+
+        // `b`'s row is gone, so only `a`'s comes back.
+        $this->dynamo->method('batchGetItem')->willReturn(self::batchGetItemOutput([self::TABLE => [$itemA]]));
+        $this->serializer->expects(static::once())->method('deserialize')->with($this->definition, $itemA, $a)->willReturn($a);
+
+        $this->reader->refresh(new RefreshInput([$a, $b]));
+    }
+
+    public function testRefreshWithoutEntitiesReadsNothing(): void
+    {
+        $this->dynamo->expects(static::never())->method('batchGetItem');
+        $this->dynamo->expects(static::never())->method('getItem');
+
+        $this->reader->refresh(new RefreshInput([]));
+    }
+
     private function registry(): EntityDefinitionRegistry
     {
         return new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
@@ -342,6 +423,19 @@ class ReaderClientTest extends TestCase
     {
         $this->serializer->method('serializeKey')->willReturnCallback(
             static fn (EntityDefinition $definition, Index $key): array => self::serializedKey($definition, $key)->getFields(),
+        );
+    }
+
+    /**
+     * Stubs key serialization of an entity, plus the key hash {@see ReaderClient::refresh()} matches rows by.
+     */
+    private function stubEntityKeySerialization(): void
+    {
+        $this->serializer->method('serializeKey')->willReturnCallback(
+            static fn (EntityDefinition $definition, NormalEntity $entity): array => ['autofilledId' => new AttributeValue(['S' => $entity->getAutofilledId()])],
+        );
+        $this->serializer->method('hashKey')->willReturnCallback(
+            static fn (EntityDefinition $definition, array $key): string => (string) $key['autofilledId']->getS(),
         );
     }
 

@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Client;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
@@ -188,7 +189,7 @@ class WriterClient
     {
         /** @var list<array{SerializedResult, AbstractEntity}> $applies */
         $applies = [];
-        /** @var array<class-string<AbstractEntity>, list<AbstractEntity>> $refreshes */
+        /** @var list<AbstractEntity> $refreshes */
         $refreshes = [];
         $writeRequests = [];
 
@@ -220,7 +221,7 @@ class WriterClient
 
                     if ($operation->refresh !== false && $operation->key instanceof AbstractEntity) {
                         if ($operation->refresh === true && $result->hasNestedFields()) {
-                            $refreshes[$entityClass][] = $operation->key;
+                            $refreshes[] = $operation->key;
                         } else {
                             $applies[] = [$result, $operation->key];
                         }
@@ -251,7 +252,8 @@ class WriterClient
             $this->applySerialized($entity, $result);
         }
 
-        $this->reader->refresh($refreshes);
+        // Strongly consistent, so the read-back is guaranteed to observe the write just made
+        $this->reader->refresh(new RefreshInput($refreshes, consistentRead: true));
     }
 
     /**

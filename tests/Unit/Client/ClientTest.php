@@ -6,6 +6,7 @@ use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
@@ -147,6 +148,17 @@ class ClientTest extends TestCase
             NormalEntity::class => [$normal],
             OtherEntity::class => [$other],
         ], $result->grouped());
+    }
+
+    public function testRefreshDelegatesToTheReader(): void
+    {
+        $refresh = new RefreshInput([new NormalEntity()->setAutofilledId('a')->setRequired('req')], consistentRead: true);
+
+        $this->reader->expects(static::once())
+            ->method('refresh')
+            ->with($refresh);
+
+        $this->client->refresh($refresh);
     }
 
     public function testCountDelegatesToTheReader(): void

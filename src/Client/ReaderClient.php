@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Client;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -47,72 +48,37 @@ class ReaderClient
      */
     public function get(GetInput $input): \Generator
     {
-        // Resolve each requested class once, indexed by the physical table a response comes back under, and
-        // flatten to [physicalTable, key map] pairs so the 100-item cap is honoured across all tables.
-        $definitions = [];
-        $pairs = [];
+        $requests = [];
         foreach ($input->keysByClass as $class => $keys) {
             $definition = $this->definitionRegistry->getByEntityClass($class);
-            $definitions[$definition->getTable()] = $definition;
 
             foreach ($keys as $key) {
-                $pairs[] = [$definition->getTable(), $this->serializer->serializeKey($definition, $key)];
+                $requests[] = [$definition, $this->serializer->serializeKey($definition, $key), null];
             }
         }
 
-        if (\count($pairs) === 1) {
-            if ($entity = $this->getSingle($definitions[$pairs[0][0]], $pairs[0][1], $input->consistentRead)) {
-                yield 0 => $entity;
-            }
-
-            return;
-        }
-
-        $idx = 0;
-        foreach ($this->batchGet($definitions, $pairs, $input->consistentRead) as [$definition, $item]) {
-            $entity = $this->serializer->deserialize($definition, $item);
-            if ($entity !== null) {
-                yield $idx++ => $entity;
-            }
-        }
+        yield from $this->read($requests, $input->consistentRead);
     }
 
     /**
-     * @TODO should become part of GetInput
-     * 
-     * Reads the given entities back into themselves.
+     * Reads the given entities back into themselves, the same way {@see get()} reads keys. An entity whose row
+     * no longer exists is left as is.
      *
-     * @param array<class-string<AbstractEntity>, list<AbstractEntity>> $entitiesByClass - same shape as {@see GetInput::$keysByClass}, by instance
+     * @template Entity of AbstractEntity
+     *
+     * @param RefreshInput<Entity> $input
      */
-    public function refresh(array $entitiesByClass): void
+    public function refresh(RefreshInput $input): void
     {
-        // BatchGetItem answers per table, in no order, and does not echo the request, so every entity is
-        // indexed by its key up front to match a row back to the instance it belongs to.
-        $definitions = [];
-        $pairs = [];
-        /** @var array<string, array<string, AbstractEntity>> $entities - physical table, then key */
-        $entities = [];
-        foreach ($entitiesByClass as $class => $classEntities) {
-            $definition = $this->definitionRegistry->getByEntityClass($class);
-            $table = $definition->getTable();
-            $definitions[$table] = $definition;
+        $requests = [];
+        foreach ($input->entities as $entity) {
+            $definition = $this->definitionRegistry->getByEntityClass($entity::class);
 
-            foreach ($classEntities as $entity) {
-                $key = $this->serializer->serializeKey($definition, $entity);
-
-                $entities[$table][$this->serializer->hashKey($definition, $key)] = $entity;
-                $pairs[] = [$table, $key];
-            }
+            $requests[] = [$definition, $this->serializer->serializeKey($definition, $entity), $entity];
         }
 
-        // ensure consistent read, because a write may have been to a replica that has not yet propagated to the
-        foreach ($this->batchGet($definitions, $pairs, true) as [$definition, $item]) {
-            $entity = $entities[$definition->getTable()][$this->serializer->hashKey($definition, $item)] ?? null;
-
-            // A row deleted between the write and this read comes back as nothing at all, existing entity stays as is
-            if ($entity !== null) {
-                $this->serializer->deserialize($definition, $item, $entity);
-            }
+        // Rows land in the entities themselves, only the read needs driving.
+        foreach ($this->read($requests, $input->consistentRead) as $_) {
         }
     }
 
@@ -162,38 +128,51 @@ class ReaderClient
     }
 
     /**
-     * @template Entity of AbstractEntity
-     *
-     * @param EntityDefinition<Entity> $definition
-     * @param array<string, AttributeValue> $key
-     *
-     * @return ?Entity
-     */
-    protected function getSingle(EntityDefinition $definition, array $key, ?bool $consistentRead): ?AbstractEntity
-    {
-        $output = $this->client->getItem([
-            'TableName' => $definition->getTable(),
-            'Key' => $key,
-            'ConsistentRead' => $consistentRead,
-        ]);
-
-        return $this->serializer->deserialize($definition, $output->getItem());
-    }
-
-    /**
-     * Runs the keys as `BatchGetItem`s chunked at 100, re-requesting whatever DynamoDB reports back as
-     * unprocessed, and yields each returned item with the definition its key was built from. Responses are
-     * keyed by physical table, so walking the requested definitions is what ties an item to its definition.
+     * The shared read path of {@see get()} and {@see refresh()}: a single key is a `GetItem`, several are
+     * `BatchGetItem`s. Each row is deserialized into its request's target, or into a new entity if it has none.
      *
      * @template Entity of AbstractEntity
      *
-     * @param array<string, EntityDefinition<Entity>> $definitions - keyed by physical table
-     * @param list<array{string, array<string, AttributeValue>}> $pairs - physical table and serialized key
+     * @param list<array{EntityDefinition<Entity>, array<string, AttributeValue>, ?Entity}> $requests - definition, serialized key and target
      *
-     * @return \Generator<int, array{EntityDefinition<Entity>, array<string, AttributeValue>}>
+     * @return \Generator<int, Entity>
      */
-    private function batchGet(array $definitions, array $pairs, ?bool $consistentRead): \Generator
+    private function read(array $requests, ?bool $consistentRead): \Generator
     {
+        if (\count($requests) === 1) {
+            $output = $this->client->getItem([
+                'TableName' => $requests[0][0]->getTable(),
+                'Key' => $requests[0][1],
+                'ConsistentRead' => $consistentRead,
+            ]);
+
+            $entity = $this->serializer->deserialize($requests[0][0], $output->getItem(), $requests[0][2]);
+
+            if ($entity !== null) {
+                yield 0 => $entity;
+            }
+
+            return;
+        }
+
+        // Resolve each definition by the physical table a response comes back under, and flatten to
+        // [physicalTable, key map] pairs so the 100-item cap is honoured across all tables. BatchGetItem answers
+        // in no order and does not echo the request, so targets are indexed by their key to match a row back.
+        $definitions = [];
+        $pairs = [];
+        /** @var array<string, array<string, Entity>> $targets - physical table, then key */
+        $targets = [];
+        foreach ($requests as [$definition, $key, $target]) {
+            $table = $definition->getTable();
+            $definitions[$table] = $definition;
+            $pairs[] = [$table, $key];
+
+            if ($target !== null) {
+                $targets[$table][$this->serializer->hashKey($definition, $key)] = $target;
+            }
+        }
+
+        $idx = 0;
         foreach (array_chunk($pairs, self::BATCH_GET_LIMIT) as $chunk) {
             /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: ?bool}> $requestItems */
             $requestItems = [];
@@ -207,9 +186,16 @@ class ReaderClient
                 $output = $this->client->batchGetItem(['RequestItems' => $requestItems]);
                 $responses = $output->getResponses();
 
+                // Responses come back keyed by physical table; walking the requested definitions instead of
+                // the raw response deserializes every item with the definition its keys were built from.
                 foreach ($definitions as $physicalTable => $definition) {
                     foreach ($responses[$physicalTable] ?? [] as $item) {
-                        yield [$definition, $item];
+                        $target = $targets !== [] ? $targets[$physicalTable][$this->serializer->hashKey($definition, $item)] ?? null : null;
+
+                        $entity = $this->serializer->deserialize($definition, $item, $target);
+                        if ($entity !== null) {
+                            yield $idx++ => $entity;
+                        }
                     }
                 }
 

@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
@@ -43,6 +44,19 @@ class Client
     public function get(GetInput $input): GetOutput
     {
         return new GetOutput($this->reader->get($input));
+    }
+
+    /**
+     * Re-reads entities spanning one or multiple tables by their own key and writes the stored row back into
+     * each instance. An entity whose row does not exist is left untouched.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param RefreshInput<Entity> $input
+     */
+    public function refresh(RefreshInput $input): void
+    {
+        $this->reader->refresh($input);
     }
 
     /**
