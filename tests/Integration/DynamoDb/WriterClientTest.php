@@ -253,6 +253,86 @@ class WriterClientTest extends DynamoDbTestCase
         ));
     }
 
+    /**
+     * `UpdateItem` alone would create the item from the key and the updated fields, leaving a row that
+     * fails to read back for every required field it lacks.
+     */
+    public function testUpdateSingleRefusesAMissingItemAndCreatesNone(): void
+    {
+        try {
+            $this->writer()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'ghost'), ['name' => 'nope']));
+            static::fail('An update of a missing item should fail its condition.');
+        } catch (ConditionalCheckFailedException) {
+            // Expected.
+        }
+
+        static::assertSame(0, $this->countRecords());
+    }
+
+    public function testUpdateByEntityRefusesADeletedItemAndLeavesTheEntityAlone(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
+        $this->writer()->delete(NormalizedEntity::class, new DeleteInput($entity));
+
+        try {
+            $this->writer()->update(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'renamed']));
+            static::fail('An update of a deleted item should fail its condition.');
+        } catch (ConditionalCheckFailedException) {
+            // Expected.
+        }
+
+        static::assertNull($this->readNormalized($entity));
+        static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
+    }
+
+    /**
+     * Both parts of the caller's condition hold for an item that does not exist, so only the existence
+     * check stops it, and it has to bind to the whole disjunction rather than its first operand.
+     */
+    public function testUpdateWithAConditionAMissingItemSatisfiesStillRequiresTheItem(): void
+    {
+        static::expectException(ConditionalCheckFailedException::class);
+
+        $this->writer()->update(RecordEntity::class, new UpdateInput(
+            new Index(self::TENANT, 'ghost'),
+            ['name' => 'nope'],
+            Filter::or(Filter::notExists('name'), Filter::notEquals('status', RecordStatus::Done)),
+        ));
+    }
+
+    public function testUpdateWithTheCallersOwnExistenceConditionStillApplies(): void
+    {
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')));
+
+        $this->writer()->update(RecordEntity::class, new UpdateInput(
+            new Index(self::TENANT, 'a'),
+            ['name' => 'after'],
+            Filter::exists('tenantId'),
+        ));
+
+        static::assertSame('after', $this->read('a')?->name);
+    }
+
+    public function testUpdateSeveralRefusesAMissingItemAndRollsBackTheOthers(): void
+    {
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before')));
+
+        try {
+            $this->writer()->update(
+                RecordEntity::class,
+                new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'after']),
+                new UpdateInput(new Index(self::TENANT, 'ghost'), ['name' => 'nope']),
+            );
+            static::fail('The update of the missing item should have cancelled the transaction.');
+        } catch (TransactionCanceledException) {
+            // Expected.
+        }
+
+        static::assertSame('before', $this->read('a')?->name);
+        static::assertNull($this->read('ghost'));
+    }
+
     public function testDeleteSingleRemovesTheItem(): void
     {
         $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')));

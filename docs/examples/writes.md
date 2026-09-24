@@ -31,9 +31,7 @@ $this->client->update(OrderEntity::class, new UpdateInput($order, ['status' => O
 
 - `null` removes the attribute. Only nullable fields accept `null`.
 - A field name the entity does not have fails with `UnknownFieldException`.
-- Like DynamoDB's `UpdateItem`, updating a key that has no row creates one. The new row holds only the key
-  and the written fields, so reading it fails if the entity has other required fields. Add the condition
-  `Filter::exists('id')` when an update must not create a row.
+- Unlike DynamoDB's `UpdateItem`, an update never creates a row. If no row has the key, the update fails the same way a failed [condition](#conditional-writes) does. Use a put to create a row.
 
 ## Nested updates
 
@@ -69,7 +67,8 @@ Several `UpdateInput`s passed to `update()` also run as a transaction, and `tran
 ## Conditional writes
 
 Every write input takes a condition, built with the same `Filter` as a search. DynamoDB checks the condition
-against the stored item and refuses the write if it doesn't hold.
+against the stored item and refuses the write if it doesn't hold. An update always checks that the item exists,
+and its own condition is added to that check.
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;

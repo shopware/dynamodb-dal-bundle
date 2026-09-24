@@ -14,6 +14,7 @@ final class UpdateInput
     /**
      * @param Entity|Index $key - Item to update, either by its primary key or the entity itself
      * @param array<string, mixed> $fields - Fields to update with a value
+     * @param ?ExpressionInterface $conditionExpression - Checked on top of the item existing, which every update requires
      * @param ?bool $refresh - `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
      *                       `true` = entity changes are applied, if necessary a readback is performed.
      *                       `false` = entity is not updated at all, even if it is an entity and the update could be applied.
