@@ -26,11 +26,8 @@ parameters:
         disallowedEmpty: false
         disallowedShortTernary: false
 
-    # Every exception a function throws, or lets through from what it calls, is declared with @throws.
-    # A call to a function without @throws is taken to throw nothing.
     exceptions:
         implicitThrows: false
-        # Nothing declares the \Error it may throw, so a catch of one cannot be told dead
         reportUncheckedExceptionDeadCatch: false
         check:
             missingCheckedExceptionInThrows: true
