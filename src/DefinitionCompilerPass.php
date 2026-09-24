@@ -7,20 +7,28 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\PriorityTaggedServiceTrait;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * @internal
  */
 class DefinitionCompilerPass implements CompilerPassInterface
 {
+    use PriorityTaggedServiceTrait;
+
     public const string ENTITIES_PARAMETER = 'shopware_dynamodb_dal.entities';
 
     public function process(ContainerBuilder $container): void
     {
-        // symfony.noFindTaggedServiceIdsCall: intended here, this is build time resolution
-        $builder = new DefinitionBuilder(array_keys($container->findTaggedServiceIds(AbstractFieldSerializer::class)));
+        $fieldSerializers = array_map(
+            static fn (Reference $reference): string => (string) $reference,
+            $this->findAndSortTaggedServices(AbstractFieldSerializer::class, $container),
+        );
+
+        $builder = new DefinitionBuilder(array_values($fieldSerializers));
 
         foreach ($this->configuredEntities($container) as $entityClass => $table) {
             // An entities are not services, remove them just in case

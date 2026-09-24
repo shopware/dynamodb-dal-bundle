@@ -53,9 +53,8 @@ return static function (ContainerConfigurator $container): void {
             service(WriterClient::class),
         ]);
 
-    // Order matters: the compiler pass takes the first serializer that claims a property's type, so
-    // the narrow ones come before JsonFieldSerializer, which accepts any remaining array or
-    // JsonSerializable.
+    // A property takes the first serializer, by tag priority, that claims its type.
+    // The application's own serializers have the default priority 0, so they take precedence over these
     foreach ([
         // symfony/uid is optional, so UidFieldSerializer is only registered when it is installed
         ...(class_exists(AbstractUid::class) ? [UidFieldSerializer::class] : []),
@@ -67,9 +66,12 @@ return static function (ContainerConfigurator $container): void {
         BoolFieldSerializer::class,
         ListFieldSerializer::class,
         MapFieldSerializer::class,
-        JsonFieldSerializer::class,
     ] as $fieldSerializer) {
         $services->set($fieldSerializer)
-            ->tag(AbstractFieldSerializer::class);
+            ->tag(AbstractFieldSerializer::class, ['priority' => -100]);
     }
+
+    // JsonFieldSerializer accepts any remaining array or JsonSerializable, so it comes last.
+    $services->set(JsonFieldSerializer::class)
+        ->tag(AbstractFieldSerializer::class, ['priority' => -500]);
 };
