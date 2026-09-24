@@ -8,6 +8,7 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -24,8 +25,11 @@ use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
 use AsyncAws\DynamoDb\ValueObject\WriteRequest;
 
 /**
- * A lone input takes the single-item API, which is cheaper than a batch of one. Several inputs
- * are batched, falling back to `TransactWriteItem` where `BatchWriteItem` cannot serve them.
+ * The write side behind {@see Client}. A lone input takes the single-item API, which is cheaper than a batch
+ * of one. Several inputs are batched, falling back to `TransactWriteItem` where `BatchWriteItem` cannot serve
+ * them.
+ *
+ * @internal
  */
 class WriterClient
 {
@@ -65,11 +69,15 @@ class WriterClient
      *
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      * @param PutInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function put(EntityDefinition $definition, PutInput ...$inputs): void
+    public function put(string $class, PutInput ...$inputs): void
     {
+        $definition = $this->definitionRegistry->getByEntityClass($class);
+
         if (\count($inputs) === 1) {
             $result = $this->serializer->serialize($definition, $inputs[0]->entity);
             $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
@@ -87,7 +95,7 @@ class WriterClient
         }
 
         if ($this->hasConditionExpressions(...$inputs)) {
-            $this->transactWrite(new TransactWriteInput([$definition->getClass() => $inputs]));
+            $this->transactWrite(new TransactWriteInput([$class => $inputs]));
 
             return;
         }
@@ -110,11 +118,15 @@ class WriterClient
      *
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      * @param UpdateInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function update(EntityDefinition $definition, UpdateInput ...$inputs): void
+    public function update(string $class, UpdateInput ...$inputs): void
     {
+        $definition = $this->definitionRegistry->getByEntityClass($class);
+
         if (\count($inputs) === 1) {
             $result = $this->serializer->serialize($definition, $inputs[0]->fields);
             $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
@@ -138,7 +150,7 @@ class WriterClient
             return;
         }
 
-        $this->transactWrite(new TransactWriteInput([$definition->getClass() => $inputs]));
+        $this->transactWrite(new TransactWriteInput([$class => $inputs]));
     }
 
     /**
@@ -146,9 +158,18 @@ class WriterClient
      * If any input contains a condition expression, {@see self::transactWrite} is used instead of a batch
      * write, since `BatchWriteItem` does not support condition expressions.
      * Transactional writes are limited to 100 operations per batch.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param class-string<Entity> $class
+     * @param DeleteInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function delete(EntityDefinition $definition, DeleteInput ...$inputs): void
+    public function delete(string $class, DeleteInput ...$inputs): void
     {
+        $definition = $this->definitionRegistry->getByEntityClass($class);
+
         if (\count($inputs) === 1) {
             $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
 
@@ -163,7 +184,7 @@ class WriterClient
         }
 
         if ($this->hasConditionExpressions(...$inputs)) {
-            $this->transactWrite(new TransactWriteInput([$definition->getClass() => $inputs]));
+            $this->transactWrite(new TransactWriteInput([$class => $inputs]));
         } else {
             $this->batchWriteItem($definition, ...$inputs);
         }

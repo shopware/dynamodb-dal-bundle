@@ -102,7 +102,7 @@ with a [field serializer](examples/extending.md#a-field-type-of-your-own).
 
 ## Usage
 
-Inject the `Client` and the `EntityDefinitionRegistry`:
+Inject the `Client`. Each call names the entity class it works on:
 
 ```php
 use App\Entity\OrderEntity;
@@ -111,25 +111,23 @@ use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 
 final readonly class OrderRepository
 {
     public function __construct(
         private Client $client,
-        private EntityDefinitionRegistry $definitions,
     ) {
     }
 
     public function save(OrderEntity $order): void
     {
-        $this->client->put($this->definitions->getByEntityClass(OrderEntity::class), new PutInput($order));
+        $this->client->put(OrderEntity::class, new PutInput($order));
     }
 
     public function find(string $customerId, string $id): ?OrderEntity
     {
-        return $this->client->get(new GetInput([OrderEntity::class => [new Index($customerId, $id)]]))->first();
+        return $this->client->get(new GetInput()->withKey(OrderEntity::class, new Index($customerId, $id)))->first();
     }
 
     /**
@@ -137,10 +135,7 @@ final readonly class OrderRepository
      */
     public function forCustomer(string $customerId): array
     {
-        return $this->client->search(
-            $this->definitions->getByEntityClass(OrderEntity::class),
-            new QueryInput(Filter::equals('customerId', $customerId)),
-        )->toArray();
+        return $this->client->search(OrderEntity::class, new QueryInput(Filter::equals('customerId', $customerId)))->toArray();
     }
 }
 ```

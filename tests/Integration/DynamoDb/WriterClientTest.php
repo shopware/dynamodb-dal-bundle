@@ -30,7 +30,7 @@ class WriterClientTest extends DynamoDbTestCase
 {
     public function testPutSingleWritesTheItem(): void
     {
-        $this->writer()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'written')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'written')));
 
         static::assertSame('written', $this->read('a')?->name);
     }
@@ -39,7 +39,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
 
-        $this->writer()->put($this->definition('normalized'), new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
         static::assertSame(self::TENANT . '#invoice', $entity->pk);
         static::assertTrue(isset($entity->id));
@@ -50,7 +50,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
 
-        $this->writer()->put($this->definition('normalized'), new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
         $read = $this->client()->get(new GetInput([
             NormalizedEntity::class => [new Index($entity->pk, $entity->id)],
@@ -66,7 +66,7 @@ class WriterClientTest extends DynamoDbTestCase
         $entity = RecordEntity::create(self::TENANT, 'a', name: 'kept', counter: 3, tags: ['x']);
         $entity->meta = ['k' => 'v'];
 
-        $this->writer()->put($this->definition('record'), new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
         static::assertSame('kept', $entity->name);
         static::assertSame(3, $entity->counter);
@@ -77,7 +77,7 @@ class WriterClientTest extends DynamoDbTestCase
     public function testPutSeveralItemsWritesThemAllViaBatchWrite(): void
     {
         $this->writer()->put(
-            $this->definition('record'),
+            RecordEntity::class,
             new PutInput(RecordEntity::create(self::TENANT, 'a')),
             new PutInput(RecordEntity::create(self::TENANT, 'b')),
             new PutInput(RecordEntity::create(self::TENANT, 'c')),
@@ -96,19 +96,18 @@ class WriterClientTest extends DynamoDbTestCase
             $inputs[] = new PutInput(RecordEntity::create(self::TENANT, \sprintf('id-%02d', $i)));
         }
 
-        $this->writer()->put($this->definition('record'), ...$inputs);
+        $this->writer()->put(RecordEntity::class, ...$inputs);
 
         static::assertSame(60, $this->countRecords());
     }
 
     public function testPutSingleWithConditionExpressionThrowsWhenTheConditionFails(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'first')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'first')));
 
         static::expectException(ConditionalCheckFailedException::class);
 
-        $this->writer()->put($definition, new PutInput(
+        $this->writer()->put(RecordEntity::class, new PutInput(
             RecordEntity::create(self::TENANT, 'a', name: 'second'),
             Filter::notExists('id'),
         ));
@@ -116,12 +115,11 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testPutSeveralWithAConditionFallsBackToAnAtomicTransaction(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'b', name: 'taken')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'b', name: 'taken')));
 
         try {
             $this->writer()->put(
-                $definition,
+                RecordEntity::class,
                 new PutInput(RecordEntity::create(self::TENANT, 'a'), Filter::notExists('id')),
                 new PutInput(RecordEntity::create(self::TENANT, 'b'), Filter::notExists('id')),
             );
@@ -136,10 +134,9 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateSingleSetsFields(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before', counter: 1)));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before', counter: 1)));
 
-        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'after']));
+        $this->writer()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'after']));
 
         $read = $this->read('a');
         static::assertSame('after', $read?->name);
@@ -148,20 +145,18 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateWithNullValueRemovesTheAttribute(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set')));
 
-        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => null]));
+        $this->writer()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => null]));
 
         static::assertNull($this->read('a')?->name);
     }
 
     public function testUpdateSetsAndRemovesFieldsInOneExpression(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set', counter: 1)));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'set', counter: 1)));
 
-        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), [
+        $this->writer()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), [
             'name' => null,
             'counter' => 9,
         ]));
@@ -173,11 +168,10 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateByEntityRefreshesTheEntityFromTheStoredRow(): void
     {
-        $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
-        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed']));
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'renamed']));
 
         static::assertSame('renamed', $entity->label);
     }
@@ -188,16 +182,15 @@ class WriterClientTest extends DynamoDbTestCase
      */
     public function testUpdateByEntityRefreshesFieldsItNeverWrote(): void
     {
-        $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
         $stored = $this->readNormalized($entity);
         static::assertNotNull($stored);
 
         // Somebody else moves the row on, then this update touches an unrelated field.
-        $this->writer()->update($definition, new UpdateInput(new Index($stored->pk, $stored->id), ['kind' => 'credit']));
-        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed']));
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput(new Index($stored->pk, $stored->id), ['kind' => 'credit']));
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'renamed']));
 
         static::assertSame('renamed', $entity->label);
         static::assertSame('credit', $entity->kind);
@@ -205,11 +198,10 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateByIndexWritesTheRowAndHasNoEntityToRefresh(): void
     {
-        $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
-        $this->writer()->update($definition, new UpdateInput(new Index($entity->pk, $entity->id), ['label' => 'renamed']));
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput(new Index($entity->pk, $entity->id), ['label' => 'renamed']));
 
         static::assertSame('renamed', $this->readNormalized($entity)?->label);
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
@@ -217,15 +209,14 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateSeveralItemsWritesThemAllViaTransaction(): void
     {
-        $definition = $this->definition('record');
         $this->writer()->put(
-            $definition,
+            RecordEntity::class,
             new PutInput(RecordEntity::create(self::TENANT, 'a')),
             new PutInput(RecordEntity::create(self::TENANT, 'b')),
         );
 
         $this->writer()->update(
-            $definition,
+            RecordEntity::class,
             new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'one']),
             new UpdateInput(new Index(self::TENANT, 'b'), ['name' => 'two']),
         );
@@ -236,13 +227,12 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateSeveralByEntityBackfillsEachEntity(): void
     {
-        $definition = $this->definition('normalized');
         $first = NormalizedEntity::create(self::TENANT, 'first');
         $second = NormalizedEntity::create(self::TENANT, 'second');
-        $this->writer()->put($definition, new PutInput($first), new PutInput($second));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($first), new PutInput($second));
 
         $this->writer()->update(
-            $definition,
+            NormalizedEntity::class,
             new UpdateInput($first, ['label' => 'one']),
             new UpdateInput($second, ['label' => 'two']),
         );
@@ -253,12 +243,11 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateSingleWithConditionThrowsWhenTheConditionFails(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Done)));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Done)));
 
         static::expectException(ConditionalCheckFailedException::class);
 
-        $this->writer()->update($definition, new UpdateInput(
+        $this->writer()->update(RecordEntity::class, new UpdateInput(
             new Index(self::TENANT, 'a'),
             ['name' => 'nope'],
             Filter::equals('status', RecordStatus::Open),
@@ -267,41 +256,38 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testDeleteSingleRemovesTheItem(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')));
 
-        $this->writer()->delete($definition, new DeleteInput(new Index(self::TENANT, 'a')));
+        $this->writer()->delete(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'a')));
 
         static::assertNull($this->read('a'));
     }
 
     public function testDeleteSingleIsIdempotentForAnAbsentKey(): void
     {
-        $this->writer()->delete($this->definition('record'), new DeleteInput(new Index(self::TENANT, 'never-written')));
+        $this->writer()->delete(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'never-written')));
 
         static::assertSame(0, $this->countRecords());
     }
 
     public function testDeleteByEntityReadsTheKeyOffTheEntity(): void
     {
-        $definition = $this->definition('record');
         $entity = RecordEntity::create(self::TENANT, 'a');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
-        $this->writer()->delete($definition, new DeleteInput($entity));
+        $this->writer()->delete(RecordEntity::class, new DeleteInput($entity));
 
         static::assertNull($this->read('a'));
     }
 
     public function testDeleteSeveralItemsRemovesThemAllViaBatchWrite(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
-            $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
         $this->writer()->delete(
-            $definition,
+            RecordEntity::class,
             new DeleteInput(new Index(self::TENANT, 'a')),
             new DeleteInput(new Index(self::TENANT, 'b')),
         );
@@ -312,7 +298,6 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testDeleteMoreThanTheBatchLimitChunksAndRemovesEveryItem(): void
     {
-        $definition = $this->definition('record');
         $inputs = [];
         $deletes = [];
         for ($i = 0; $i < 60; ++$i) {
@@ -320,21 +305,20 @@ class WriterClientTest extends DynamoDbTestCase
             $inputs[] = new PutInput(RecordEntity::create(self::TENANT, $id));
             $deletes[] = new DeleteInput(new Index(self::TENANT, $id));
         }
-        $this->writer()->put($definition, ...$inputs);
+        $this->writer()->put(RecordEntity::class, ...$inputs);
 
-        $this->writer()->delete($definition, ...$deletes);
+        $this->writer()->delete(RecordEntity::class, ...$deletes);
 
         static::assertSame(0, $this->countRecords());
     }
 
     public function testDeleteSingleWithConditionThrowsWhenTheConditionFails(): void
     {
-        $definition = $this->definition('record');
-        $this->writer()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open)));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open)));
 
         static::expectException(ConditionalCheckFailedException::class);
 
-        $this->writer()->delete($definition, new DeleteInput(
+        $this->writer()->delete(RecordEntity::class, new DeleteInput(
             new Index(self::TENANT, 'a'),
             Filter::equals('status', RecordStatus::Done),
         ));
@@ -342,16 +326,15 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testDeleteSeveralWithAConditionFallsBackToAnAtomicTransaction(): void
     {
-        $definition = $this->definition('record');
         $this->writer()->put(
-            $definition,
+            RecordEntity::class,
             new PutInput(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open)),
             new PutInput(RecordEntity::create(self::TENANT, 'b', RecordStatus::Done)),
         );
 
         try {
             $this->writer()->delete(
-                $definition,
+                RecordEntity::class,
                 new DeleteInput(new Index(self::TENANT, 'a'), Filter::equals('status', RecordStatus::Open)),
                 new DeleteInput(new Index(self::TENANT, 'b'), Filter::equals('status', RecordStatus::Open)),
             );
@@ -365,9 +348,8 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testTransactWriteAppliesPutUpdateAndDeleteTogether(): void
     {
-        $definition = $this->definition('record');
         $this->writer()->put(
-            $definition,
+            RecordEntity::class,
             new PutInput(RecordEntity::create(self::TENANT, 'update-me', name: 'before')),
             new PutInput(RecordEntity::create(self::TENANT, 'delete-me')),
         );
@@ -397,7 +379,7 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testTransactWriteIsAtomicAndRollsBackWhenAConditionFails(): void
     {
-        $this->writer()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'taken')));
+        $this->writer()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'taken')));
 
         try {
             $this->writer()->transactWrite(new TransactWriteInput()
@@ -413,9 +395,8 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testTransactWriteUpdateByEntityBackfillsTheEntity(): void
     {
-        $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'transacted'])));
@@ -425,11 +406,10 @@ class WriterClientTest extends DynamoDbTestCase
 
     public function testUpdateOptedOutOfTheRefreshWritesTheRowAndLeavesTheEntityAlone(): void
     {
-        $definition = $this->definition('normalized');
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
 
-        $this->writer()->update($definition, new UpdateInput($entity, ['label' => 'renamed'], refresh: false));
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'renamed'], refresh: false));
 
         static::assertSame('renamed', $this->readNormalized($entity)?->label);
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
@@ -445,8 +425,8 @@ class WriterClientTest extends DynamoDbTestCase
         $record->meta = ['first' => 'one'];
         $archive = ArchiveEntity::create('arch-1');
         $archive->meta = ['first' => 'uno'];
-        $this->writer()->put($this->definition('record'), new PutInput($record));
-        $this->writer()->put($this->definition('archive'), new PutInput($archive));
+        $this->writer()->put(RecordEntity::class, new PutInput($record));
+        $this->writer()->put(ArchiveEntity::class, new PutInput($archive));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(RecordEntity::class, new UpdateInput($record, ['meta.first' => 'one-renewed']))
@@ -463,11 +443,10 @@ class WriterClientTest extends DynamoDbTestCase
      */
     public function testTransactWriteAppliesWholeAttributesWithoutReadingTheRowBack(): void
     {
-        $definition = $this->definition('record');
         $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
-        $this->writer()->put($definition, new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
-        $this->writer()->update($definition, new UpdateInput(new Index(self::TENANT, 'a'), ['counter' => 9]));
+        $this->writer()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['counter' => 9]));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(RecordEntity::class, new UpdateInput($entity, ['name' => 'after'])));
@@ -483,7 +462,7 @@ class WriterClientTest extends DynamoDbTestCase
     public function testTransactWriteAppliesARemovedAttributeAsNullOnTheEntity(): void
     {
         $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
-        $this->writer()->put($this->definition('record'), new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(RecordEntity::class, new UpdateInput($entity, ['name' => null])));
@@ -500,7 +479,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $entity = RecordEntity::create(self::TENANT, 'a', name: 'before');
         $entity->meta = ['first' => 'one', 'second' => 'two'];
-        $this->writer()->put($this->definition('record'), new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(RecordEntity::class, new UpdateInput($entity, [
@@ -521,7 +500,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $entity = RecordEntity::create(self::TENANT, 'a');
         $entity->meta = ['first' => 'one', 'second' => 'two'];
-        $this->writer()->put($this->definition('record'), new PutInput($entity));
+        $this->writer()->put(RecordEntity::class, new PutInput($entity));
 
         $this->writer()->transactWrite(new TransactWriteInput()
             ->with(RecordEntity::class, new UpdateInput($entity, ['meta.first' => 'one-renewed'])));
@@ -575,7 +554,7 @@ class WriterClientTest extends DynamoDbTestCase
 
     private function countRecords(): int
     {
-        return $this->client()->count($this->definition('record'), new ScanInput());
+        return $this->client()->count(RecordEntity::class, new ScanInput());
     }
 
     /**

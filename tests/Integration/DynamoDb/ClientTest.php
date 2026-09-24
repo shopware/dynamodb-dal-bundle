@@ -32,7 +32,7 @@ class ClientTest extends DynamoDbTestCase
         $entity->amount = 19.99;
         $entity->active = false;
 
-        $this->client()->put($this->definition('record'), new PutInput($entity));
+        $this->client()->put(RecordEntity::class, new PutInput($entity));
 
         $read = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, 'a')]]))->first();
 
@@ -42,16 +42,14 @@ class ClientTest extends DynamoDbTestCase
 
     public function testUpsertOverwritesAnExistingItem(): void
     {
-        $definition = $this->definition('record');
-
-        $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before')));
-        $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'after')));
+        $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'before')));
+        $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'after')));
 
         $read = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, 'a')]]))->first();
 
         static::assertInstanceOf(RecordEntity::class, $read);
         static::assertSame('after', $read->name);
-        static::assertSame(1, $this->client()->count($definition, new ScanInput()));
+        static::assertSame(1, $this->client()->count(RecordEntity::class, new ScanInput()));
     }
 
     public function testGetMissingKeyReturnsNull(): void
@@ -64,9 +62,8 @@ class ClientTest extends DynamoDbTestCase
 
     public function testGetSeveralKeysReadsViaBatchGetItem(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
         $output = $this->client()->get(new GetInput([RecordEntity::class => [
@@ -79,8 +76,8 @@ class ClientTest extends DynamoDbTestCase
 
     public function testGetReadsKeysSpanningSeveralTables(): void
     {
-        $this->client()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'a')));
-        $this->client()->put($this->definition('archive'), new PutInput(ArchiveEntity::create('arch-1', 'kept')));
+        $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')));
+        $this->client()->put(ArchiveEntity::class, new PutInput(ArchiveEntity::create('arch-1', 'kept')));
 
         $output = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, 'a')]])
             ->withKey(ArchiveEntity::class, new Index('arch-1')));
@@ -103,7 +100,7 @@ class ClientTest extends DynamoDbTestCase
 
     public function testGetWithConsistentReadSucceeds(): void
     {
-        $this->client()->put($this->definition('record'), new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'strong')));
+        $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'strong')));
 
         $read = $this->client()
             ->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, 'a')]], true))
@@ -115,24 +112,23 @@ class ClientTest extends DynamoDbTestCase
 
     public function testSearchReturnsEmptyWhenNoMatch(): void
     {
-        $output = $this->client()->search($this->definition('record'), new ScanInput(Filter::equals('name', 'absent')));
+        $output = $this->client()->search(RecordEntity::class, new ScanInput(Filter::equals('name', 'absent')));
 
         static::assertSame([], $output->toArray());
     }
 
     public function testCountReturnsZeroWhenNoMatch(): void
     {
-        static::assertSame(0, $this->client()->count($this->definition('record'), new ScanInput(Filter::equals('name', 'absent'))));
+        static::assertSame(0, $this->client()->count(RecordEntity::class, new ScanInput(Filter::equals('name', 'absent'))));
     }
 
     public function testSearchToArrayReturnsAllMatches(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
-        static::assertSame(['a', 'b', 'c'], $this->sortedIds($this->client()->search($definition, new ScanInput())->toArray()));
+        static::assertSame(['a', 'b', 'c'], $this->sortedIds($this->client()->search(RecordEntity::class, new ScanInput())->toArray()));
     }
 
     public function testSearchToArrayStopsAtTheLimit(): void
@@ -152,23 +148,21 @@ class ClientTest extends DynamoDbTestCase
 
     public function testCountReturnsServerSideTotal(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id, name: $id === 'b' ? 'match' : null)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id, name: $id === 'b' ? 'match' : null)));
         }
 
-        static::assertSame(3, $this->client()->count($definition, new ScanInput()));
-        static::assertSame(1, $this->client()->count($definition, new ScanInput(Filter::equals('name', 'match'))));
+        static::assertSame(3, $this->client()->count(RecordEntity::class, new ScanInput()));
+        static::assertSame(1, $this->client()->count(RecordEntity::class, new ScanInput(Filter::equals('name', 'match'))));
     }
 
     public function testPageWithNoLimitReturnsAllItemsAndNoNextToken(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
-        $page = $this->client()->search($definition, new ScanInput())->page();
+        $page = $this->client()->search(RecordEntity::class, new ScanInput())->page();
 
         static::assertCount(2, $page->items);
         static::assertNull($page->next);
@@ -176,12 +170,11 @@ class ClientTest extends DynamoDbTestCase
 
     public function testPageReturnsNoNextTokenWhenResultsFitOnePage(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
-        $page = $this->client()->search($definition, new QueryInput(Filter::equals('tenantId', self::TENANT), limit: 5))->page();
+        $page = $this->client()->search(RecordEntity::class, new QueryInput(Filter::equals('tenantId', self::TENANT), limit: 5))->page();
 
         static::assertCount(2, $page->items);
         static::assertNull($page->next);
@@ -189,9 +182,8 @@ class ClientTest extends DynamoDbTestCase
 
     public function testPageResumesAcrossATokenWithoutSkippingOrRepeating(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id)));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
@@ -200,11 +192,11 @@ class ClientTest extends DynamoDbTestCase
             limit: 2,
         );
 
-        $first = $this->client()->search($definition, $query(null))->page();
+        $first = $this->client()->search(RecordEntity::class, $query(null))->page();
         static::assertCount(2, $first->items);
         static::assertNotNull($first->next);
 
-        $second = $this->client()->search($definition, $query($first->next))->page();
+        $second = $this->client()->search(RecordEntity::class, $query($first->next))->page();
         static::assertCount(1, $second->items);
         static::assertNull($second->next);
 
@@ -213,24 +205,22 @@ class ClientTest extends DynamoDbTestCase
 
     public function testDeleteByIndexIsIdempotent(): void
     {
-        $definition = $this->definition('record');
-        $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, 'a')));
+        $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'a')));
 
-        $this->client()->delete($definition, new DeleteInput(new Index(self::TENANT, 'a')));
-        $this->client()->delete($definition, new DeleteInput(new Index(self::TENANT, 'a')));
+        $this->client()->delete(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'a')));
+        $this->client()->delete(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'a')));
 
-        static::assertSame(0, $this->client()->count($definition, new ScanInput()));
+        static::assertSame(0, $this->client()->count(RecordEntity::class, new ScanInput()));
     }
 
     public function testDeleteByEntityReadsTheKeyOffTheEntity(): void
     {
-        $definition = $this->definition('record');
         $entity = RecordEntity::create(self::TENANT, 'a');
-        $this->client()->put($definition, new PutInput($entity));
+        $this->client()->put(RecordEntity::class, new PutInput($entity));
 
-        $this->client()->delete($definition, new DeleteInput($entity));
+        $this->client()->delete(RecordEntity::class, new DeleteInput($entity));
 
-        static::assertSame(0, $this->client()->count($definition, new ScanInput()));
+        static::assertSame(0, $this->client()->count(RecordEntity::class, new ScanInput()));
     }
 
     /**

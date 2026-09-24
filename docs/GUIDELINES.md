@@ -17,8 +17,8 @@
 - Inputs, outputs and value objects are `final` and `readonly` where possible
 - `AttributeValue` stays inside the bundle. Public methods take and return entities and PHP values
 - A wrongly declared entity fails the container build, not a request. Validate it in `DefinitionBuilder` or a compiler pass
-- Generics use `@template`, so the entity type carries through from a definition or input to its output
-  (`EntityDefinition<Entity>` becomes `SearchOutput<Entity>`)
+- Generics use `@template`, so the entity type carries through from an entity class or input to its output
+  (`class-string<Entity>` becomes `SearchOutput<Entity>`)
 
 ## Public API
 
@@ -28,6 +28,7 @@
 - Extension points are abstract classes (`AbstractFieldSerializer`, `AbstractNormalizer`) or interfaces
   (`ExpressionInterface`). The bundle's own implementations of them are `@internal`
 - Decide which side of that boundary a new class belongs to when you add it
+- Client operations are addressed by entity class, never by `EntityDefinition`
 
 ## Services and configuration
 

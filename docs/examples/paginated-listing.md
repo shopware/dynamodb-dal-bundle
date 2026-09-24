@@ -64,7 +64,6 @@ namespace App\Controller;
 use App\Entity\ArticleEntity;
 use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -76,7 +75,6 @@ final class ArticleController extends AbstractController
 {
     public function __construct(
         private readonly Client $client,
-        private readonly EntityDefinitionRegistry $definitions,
     ) {
     }
 
@@ -84,16 +82,13 @@ final class ArticleController extends AbstractController
     public function list(#[MapQueryParameter] ?string $cursor = null): Response
     {
         try {
-            $page = $this->client->search(
-                $this->definitions->getByEntityClass(ArticleEntity::class),
-                new QueryInput(
-                    Filter::equals('status', 'published'),
-                    index: 'statusCreatedAtIndex',
-                    forward: false, // newest first
-                    cursor: $cursor,
-                    limit: 20,
-                ),
-            )->page();
+            $page = $this->client->search(ArticleEntity::class, new QueryInput(
+                Filter::equals('status', 'published'),
+                index: 'statusCreatedAtIndex',
+                forward: false, // newest first
+                cursor: $cursor,
+                limit: 20,
+            ))->page();
         } catch (InvalidCursorException) {
             // The token was edited, or it belongs to another table or index: start over.
             return $this->redirectToRoute('article_list');
@@ -148,10 +143,7 @@ use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
     {
         try {
             $visited = CursorHistory::fromString($history); // null or '' is page 1
-            $page = $this->client->search(
-                $this->definitions->getByEntityClass(ArticleEntity::class),
-                new ScanInput(cursor: $visited->current(), limit: 20),
-            )->page();
+            $page = $this->client->search(ArticleEntity::class, new ScanInput(cursor: $visited->current(), limit: 20))->page();
         } catch (InvalidCursorException) {
             return $this->redirectToRoute('article_all');
         }
@@ -211,8 +203,7 @@ last item that query *fetched*, which may have been cut off. `Page::cursorAfter(
 any item of the page, and `CursorHistory::combine()` / `split()` carry one token per query in a single
 history entry.
 
-Inside an action like `all()` above, with `$definition` being the article definition and `$visited` the
-`CursorHistory` read from the URL:
+Inside an action like `all()` above, with `$visited` being the `CursorHistory` read from the URL:
 
 ```php
 $positions = CursorHistory::split($visited->current()); // ['draft' => token, â€¦]; [] on page 1
@@ -220,7 +211,7 @@ $positions = CursorHistory::split($visited->current()); // ['draft' => token, â€
 $pages = [];
 $items = [];
 foreach (['draft', 'published'] as $status) {
-    $pages[$status] = $this->client->search($definition, new QueryInput(
+    $pages[$status] = $this->client->search(ArticleEntity::class, new QueryInput(
         Filter::equals('status', $status),
         index: 'statusCreatedAtIndex',
         forward: false,
