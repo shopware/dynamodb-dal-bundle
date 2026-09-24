@@ -5,12 +5,10 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * @template-covariant Entity of AbstractEntity = never
  */
-#[Exclude]
 final class DeleteInput
 {
     /**

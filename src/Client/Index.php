@@ -4,14 +4,12 @@ namespace Shopware\DynamodbDalBundle\Client;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * A key address: the partition (hash) value and, for a table that declares one, the sort (range) value.
  * `$index` selects which key it addresses — `null` is the base-table primary key, a name is that GSI's
  * key.
  */
-#[Exclude]
 final class Index
 {
     public function __construct(

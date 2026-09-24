@@ -7,12 +7,10 @@ use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * @template Entity of AbstractEntity
  */
-#[Exclude]
 readonly class Page
 {
     /**

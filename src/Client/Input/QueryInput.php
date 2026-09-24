@@ -4,12 +4,10 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\Client\Output\Page;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * A read request for querying a table via primary or secondary indexes.
  */
-#[Exclude]
 final class QueryInput
 {
     /**

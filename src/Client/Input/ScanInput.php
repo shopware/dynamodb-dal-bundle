@@ -4,12 +4,10 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\Client\Output\Page;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * A read request for scanning a table via a filter expression.
  */
-#[Exclude]
 final class ScanInput
 {
     /**

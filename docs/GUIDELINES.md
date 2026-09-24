@@ -33,7 +33,6 @@
 ## Services and configuration
 
 - Services are registered in `config/*.php` with explicit arguments. The bundle doesn't rely on the application's autowiring or autoconfiguration
-- Classes that are not services, such as inputs, outputs and value objects, carry `#[Exclude]`
 - An optional dependency goes under `suggest` in `composer.json`. Whatever needs it is registered behind a `class_exists()` check
 - Development tooling (commands and the profiler) is loaded in the `dev` environment only
 
