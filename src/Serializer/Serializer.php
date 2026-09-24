@@ -150,7 +150,7 @@ class Serializer
                 throw new UnknownFieldException($definition, $name);
             }
 
-            // DynamoDB has no null attribute: an unset value is absent from a put, and removed by an update.
+            // DynamoDB has no null attribute, so an unset value is absent from a put.
             if ($value === null && $path->definition->allowsNull()) {
                 $result[$name] = new SerializedFieldResult($path, null);
 

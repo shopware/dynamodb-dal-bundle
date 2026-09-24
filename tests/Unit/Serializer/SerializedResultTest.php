@@ -35,22 +35,13 @@ class SerializedResultTest extends TestCase
             NormalizerOperation::Put,
         );
 
-        static::assertEquals([
+        $fields = [
             'autofilledId' => new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
             'name' => new AttributeValue(['S' => 'test']),
-        ], $result->getFields());
-        static::assertEquals([
-            ':sv_autofilledId' => new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
-            ':sv_name' => new AttributeValue(['S' => 'test']),
-        ], $result->getExpressionAttributeValues());
-        static::assertSame([
-            '#autofilledId' => 'autofilledId',
-            '#name' => 'name',
-        ], $result->getExpressionAttributeNames());
-        static::assertSame([
-            'autofilledId' => '#autofilledId = :sv_autofilledId',
-            'name' => '#name = :sv_name',
-        ], $result->getExpressions());
+        ];
+
+        static::assertEquals($fields, $result->getFields());
+        static::assertEquals(['Item' => $fields], $result->getPutExpression());
     }
 
     /**

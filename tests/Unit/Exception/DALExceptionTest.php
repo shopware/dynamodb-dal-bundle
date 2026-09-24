@@ -14,6 +14,7 @@ use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
@@ -32,6 +33,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(NullFilterValueException::class)]
 #[CoversClass(UnknownEntityDefinitionException::class)]
 #[CoversClass(UnknownFieldException::class)]
+#[CoversClass(UpdateEmptyException::class)]
 #[CoversClass(WrongTypeException::class)]
 class DALExceptionTest extends TestCase
 {
@@ -68,6 +70,15 @@ class DALExceptionTest extends TestCase
         static::assertSame('Unknown field "doesNotExist" in item "customer"', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame('doesNotExist', $exception->field);
+    }
+
+    public function testUpdateEmpty(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $exception = new UpdateEmptyException($entityDefinition);
+
+        static::assertSame('Update of item "customer" has nothing to write', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
     }
 
     /**

@@ -11,11 +11,6 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  */
 class SerializedFieldResult
 {
-    /**
-     * Necessary to avoid collisions with compiled expression names. sv = Serialized Value
-     */
-    private const string PREFIX = 'sv';
-
     public function __construct(
         private readonly FieldPath $path,
         private readonly ?AttributeValue $value,
@@ -25,14 +20,6 @@ class SerializedFieldResult
     public function getDefinition(): FieldDefinition
     {
         return $this->path->definition;
-    }
-
-    /**
-     * Whether this addresses a spot inside an attribute (`meta.first`, `tags[1]`) rather than a whole one.
-     */
-    public function isNested(): bool
-    {
-        return $this->path->isNested();
     }
 
     public function getValue(): ?AttributeValue
@@ -50,49 +37,5 @@ class SerializedFieldResult
         }
 
         return [$this->path->path => $this->value];
-    }
-
-    /**
-     * @return array<string, AttributeValue> - `[':fieldName' => ['S' => 'fieldValue']]`
-     */
-    public function getExpressionAttributeValues(): array
-    {
-        if ($this->value === null) {
-            return [];
-        }
-
-        return [$this->path->getAttributeValueName(self::PREFIX) => $this->value];
-    }
-
-    /**
-     * @return array<string, string> - `['#fieldName' => 'fieldName']`
-     */
-    public function getExpressionAttributeNames(): array
-    {
-        return $this->path->getExpressionAttributeNames();
-    }
-
-    /**
-     * @return array<string, string> - `['fieldName' => '#fieldAttributeName = :fieldValueName']`
-     */
-    public function getExpressions(): array
-    {
-        if ($this->value === null) {
-            return [];
-        }
-
-        return [$this->path->path => "{$this->path->getExpression()} = {$this->path->getAttributeValueName(self::PREFIX)}"];
-    }
-
-    /**
-     * @return array<string, string> - `['fieldName.nestedPath' => '#fieldName.#nestedPath']`
-     */
-    public function getRemoveExpressions(): array
-    {
-        if ($this->value !== null) {
-            return [];
-        }
-
-        return [$this->path->path => $this->path->getExpression()];
     }
 }

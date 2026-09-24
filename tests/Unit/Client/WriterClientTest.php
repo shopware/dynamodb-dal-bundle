@@ -16,6 +16,9 @@ use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
+use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Expression\Update;
+use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -30,6 +33,7 @@ use AsyncAws\DynamoDb\Enum\ReturnValue;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\BatchWriteItemOutput;
+use AsyncAws\DynamoDb\Result\GetItemOutput;
 use AsyncAws\DynamoDb\Result\PutItemOutput;
 use AsyncAws\DynamoDb\Result\TransactWriteItemsOutput;
 use AsyncAws\DynamoDb\Result\UpdateItemOutput;
@@ -77,17 +81,18 @@ class WriterClientTest extends TestCase
         );
         $this->serializer->method('serializeKey')
             ->willReturn(['autofilledId' => new AttributeValue(['S' => self::SERIALIZED_ID])]);
-        // The definitions here carry no shape-changing normalizer, so denormalizing is the identity —
-        // stubbed rather than mocked away, since the write-back runs through it.
+        // The definitions here carry no shape-changing normalizer, so (de)normalizing is the identity —
+        // stubbed rather than mocked away, since an update and the write-back run through it.
+        $this->serializer->method('normalize')->willReturnArgument(1);
         $this->serializer->method('denormalize')->willReturnArgument(1);
 
         $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
         $this->writer = new WriterClient(
             $this->client,
             $this->serializer,
-            new ExpressionCompiler(),
+            new ExpressionCompiler($this->serializer),
             $registry,
-            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler(), $registry),
+            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler($this->serializer), $registry),
         );
     }
 
@@ -331,7 +336,7 @@ class WriterClientTest extends TestCase
 
     /**
      * A whole attribute is written with exactly the value that was sent, so the entity is filled from the
-     * serialized result and the transaction is not followed by a read at all.
+     * update's own fields and the transaction is not followed by a read at all.
      */
     public function testUpdateOfSeveralAppliesWholeAttributesWithoutAReadback(): void
     {
@@ -350,8 +355,179 @@ class WriterClientTest extends TestCase
             new UpdateInput($entityB, ['name' => 'two']),
         );
 
-        static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
-        static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+        static::assertSame('one', $entityA->getName());
+        static::assertSame('two', $entityB->getName());
+    }
+
+    /**
+     * The update and its existence condition are compiled apart and share one placeholder map, so the
+     * request carries both expressions and every name and value either refers to.
+     */
+    public function testUpdateSendsTheCompiledExpressionBesideItsCondition(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertSame('SET #name = :ex_1_0_name', $args['UpdateExpression'] ?? null);
+                static::assertSame('attribute_exists(#autofilledId)', $args['ConditionExpression'] ?? null);
+                static::assertSame(['#name' => 'name', '#autofilledId' => 'autofilledId'], $args['ExpressionAttributeNames'] ?? null);
+                static::assertEquals([':ex_1_0_name' => new AttributeValue(['S' => 'after'])], $args['ExpressionAttributeValues'] ?? null);
+
+                return true;
+            }))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
+
+        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), ['name' => 'after']));
+    }
+
+    /**
+     * An update that writes nothing is refused before any request: a transaction would reject it, and a
+     * lone `UpdateItem` without an update expression would pass as a write.
+     */
+    public function testUpdateThatWritesNothingIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('updateItem');
+
+        $this->expectException(UpdateEmptyException::class);
+
+        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), []));
+    }
+
+    public function testUpdateOfSeveralThatWritesNothingIsRefusedBeforeTheTransaction(): void
+    {
+        $this->client->expects(static::never())->method('transactWriteItems');
+
+        $this->expectException(UpdateEmptyException::class);
+
+        $this->writer->update(
+            NormalEntity::class,
+            new UpdateInput(new Index('a'), ['name' => 'one']),
+            new UpdateInput(new Index('b'), new UpdateExpression()),
+        );
+    }
+
+    /**
+     * Normalized on the way out like a put, and denormalized on the way back, so the entity keeps its own
+     * shape of the field. A real serializer, so the round trip is the real one.
+     */
+    public function testUpdateOfSeveralWritesTheStoredShapeAndAppliesTheEntitysShape(): void
+    {
+        $definition = NormalEntity::createDefinition(new PrefixingNormalizer());
+        $serializer = new Serializer();
+        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
+
+        $writer = new WriterClient(
+            $this->client,
+            $serializer,
+            new ExpressionCompiler($serializer),
+            $registry,
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+        );
+
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->with(static::callback(static function (array $args): bool {
+                $update = ($args['TransactItems'][0] ?? null)?->getUpdate();
+                static::assertNotNull($update);
+                static::assertSame(
+                    PrefixingNormalizer::PREFIX . 'after',
+                    ($update->getExpressionAttributeValues()[':ex_1_0_name'] ?? null)?->getS(),
+                );
+
+                return true;
+            }))
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $entityA = $this->entity('a');
+
+        $writer->update(
+            NormalEntity::class,
+            new UpdateInput($entityA, ['name' => 'after']),
+            new UpdateInput($this->entity('b'), ['name' => 'other']),
+        );
+
+        static::assertSame('after', $entityA->getName());
+    }
+
+    /**
+     * `setIfNotExists()` stores its value as given, so it passes the normalizer like a field that is set, or
+     * the row would hold a shape a set never writes.
+     */
+    public function testUpdateWritesTheStoredShapeOfTheValueAnActionSelects(): void
+    {
+        $definition = NormalEntity::createDefinition(new PrefixingNormalizer());
+        $serializer = new Serializer();
+        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
+
+        $writer = new WriterClient(
+            $this->client,
+            $serializer,
+            new ExpressionCompiler($serializer),
+            $registry,
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+        );
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertSame('SET #name = if_not_exists(#name, :ex_1_0_name)', $args['UpdateExpression'] ?? null);
+                static::assertSame(
+                    PrefixingNormalizer::PREFIX . 'first',
+                    ($args['ExpressionAttributeValues'][':ex_1_0_name'] ?? null)?->getS(),
+                );
+
+                return true;
+            }))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
+
+        $writer->update(NormalEntity::class, new UpdateInput(new Index('a'), Update::setIfNotExists('name', 'first')));
+    }
+
+    /**
+     * DynamoDB computes an action's value from the stored item, so the update cannot say what it wrote,
+     * even into a whole attribute.
+     */
+    public function testUpdateOfSeveralReadsBackWhenAnActionComputesTheValue(): void
+    {
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        // Only the update with an action is read back, and one entity alone takes the single-item read.
+        $this->client->expects(static::never())->method('batchGetItem');
+        $this->client->expects(static::once())
+            ->method('getItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ConsistentRead'] ?? null) === true))
+            ->willReturn(ResultMockFactory::create(GetItemOutput::class, ['item' => []]));
+
+        $this->writer->update(
+            NormalEntity::class,
+            new UpdateInput($this->entity('a'), Update::setIfNotExists('name', 'first')),
+            new UpdateInput($this->entity('b'), ['name' => 'two']),
+        );
+    }
+
+    /**
+     * `refresh: null` buys no read: the fields beside an action are applied, the action's target is not.
+     */
+    public function testUpdateOfSeveralWithoutAReadbackAppliesTheFieldsBesideAnAction(): void
+    {
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->client->expects(static::never())->method('batchGetItem');
+
+        $entity = $this->entity('a')->setRequiredNullableName('before');
+
+        $this->writer->update(
+            NormalEntity::class,
+            new UpdateInput($entity, Update::with(Update::set('name', 'one'), Update::setIfNotExists('requiredNullableName', 'after')), refresh: null),
+            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: null),
+        );
+
+        static::assertSame('one', $entity->getName());
+        static::assertSame('before', $entity->getRequiredNullableName());
     }
 
     /**
@@ -575,23 +751,14 @@ class WriterClientTest extends TestCase
     }
 
     /**
-     * A writer whose serializer answers every `serialize()` with a path that descends into an attribute,
-     * which {@see MapDefinition} is the only fixture able to express.
+     * A writer over {@see MapDefinition}, the only fixture whose paths descend into an attribute.
      *
      * @param EntityDefinition<NormalEntity> $definition
      */
     private function nestedWriter(EntityDefinition $definition): WriterClient
     {
-        $path = FieldPath::tryParse($definition, 'settings.colour');
-        static::assertNotNull($path);
-
         $serializer = $this->createMock(Serializer::class);
-        $serializer->method('serialize')->willReturn(new SerializedResult(
-            $definition,
-            ['settings.colour' => new SerializedFieldResult($path, new AttributeValue(['S' => 'red']))],
-            ['settings.colour' => 'red'],
-            NormalizerOperation::Update,
-        ));
+        $serializer->method('normalize')->willReturnArgument(1);
         $serializer->method('serializeKey')
             ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): array => [
                 'settings' => new AttributeValue(['S' => spl_object_hash((object) $key)]),
@@ -603,9 +770,9 @@ class WriterClientTest extends TestCase
         return new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler(),
+            new ExpressionCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
         );
     }
 
@@ -621,9 +788,9 @@ class WriterClientTest extends TestCase
         return new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler(),
+            new ExpressionCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
         );
     }
 

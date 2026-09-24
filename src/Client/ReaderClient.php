@@ -285,10 +285,10 @@ class ReaderClient
         $backward = $start instanceof Cursor && $start->backward;
         $exclusiveStartKey = $start instanceof Cursor ? $start->key : $start;
 
-        $filterResult = $search->filter !== null ? $this->expressionCompiler->compile($definition, $search->filter) : new ExpressionCompiledResult();
+        $filterResult = $search->filter !== null ? $this->expressionCompiler->compileFilter($definition, $search->filter) : new ExpressionCompiledResult();
 
         if ($search instanceof QueryInput) {
-            $keyResult = $this->expressionCompiler->compile($definition, $search->keyCondition);
+            $keyResult = $this->expressionCompiler->compileFilter($definition, $search->keyCondition);
             $filterResult = $filterResult->merge($keyResult);
 
             $input = new DynamoDbQueryInput();

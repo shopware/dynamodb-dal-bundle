@@ -166,7 +166,7 @@ class BundleIntegrationTest extends TestCase
         $compiler = $this->container()->get('test.' . ExpressionCompiler::class);
         static::assertInstanceOf(ExpressionCompiler::class, $compiler);
 
-        $result = $compiler->compile($this->definition(), Filter::and(
+        $result = $compiler->compileFilter($this->definition(), Filter::and(
             Filter::equals('status', TestStatus::Open),
             Filter::or(
                 Filter::greaterThan('counter', 1),

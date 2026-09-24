@@ -287,7 +287,7 @@ class SerializerTest extends TestCase
     {
         $normalizer = new RecordingNormalizer();
 
-        $this->serializer->serialize(NormalEntity::createDefinition($normalizer), ['name' => 'test-name'], NormalizerOperation::Update);
+        $this->serializer->normalize(NormalEntity::createDefinition($normalizer), ['name' => 'test-name'], NormalizerOperation::Update);
 
         static::assertSame([['normalize', NormalizerOperation::Update, ['name' => 'test-name']]], $normalizer->calls);
     }
@@ -360,9 +360,9 @@ class SerializerTest extends TestCase
     }
 
     /**
-     * Removing a path writes its absence, leaving it out does not touch it at all.
+     * Removing a path keeps it as `null`, which the update removes, while leaving it out does not touch it at all.
      */
-    public function testAnUpdateWritesWhatTheNormalizerLeaves(): void
+    public function testNormalizeReturnsWhatTheNormalizerLeaves(): void
     {
         $normalizer = new RecordingNormalizer(static function (NormalizerContext $context): void {
             $context->set('requiredNullableName', 'added');
@@ -370,16 +370,24 @@ class SerializerTest extends TestCase
             $context->omit('required');
         });
 
-        $result = $this->serializer->serialize(
+        $fields = $this->serializer->normalize(
             NormalEntity::createDefinition($normalizer),
             ['name' => 'test-name', 'required' => 'test-required'],
             NormalizerOperation::Update,
         );
 
-        static::assertSame(['requiredNullableName' => '#requiredNullableName = :sv_requiredNullableName'], $result->getExpressions());
-        static::assertSame(['name' => '#name'], $result->getRemoveExpressions());
-        static::assertSame(['name' => null, 'requiredNullableName' => 'added'], $result->getNormalizedFields());
-        static::assertSame(NormalizerOperation::Update, $result->getOperation());
+        static::assertSame(['name' => null, 'requiredNullableName' => 'added'], $fields);
+    }
+
+    public function testASerializedPutRemembersItsOperation(): void
+    {
+        $result = $this->serializer->serialize(
+            $this->definition,
+            new NormalEntity()->setAutofilledId('test-id')->setRequired('test-required'),
+            NormalizerOperation::Put,
+        );
+
+        static::assertSame(NormalizerOperation::Put, $result->getOperation());
     }
 
     public function testDeserializeUsesDefaultValueWhenFieldMissingAndNotNullable(): void

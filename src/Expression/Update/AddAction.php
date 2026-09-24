@@ -1,0 +1,30 @@
+<?php declare(strict_types=1);
+
+namespace Shopware\DynamodbDalBundle\Expression\Update;
+
+use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+
+/**
+ * DynamoDB's `ADD #path :value`: adds to a number, counting a missing one as 0, or adds elements to a
+ * set, creating a missing one. The operand goes through the field's serializer, so an `int` field refuses
+ * a fractional step instead of storing one it would read back truncated.
+ */
+class AddAction implements UpdateActionInterface
+{
+    public function __construct(
+        public readonly string $fieldName,
+        public readonly mixed $value,
+    ) {
+    }
+
+    public function getClause(): UpdateClause
+    {
+        return UpdateClause::Add;
+    }
+
+    public function compile(ExpressionCompileContext $context): ?string
+    {
+        return "{$context->attribute($this->fieldName)} {$context->placeholder($this->fieldName, $this->value)}";
+    }
+}

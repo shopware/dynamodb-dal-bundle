@@ -2,7 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
@@ -505,7 +505,7 @@ class ExpressionCompileContextTest extends TestCase
     /**
      * @return array{0: ?string, 1: ExpressionCompileContext}
      */
-    private function compile(ExpressionInterface $filter, ?EntityDefinition $definition = null): array
+    private function compile(FilterInterface $filter, ?EntityDefinition $definition = null): array
     {
         $context = new ExpressionCompileContext(
             $definition ?? NormalEntity::createDefinition(),

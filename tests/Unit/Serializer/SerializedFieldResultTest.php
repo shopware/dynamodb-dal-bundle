@@ -21,52 +21,23 @@ class SerializedFieldResultTest extends TestCase
 
         static::assertSame($path->definition, $result->getDefinition());
         static::assertSame($attributeValue, $result->getValue());
-
         static::assertSame(['settings' => $attributeValue], $result->getFields());
-        static::assertSame([':sv_settings' => $attributeValue], $result->getExpressionAttributeValues());
-        static::assertSame(['#settings' => 'settings'], $result->getExpressionAttributeNames());
-        static::assertSame(['settings' => '#settings = :sv_settings'], $result->getExpressions());
-        static::assertSame([], $result->getRemoveExpressions());
     }
 
-    public function testRemovalCarriesNoValue(): void
+    public function testAnUnsetValueIsAbsentFromTheItem(): void
     {
         $result = new SerializedFieldResult($this->parse('settings'), null);
 
         static::assertNull($result->getValue());
         static::assertSame([], $result->getFields());
-        static::assertSame([], $result->getExpressionAttributeValues());
-        static::assertSame([], $result->getExpressions());
-        // The name is still registered — the REMOVE clause has to spell the attribute too.
-        static::assertSame(['#settings' => 'settings'], $result->getExpressionAttributeNames());
-        static::assertSame(['settings' => '#settings'], $result->getRemoveExpressions());
     }
 
-    public function testNestedPathAddressesOneMapEntry(): void
+    public function testNestedPathIsKeyedByThePath(): void
     {
         $attributeValue = new AttributeValue(['S' => 'token-1']);
         $result = new SerializedFieldResult($this->parse('settings.color'), $attributeValue);
 
-        static::assertSame([':sv_settings_2ecolor' => $attributeValue], $result->getExpressionAttributeValues());
-        static::assertSame(
-            ['#settings' => 'settings', '#color' => 'color'],
-            $result->getExpressionAttributeNames(),
-        );
-        static::assertSame(
-            ['settings.color' => '#settings.#color = :sv_settings_2ecolor'],
-            $result->getExpressions(),
-        );
-    }
-
-    public function testNestedRemovalCompilesToThePathAlone(): void
-    {
-        $result = new SerializedFieldResult($this->parse('settings.foo-bar'), null);
-
-        static::assertSame(['settings.foo-bar' => '#settings.#foo_2dbar'], $result->getRemoveExpressions());
-        static::assertSame([
-            '#settings' => 'settings',
-            '#foo_2dbar' => 'foo-bar',
-        ], $result->getExpressionAttributeNames());
+        static::assertSame(['settings.color' => $attributeValue], $result->getFields());
     }
 
     private function parse(string $path): FieldPath

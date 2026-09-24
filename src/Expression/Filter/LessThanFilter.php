@@ -2,10 +2,10 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class LessThanFilter implements ExpressionInterface
+class LessThanFilter implements FilterInterface
 {
     public function __construct(
         public readonly string $fieldName,

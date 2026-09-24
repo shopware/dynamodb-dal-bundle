@@ -10,7 +10,7 @@ use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
@@ -24,7 +24,6 @@ use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\ReturnValue;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
-use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use AsyncAws\DynamoDb\ValueObject\CancellationReason;
 use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
 use AsyncAws\DynamoDb\ValueObject\WriteRequest;
@@ -98,7 +97,7 @@ class WriterClient
                 ...$expression->getExpressionAttributes(),
             ])->resolve();
 
-            $this->applySerialized($inputs[0]->entity, $result);
+            $this->applyFields($inputs[0]->entity, $definition, $result->getNormalizedFields(), $result->getOperation());
 
             return;
         }
@@ -117,10 +116,10 @@ class WriterClient
      * Every update is conditioned on its item existing, so a missing key fails instead of creating a partial item.
      *
      * {@see UpdateInput::$refresh} decides how updates are applied to the existing entity:
-     * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
+     * 1. `null` = best effort of keeping the entity up-to-date. Nested paths and actions will not be applied.
      * 2. `true` = entity changes are applied, if necessary a readback is performed.
      * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
-     * Readbacks are only necessary if an update for a nested path is performed.
+     * Readbacks are only necessary if an update writes a nested path or has an action.
      *
      * This operation is atomic and uses {@see self::transactWrite} for batch writes, since
      * `BatchWriteItem` cannot update items.
@@ -132,7 +131,7 @@ class WriterClient
      * @param UpdateInput<Entity> ...$inputs
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws DALException if an update, a key or a condition does not serialize, an update has nothing to write, or a stored item does not deserialize
      * @throws ConditionalCheckFailedException for a lone input, when the item does not exist or the condition fails
      * @throws TransactionCanceledException for several inputs, e.g. when an item does not exist or a condition fails
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
@@ -142,8 +141,8 @@ class WriterClient
         $definition = $this->definitionRegistry->getByEntityClass($class);
 
         if (\count($inputs) === 1) {
-            $result = $this->serializer->serialize($definition, $inputs[0]->fields, NormalizerOperation::Update);
-            $expression = $this->compileUpdateCondition($definition, $inputs[0]);
+            [, $update] = $this->expressionCompiler->compileUpdate($definition, $inputs[0]->update);
+            $condition = $this->compileUpdateCondition($definition, $inputs[0]);
             // update entity if the caller did not explicitly disallowed it
             $entity = $inputs[0]->refresh !== false && $inputs[0]->key instanceof AbstractEntity ? $inputs[0]->key : null;
 
@@ -151,8 +150,9 @@ class WriterClient
                 'TableName' => $definition->getTable(),
                 'Key' => $this->serializer->serializeKey($definition, $inputs[0]->key),
                 ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
-                ...$expression->getExpression('condition'),
-                ...$this->merge($result->getUpdateExpression(), $expression->getExpressionAttributes()),
+                ...$update->getExpression('update'),
+                ...$condition->getExpression('condition'),
+                ...$update->getExpressionAttributes($condition),
             ]);
 
             $output->resolve();
@@ -212,11 +212,11 @@ class WriterClient
      * Write entities to different tables as one transaction.
      * Once the transaction succeeds the serialized result of every put is applied back onto its entity (see {@see self::put()}).
      * Every update keyed by an entity is backfilled based on {@see UpdateInput::$refresh}:
-     * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
+     * 1. `null` = best effort of keeping the entity up-to-date. Nested paths and actions will not be applied.
      * 2. `true` = entity changes are applied, if necessary a readback is performed.
      * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
-     * Readbacks are only necessary if an update for a nested path is performed.
-     * 
+     * Readbacks are only necessary if an update writes a nested path or has an action.
+     *
      * Transactional writes are limited to 100 operations per batch.
      * A `TransactionConflict` cancellation is retried with backoff; any other cancellation reason is rethrown.
      *
@@ -225,13 +225,13 @@ class WriterClient
      * @param TransactWriteInput<Entity> $input
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if an entity, a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws DALException if an entity, an update, a key or a condition does not serialize, an update has nothing to write, or a stored item does not deserialize
      * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void
     {
-        /** @var list<array{SerializedResult, AbstractEntity}> $applies */
+        /** @var list<array{AbstractEntity, EntityDefinition, array<string, mixed>, NormalizerOperation}> $applies */
         $applies = [];
         /** @var list<AbstractEntity> $refreshes */
         $refreshes = [];
@@ -253,21 +253,22 @@ class WriterClient
                 }
 
                 if ($operation instanceof UpdateInput) {
-                    $result = $this->serializer->serialize($definition, $operation->fields, NormalizerOperation::Update);
-                    $expression = $this->compileUpdateCondition($definition, $operation);
+                    [$normalized, $update] = $this->expressionCompiler->compileUpdate($definition, $operation->update);
+                    $condition = $this->compileUpdateCondition($definition, $operation);
 
                     $writeRequests[] = new TransactWriteItem(['Update' => [
                         'TableName' => $definition->getTable(),
                         'Key' => $this->serializer->serializeKey($definition, $operation->key),
-                        ...$expression->getExpression('condition'),
-                        ...$this->merge($result->getUpdateExpression(), $expression->getExpressionAttributes()),
+                        ...$update->getExpression('update'),
+                        ...$condition->getExpression('condition'),
+                        ...$update->getExpressionAttributes($condition),
                     ]]);
 
                     if ($operation->refresh !== false && $operation->key instanceof AbstractEntity) {
-                        if ($operation->refresh === true && $result->hasNestedFields()) {
+                        if ($operation->refresh === true && !$normalized->onlySetsWholeFields($definition)) {
                             $refreshes[] = $operation->key;
                         } else {
-                            $applies[] = [$result, $operation->key];
+                            $applies[] = [$operation->key, $definition, $normalized->fields, NormalizerOperation::Update];
                         }
                     }
                 }
@@ -283,7 +284,7 @@ class WriterClient
                         ...$expression->getExpressionAttributes(),
                     ]]);
 
-                    $applies[] = [$result, $operation->entity];
+                    $applies[] = [$operation->entity, $definition, $result->getNormalizedFields(), $result->getOperation()];
                 }
             }
         }
@@ -292,8 +293,8 @@ class WriterClient
             $this->transactWriteChunkWithConflictRetry($chunk);
         }
 
-        foreach ($applies as [$result, $entity]) {
-            $this->applySerialized($entity, $result);
+        foreach ($applies as [$entity, $definition, $fields, $normalizedFor]) {
+            $this->applyFields($entity, $definition, $fields, $normalizedFor);
         }
 
         // Strongly consistent, so the read-back is guaranteed to observe the write just made
@@ -301,19 +302,18 @@ class WriterClient
     }
 
     /**
-     * @param SerializedResult<EntityDefinition<AbstractEntity>> $result
+     * @param array<string, mixed> $fields - normalized, as they were written; a path into an attribute is skipped
+     * @param NormalizerOperation $operation - the write they were normalized for
      */
-    private function applySerialized(AbstractEntity $entity, SerializedResult $result): void
+    private function applyFields(AbstractEntity $entity, EntityDefinition $definition, array $fields, NormalizerOperation $operation): void
     {
-        $definition = $result->getEntityDefinition();
-
         $fields = array_filter(
-            $result->getNormalizedFields(),
+            $fields,
             static fn (string $name): bool => $definition->getFieldDefinition($name) !== null,
             \ARRAY_FILTER_USE_KEY,
         );
 
-        $entity->setVars($this->serializer->denormalize($definition, $fields, $result->getOperation()));
+        $entity->setVars($this->serializer->denormalize($definition, $fields, $operation));
     }
 
     /**
@@ -394,7 +394,7 @@ class WriterClient
         }
 
         foreach ($puts as [$result, $entity]) {
-            $this->applySerialized($entity, $result);
+            $this->applyFields($entity, $definition, $result->getNormalizedFields(), $result->getOperation());
         }
     }
 
@@ -409,10 +409,10 @@ class WriterClient
     /**
      * @throws DALException
      */
-    private function compileExpression(EntityDefinition $definition, ?ExpressionInterface $expression): ExpressionCompiledResult
+    private function compileExpression(EntityDefinition $definition, ?FilterInterface $expression): ExpressionCompiledResult
     {
         if ($expression) {
-            return $this->expressionCompiler->compile($definition, $expression);
+            return $this->expressionCompiler->compileFilter($definition, $expression);
         }
 
         return new ExpressionCompiledResult();
@@ -433,30 +433,6 @@ class WriterClient
         return $this->compileExpression(
             $definition,
             $input->conditionExpression ? Filter::and($exists, $input->conditionExpression) : $exists,
-        );
-    }
-
-    /**
-     * @param array{UpdateExpression?: string, ConditionExpression?: string, ExpressionAttributeNames?: array<string, string>, ExpressionAttributeValues?: array<string, AttributeValue>} ...$expressions
-     *
-     * @return array{UpdateExpression?: string, ConditionExpression?: string, ExpressionAttributeNames?: array<string, string>, ExpressionAttributeValues?: array<string, AttributeValue>}
-     */
-    private function merge(array ...$expressions): array
-    {
-        $names = [];
-        $values = [];
-        foreach ($expressions as $expression) {
-            $names = [...$names, ...($expression['ExpressionAttributeNames'] ?? [])];
-            $values = [...$values, ...($expression['ExpressionAttributeValues'] ?? [])];
-        }
-
-        return array_filter(
-            [
-                ...array_merge(...$expressions),
-                'ExpressionAttributeNames' => $names,
-                'ExpressionAttributeValues' => $values,
-            ],
-            static fn (mixed $value): bool => $value !== [],
         );
     }
 }

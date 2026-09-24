@@ -2,13 +2,13 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class NotFilter implements ExpressionInterface
+class NotFilter implements FilterInterface
 {
     public function __construct(
-        public readonly ExpressionInterface $filter,
+        public readonly FilterInterface $filter,
     ) {
     }
 

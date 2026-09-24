@@ -2,10 +2,10 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class EqualsFilter implements ExpressionInterface
+class EqualsFilter implements FilterInterface
 {
     public function __construct(
         public readonly string $fieldName,
