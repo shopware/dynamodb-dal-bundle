@@ -222,6 +222,15 @@ final readonly class DefinitionBuilder
             throw new \LogicException("Entity property {$entityClass}::\${$property->name} has to be protected or public");
         }
 
+        // Every read and every write-back assigns the field again, through AbstractEntity::setVars()
+        if ($property->isReadOnly()) {
+            throw new \LogicException("Entity property {$entityClass}::\${$property->name} must not be readonly, as every read and write-back assigns it again");
+        }
+
+        if ($property->isPrivateSet()) {
+            throw new \LogicException("Entity property {$entityClass}::\${$property->name} must not be private(set), as it is assigned from " . AbstractEntity::class);
+        }
+
         $type = $property->getType();
         if (!$type) {
             throw new \LogicException("Entity property {$entityClass}::\${$property->name} has no type specified");
