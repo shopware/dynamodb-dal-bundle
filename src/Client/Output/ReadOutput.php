@@ -3,7 +3,6 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * A DynamoDB read result that streams its source generator **once**. It is single-use: the first of
@@ -15,7 +14,6 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
  *
  * @implements \IteratorAggregate<int, Entity>
  */
-#[Exclude]
 abstract class ReadOutput implements \IteratorAggregate
 {
     private bool $consumed = false;

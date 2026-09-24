@@ -8,14 +8,12 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * @template Entity of AbstractEntity
  *
  * @extends ReadOutput<Entity, array<string, AttributeValue>|int>
  */
-#[Exclude]
 final class SearchOutput extends ReadOutput
 {
     private readonly ?int $limit;

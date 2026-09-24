@@ -3,7 +3,6 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * The typed result of a single- or multi-table {@see GetInput} — a bounded key read,
@@ -13,7 +12,6 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
  *
  * @implements \IteratorAggregate<int, Entity>
  */
-#[Exclude]
 final class GetOutput implements \IteratorAggregate
 {
     /**

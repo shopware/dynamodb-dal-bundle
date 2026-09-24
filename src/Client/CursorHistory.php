@@ -4,7 +4,6 @@ namespace Shopware\DynamodbDalBundle\Client;
 
 use Shopware\DynamodbDalBundle\Client\Output\Page;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * The positions a paginated view visited, carried along (typically in one URL parameter) for what DynamoDB
@@ -14,7 +13,6 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
  * A position is a {@see Page} token, or several named ones {@see combine()}d for a page merged from several
  * searches. A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
  */
-#[Exclude]
 final readonly class CursorHistory implements \Stringable
 {
     /**

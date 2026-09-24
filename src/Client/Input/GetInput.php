@@ -4,7 +4,6 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Index;
-use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
 /**
  * A read request for items spanning one or multiple tables by {@see Index}, keyed by the entity class each set of
@@ -13,7 +12,6 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
  *
  * @template Entity of AbstractEntity = never
  */
-#[Exclude]
 class GetInput
 {
     /**
