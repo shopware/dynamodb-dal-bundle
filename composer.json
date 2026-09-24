@@ -5,8 +5,9 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "Michel Bade",
-            "email": "m.bade@shopware.com"
+            "name": "shopware AG",
+            "email": "info@shopware.com",
+            "role": "Owner"
         }
     ],
     "autoload": {
