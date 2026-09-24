@@ -206,6 +206,26 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
     }
 
+    /**
+     * The normalizer is told it runs for an update, so it stamps one without the caller naming the field. A put
+     * may be the row's first write, so it stamps nothing.
+     */
+    public function testUpdateWritesWhatTheNormalizerAddsForAnUpdate(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+        $this->writer()->put(NormalizedEntity::class, new PutInput($entity));
+
+        $put = $this->readNormalized($entity);
+
+        $this->writer()->update(NormalizedEntity::class, new UpdateInput(new Index($entity->pk, $entity->id), ['label' => 'renamed']));
+
+        $updated = $this->readNormalized($entity);
+
+        static::assertNotNull($put);
+        static::assertNull($put->updatedAt);
+        static::assertSame(NormalizedEntityNormalizer::UPDATED_AT, $updated?->updatedAt?->getTimestamp());
+    }
+
     public function testUpdateSeveralItemsWritesThemAllViaTransaction(): void
     {
         $this->writer()->put(
@@ -238,6 +258,9 @@ class WriterClientTest extends DynamoDbTestCase
 
         static::assertSame('one', $first->label);
         static::assertSame('two', $second->label);
+        // A transaction returns no item, so what the normalizer added is applied back like what the caller wrote.
+        static::assertSame(NormalizedEntityNormalizer::UPDATED_AT, $first->updatedAt?->getTimestamp());
+        static::assertSame(NormalizedEntityNormalizer::UPDATED_AT, $second->updatedAt?->getTimestamp());
     }
 
     public function testUpdateSingleWithConditionThrowsWhenTheConditionFails(): void

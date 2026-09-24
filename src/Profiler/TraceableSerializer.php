@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Profiler;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Symfony\Component\Stopwatch\Stopwatch;
@@ -33,14 +34,14 @@ final class TraceableSerializer extends Serializer
         return $this->trace('deserialize', $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output, $entity));
     }
 
-    public function deserializeFields(EntityDefinition $definition, array $output): array
+    public function deserializeFields(EntityDefinition $definition, array $output, NormalizerOperation $operation): array
     {
-        return $this->trace('deserializeFields', $definition, fn (): array => $this->inner->deserializeFields($definition, $output));
+        return $this->trace('deserializeFields', $definition, fn (): array => $this->inner->deserializeFields($definition, $output, $operation));
     }
 
-    public function serialize(EntityDefinition $definition, AbstractEntity|array $fields): SerializedResult
+    public function serialize(EntityDefinition $definition, AbstractEntity|array $fields, NormalizerOperation $operation): SerializedResult
     {
-        return $this->trace('serialize', $definition, fn (): SerializedResult => $this->inner->serialize($definition, $fields));
+        return $this->trace('serialize', $definition, fn (): SerializedResult => $this->inner->serialize($definition, $fields, $operation));
     }
 
     /**

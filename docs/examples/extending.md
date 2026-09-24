@@ -92,13 +92,12 @@ the bundle has no way to build one. Assigning that array to the property fails w
 - turn the array back into the object in the entity's [normalizer](#a-normalizer):
 
 ```php
-public function denormalize(array $fields, array $keys): array
+public function denormalize(NormalizerContext $context): void
 {
-    if (isset($keys['address']) && \is_array($fields['address'] ?? null)) {
-        $fields['address'] = Address::fromArray($fields['address']);
+    $address = $context->get('address');
+    if (\is_array($address)) {
+        $context->set('address', Address::fromArray($address));
     }
-
-    return $fields;
 }
 ```
 
@@ -109,8 +108,9 @@ public function denormalize(array $fields, array $keys): array
 ## A normalizer
 
 A normalizer sees all of an item's fields together: before they are serialized, and after they are
-deserialized. It fills in what no single field can: a key composed from other fields, generated values, and
-fields that older rows lack.
+deserialized. It fills in what no single field can: a key composed from other fields, generated values, a
+timestamp every update moves, and fields that older rows lack. Its context says what it runs for, so a rule
+such as "stamp every update" lives here instead of in each place that updates the item.
 
 ```php
 namespace App\Entity;
@@ -145,6 +145,12 @@ class LedgerEntryEntity extends AbstractEntity
     public \DateTimeImmutable $createdAt;
 
     /**
+     * Set by the normalizer on every update
+     */
+    #[Field]
+    public ?\DateTimeImmutable $updatedAt = null;
+
+    /**
      * Added later; rows written before have none
      */
     #[Field]
@@ -156,34 +162,39 @@ class LedgerEntryEntity extends AbstractEntity
 namespace App\Entity;
 
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Symfony\Component\Uid\Uuid;
 
 final class LedgerEntryNormalizer extends AbstractNormalizer
 {
-    public function normalize(array $fields, array $keys): array
+    public function normalize(NormalizerContext $context): void
     {
-        if (isset($keys['id'])) {
-            $fields['id'] ??= Uuid::v7();
+        // An update always hits a stored row, which keeps the creation time the put gave it
+        if ($context->operation === NormalizerOperation::Update) {
+            $context->set('updatedAt', new \DateTimeImmutable());
+            $context->omit('createdAt');
+
+            return;
         }
 
-        if (isset($keys['createdAt'])) {
-            $fields['createdAt'] ??= new \DateTimeImmutable();
+        if ($context->operation !== NormalizerOperation::Put) {
+            return;
         }
 
-        if (isset($keys['pk'], $fields['accountId'], $fields['currency'])) {
-            $fields['pk'] ??= \sprintf('%s#%s', $fields['accountId'], $fields['currency']);
-        }
+        $context->setIfUnset('id', Uuid::v7());
+        $context->setIfUnset('createdAt', new \DateTimeImmutable());
 
-        return $fields;
+        $accountId = $context->get('accountId');
+        $currency = $context->get('currency');
+        if ($context->get('pk') === null && $accountId !== null && $currency !== null) {
+            $context->set('pk', \sprintf('%s#%s', $accountId, $currency));
+        }
     }
 
-    public function denormalize(array $fields, array $keys): array
+    public function denormalize(NormalizerContext $context): void
     {
-        if (isset($keys['source'])) {
-            $fields['source'] ??= 'legacy';
-        }
-
-        return $fields;
+        $context->setIfUnset('source', 'legacy');
     }
 }
 ```
@@ -199,16 +210,51 @@ $this->client->put(LedgerEntryEntity::class, new PutInput($entry));
 
 $entry->pk; // "acc-7#EUR"
 $entry->id; // the generated Uuid
+
+$this->client->update(LedgerEntryEntity::class, new UpdateInput($entry, ['amountCents' => -1_300]));
+
+$entry->updatedAt; // stamped without the caller naming it
 ```
 
+`$context->operation` says what the normalizer runs for, and which fields it gets:
+
+| Operation | Runs for | Fields present |
+|---|---|---|
+| `Put` | A put | Every field, `null` where the property is not initialized |
+| `Update` | An update, whose row is known to exist | Only the paths the update writes, `null` for one it removes |
+| `Key` | A lookup, delete or update by key, and a key read from a pagination cursor | Only the key fields |
+| `Read` | An item read from DynamoDB | Every field, as its default or `null` where the row has none |
+
 - `#[Table(normalizer: ...)]` takes a service ID. In a standard Symfony application, that is the class name.
-- The normalizer also runs for partial data. An update passes only the fields it writes, and a key lookup passes
-  only the key fields. `$keys` lists the fields being processed. Check it, and never assume a field is present.
-- Uninitialized properties reach `normalize()` as `null`. Missing attributes reach `denormalize()` as the
-  field's default, or as `null` if it has none. A value the normalizer leaves `null` on a required field fails
-  as usual.
-- After a put, generated values are written back to the entity.
+- Override only the side you need. The other one leaves the fields as they are.
+- Never assume a field is present. `has()` tells whether it is, even as `null`, and `get()` returns `null` for
+  one that is absent or not present.
+- An update may write into an attribute without naming it, such as `meta.kind` instead of `meta`.
+  `hasWithin('meta')` and `getWithin('meta')` find the attribute and every path nested under it,
+  but not `metadata`.
+- `set()` adds or replaces a path. `remove()` makes it absent: a put leaves the attribute out, an update removes
+  it. `omit()` leaves it out entirely: an update does not touch it, a read does not apply it to the entity.
+- `setIfUnset()` fills a path only where it is present and `null`, such as a generated ID on a put. A path the
+  fields do not name stays out, so an update that does not write `createdAt` never overwrites the stored one, and a
+  key never gains an attribute. Use `set()` to add a path, such as `updatedAt` on an update.
+- A key runs through the normalizer on its own, also an update's, whose fields run as `Update` separately.
+  Canonicalize a key there, such as trimming or lowercasing it, so a lookup matches the stored row. Generate
+  nothing for it.
+- A value the normalizer leaves `null` on a required field fails as usual.
+- After a put, generated values are written back to the entity. After an update in a transaction, which returns
+  no item, the fields it wrote are, including those the normalizer added. `denormalize()` then runs with the
+  write's operation, `Put` or `Update`, instead of `Read`.
 - A table key field may be nullable only on an entity with a normalizer, which then has to fill it in.
+- A test builds the context the normalizer should handle and reads the fields back:
+
+  ```php
+  $context = new NormalizerContext(NormalizerOperation::Update, ['amountCents' => -1_300]);
+
+  new LedgerEntryNormalizer()->normalize($context);
+
+  static::assertInstanceOf(\DateTimeImmutable::class, $context->get('updatedAt'));
+  static::assertFalse($context->has('createdAt'));
+  ```
 
 ## A filter of your own
 

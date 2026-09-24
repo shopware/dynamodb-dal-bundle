@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
@@ -31,6 +32,7 @@ class SerializedResultTest extends TestCase
             $definition,
             ['autofilledId' => $idField, 'name' => $nameField],
             ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'],
+            NormalizerOperation::Put,
         );
 
         static::assertEquals([
@@ -59,10 +61,11 @@ class SerializedResultTest extends TestCase
         $definition = $this->createEntityDefinition();
         $fields = ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'];
 
-        $result = new SerializedResult($definition, [], $fields);
+        $result = new SerializedResult($definition, [], $fields, NormalizerOperation::Update);
 
         static::assertSame($fields, $result->getNormalizedFields());
         static::assertSame($definition, $result->getEntityDefinition());
+        static::assertSame(NormalizerOperation::Update, $result->getOperation());
     }
 
     /**

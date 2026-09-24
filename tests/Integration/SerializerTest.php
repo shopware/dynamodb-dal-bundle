@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\Address;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ContactEntity;
@@ -46,7 +47,7 @@ class SerializerTest extends TestCase
 
     public function testGetUpdateExpressionBuildsASetClauseForASingleValue(): void
     {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => 'a name'])->getUpdateExpression();
+        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => 'a name'], NormalizerOperation::Update)->getUpdateExpression();
 
         static::assertSame('SET #name = :sv_name', $expression['UpdateExpression']);
         static::assertSame(['#name' => 'name'], $expression['ExpressionAttributeNames'] ?? null);
@@ -61,7 +62,7 @@ class SerializerTest extends TestCase
         $expression = $this->serializer()->serialize($this->definition('record'), [
             'name' => 'a name',
             'counter' => 7,
-        ])->getUpdateExpression();
+        ], NormalizerOperation::Update)->getUpdateExpression();
 
         // Both assignments live in one SET clause; ordering follows the provided field order.
         static::assertSame('SET #name = :sv_name, #counter = :sv_counter', $expression['UpdateExpression']);
@@ -74,7 +75,7 @@ class SerializerTest extends TestCase
 
     public function testGetUpdateExpressionBuildsARemoveClauseForNullValues(): void
     {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => null])->getUpdateExpression();
+        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => null], NormalizerOperation::Update)->getUpdateExpression();
 
         static::assertSame('REMOVE #name', $expression['UpdateExpression']);
         static::assertSame(['#name' => 'name'], $expression['ExpressionAttributeNames'] ?? null);
@@ -86,7 +87,7 @@ class SerializerTest extends TestCase
         $expression = $this->serializer()->serialize($this->definition('record'), [
             'name' => null,
             'counter' => 7,
-        ])->getUpdateExpression();
+        ], NormalizerOperation::Update)->getUpdateExpression();
 
         static::assertSame('SET #counter = :sv_counter REMOVE #name', $expression['UpdateExpression']);
         static::assertSame(['#name' => 'name', '#counter' => 'counter'], $expression['ExpressionAttributeNames'] ?? null);
@@ -94,7 +95,7 @@ class SerializerTest extends TestCase
 
     public function testGetUpdateExpressionForAnEmptyFieldSetProducesNoClauses(): void
     {
-        $expression = $this->serializer()->serialize($this->definition('record'), [])->getUpdateExpression();
+        $expression = $this->serializer()->serialize($this->definition('record'), [], NormalizerOperation::Update)->getUpdateExpression();
 
         static::assertSame('', $expression['UpdateExpression']);
         static::assertArrayNotHasKey('ExpressionAttributeNames', $expression);
@@ -103,7 +104,7 @@ class SerializerTest extends TestCase
 
     public function testGetUpdateExpressionAddressesOneMapEntry(): void
     {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['meta.kind' => 'invoice'])->getUpdateExpression();
+        $expression = $this->serializer()->serialize($this->definition('record'), ['meta.kind' => 'invoice'], NormalizerOperation::Update)->getUpdateExpression();
 
         static::assertSame('SET #meta.#kind = :sv_meta_2ekind', $expression['UpdateExpression']);
         static::assertSame(['#meta' => 'meta', '#kind' => 'kind'], $expression['ExpressionAttributeNames'] ?? null);
@@ -121,7 +122,7 @@ class SerializerTest extends TestCase
         $contact->id = 'contact-1';
         $contact->address = new Address('Main Street 1', 'Springfield');
 
-        $item = $this->serializer()->serialize($definition, $contact)->getFields();
+        $item = $this->serializer()->serialize($definition, $contact, NormalizerOperation::Put)->getFields();
 
         static::assertEquals(new AttributeValue(['S' => '{"street":"Main Street 1","city":"Springfield"}']), $item['address'] ?? null);
 

@@ -3,24 +3,17 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures;
 
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 
 class NormalNormalizer extends AbstractNormalizer
 {
-    public function normalize(array $fields, array $keys): array
+    public function normalize(NormalizerContext $context): void
     {
-        if (isset($keys['autofilledId'])) {
-            $fields['autofilledId'] ??= 'test-id';
-        }
-
-        return $fields;
+        $context->setIfUnset('autofilledId', 'test-id');
     }
 
-    public function denormalize(array $fields, array $keys): array
+    public function denormalize(NormalizerContext $context): void
     {
-        if (isset($keys['autofilledId'])) {
-            $fields['autofilledId'] ??= 'test-id';
-        }
-
-        return $fields;
+        $context->setIfUnset('autofilledId', 'test-id');
     }
 }

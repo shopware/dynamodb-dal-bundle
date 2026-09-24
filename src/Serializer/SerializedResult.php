@@ -16,11 +16,13 @@ class SerializedResult
      * @param Definition $definition
      * @param array<string, SerializedFieldResult> $fields
      * @param array<string, mixed> $normalizedFields
+     * @param NormalizerOperation $operation - what the fields were normalized for
      */
     public function __construct(
         protected readonly EntityDefinition $definition,
         protected readonly array $fields,
         protected readonly array $normalizedFields,
+        protected readonly NormalizerOperation $operation,
     ) {
     }
 
@@ -35,6 +37,11 @@ class SerializedResult
     public function getNormalizedFields(): array
     {
         return $this->normalizedFields;
+    }
+
+    public function getOperation(): NormalizerOperation
+    {
+        return $this->operation;
     }
 
     /**
