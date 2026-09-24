@@ -224,8 +224,8 @@ foreach ($this->client->search($definition, new ScanInput(filter: Filter::equals
 }
 ```
 
-`count()` takes the same inputs and counts matches with `Select=COUNT` across all pages. No items are
-transferred, but DynamoDB still reads every item the query or scan covers.
+`count()` takes the same inputs and counts matches with `Select=COUNT` across all pages, ignoring `limit`.
+No items are transferred, but DynamoDB still reads every item the query or scan covers.
 
 ```php
 $open = $this->client->count($definition, new QueryInput(
@@ -239,14 +239,14 @@ $open = $this->client->count($definition, new QueryInput(
 `search()` returns a `SearchOutput` that streams its matches. It fetches DynamoDB's pages as you iterate, so
 even a large scan never has to fit in memory. The output can be read once, in one of these ways:
 
-- `foreach` streams every match
-- `toArray()` returns every match as a list
+- `foreach` streams the matches
+- `toArray()` returns the matches as a list
 - `first()` returns the first match, or `null`
-- `page()` returns at most `limit` matches, with tokens for the next and previous page. See
+- `page()` returns the matches with tokens for the next and previous page. See
   [Paginated listing](paginated-listing.md).
 
-A second read throws a `LogicException`; run the search again instead. `limit` only applies to `page()`.
-`foreach` and `toArray()` read every match, so break out of the loop to stop early.
+With a `limit` on the input, each of these returns at most that many matches and stops reading DynamoDB's
+pages once it has them. A second read throws a `LogicException`; run the search again instead.
 
 ## Putting and deleting
 

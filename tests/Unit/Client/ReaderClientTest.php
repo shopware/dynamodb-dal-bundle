@@ -26,6 +26,7 @@ use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\Select;
 use AsyncAws\DynamoDb\Input\QueryInput as DynamoDbQueryInput;
 use AsyncAws\DynamoDb\Input\ScanInput as DynamoDbScanInput;
+use AsyncAws\DynamoDb\Result\QueryOutput;
 use AsyncAws\DynamoDb\Result\ScanOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -213,6 +214,73 @@ class ReaderClientTest extends TestCase
         iterator_to_array($this->reader->search($this->definition, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor)), false);
     }
 
+    public function testSearchRequestsTheNextPageOnlyOnceTheStreamReachesIt(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
+        $itemA = $this->item('a');
+        $itemB = $this->item('b');
+
+        // An ArrayObject holder, so phpstan does not constant-fold what the callback records.
+        /** @var \ArrayObject<int, DynamoDbQueryInput> $inputs */
+        $inputs = new \ArrayObject();
+        $pages = [self::queryOutput([$itemA], lastEvaluatedKey: $itemA), self::queryOutput([$itemB])];
+
+        $this->dynamo->expects(static::exactly(2))->method('query')->willReturnCallback(
+            static function (DynamoDbQueryInput $input) use ($inputs, &$pages): QueryOutput {
+                $inputs->append($input);
+
+                return array_shift($pages) ?? self::queryOutput();
+            },
+        );
+        $this->serializer->method('deserialize')->willReturnCallback(
+            static fn (EntityDefinition $definition, array $item): NormalEntity => $item === $itemA ? $a : $b,
+        );
+
+        $cursor = new Cursor($this->item('z'), backward: true)->encode();
+        $search = $this->reader->search($this->definition, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor));
+
+        static::assertSame($a, $search->current());
+        static::assertCount(1, $inputs, 'the next page must not be requested while the current one is read');
+
+        $search->next();
+        static::assertSame($b, $search->current());
+        static::assertCount(2, $inputs);
+
+        // The next page resumes after the current one, still reading backward.
+        static::assertSame('a', ($inputs[1]->getExclusiveStartKey()['autofilledId'] ?? null)?->getS());
+        static::assertFalse($inputs[1]->getScanIndexForward());
+    }
+
+    public function testSearchWithoutAFilterAsksForOneItemPastTheLimit(): void
+    {
+        $this->dynamo->expects(static::once())
+            ->method('scan')
+            ->with(static::callback(static function (DynamoDbScanInput $input): bool {
+                static::assertSame(3, $input->getLimit());
+
+                return true;
+            }))
+            ->willReturn(self::scanOutput());
+
+        iterator_to_array($this->reader->search($this->definition, new ScanInput(limit: 2)), false);
+    }
+
+    public function testSearchWithAFilterReadsFullPages(): void
+    {
+        $this->dynamo->expects(static::once())
+            ->method('scan')
+            ->with(static::callback(static function (DynamoDbScanInput $input): bool {
+                // DynamoDB filters after applying `Limit`, so a page limit would only mean more requests.
+                static::assertNull($input->getLimit());
+
+                return true;
+            }))
+            ->willReturn(self::scanOutput());
+
+        iterator_to_array($this->reader->search($this->definition, new ScanInput(filter: Filter::equals('name', 'foo'), limit: 2)), false);
+    }
+
     public function testSearchRejectsACursorOfAnotherKeySchema(): void
     {
         $this->dynamo->expects(static::never())->method('scan');
@@ -250,6 +318,21 @@ class ReaderClientTest extends TestCase
         $this->serializer->expects(static::never())->method('deserialize');
 
         static::assertSame(8, $this->reader->count($this->definition, new ScanInput()));
+    }
+
+    public function testCountIgnoresTheLimitAndReadsFullPages(): void
+    {
+        $this->dynamo->expects(static::once())
+            ->method('scan')
+            ->with(static::callback(static function (DynamoDbScanInput $input): bool {
+                // Every match is counted, so a page limit would only split the count into more requests.
+                static::assertNull($input->getLimit());
+
+                return true;
+            }))
+            ->willReturn(self::scanOutput(count: 3));
+
+        static::assertSame(3, $this->reader->count($this->definition, new ScanInput(limit: 1)));
     }
 
     public function testGetSingleKeyIssuesOneGetItemAndDeserializesTheFoundEntity(): void
@@ -507,7 +590,7 @@ class ReaderClientTest extends TestCase
     }
 
     /**
-     * A raw async-aws item map, the shape `ReaderClient::search()` reads via `$output->getItems()`.
+     * A raw async-aws item map, the shape `ReaderClient::search()` reads off each page.
      *
      * @return array<string, AttributeValue>
      */

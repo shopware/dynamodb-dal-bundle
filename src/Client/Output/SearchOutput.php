@@ -18,6 +18,8 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
 #[Exclude]
 final class SearchOutput extends ReadOutput
 {
+    private readonly ?int $limit;
+
     /**
      * @internal
      *
@@ -27,7 +29,22 @@ final class SearchOutput extends ReadOutput
         \Generator $source,
         private readonly ScanInput|QueryInput $search,
     ) {
+        $this->limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
         parent::__construct($source);
+    }
+
+    /**
+     * @return \Generator<int, Entity>
+     */
+    public function getIterator(): \Generator
+    {
+        foreach (parent::getIterator() as $position => $entity) {
+            yield $position => $entity;
+
+            if ($this->limit !== null && $position + 1 === $this->limit) {
+                return;
+            }
+        }
     }
 
     /**
@@ -41,13 +58,12 @@ final class SearchOutput extends ReadOutput
     {
         $cursor = $this->search->cursor !== null ? Cursor::decode($this->search->cursor) : null;
         $backward = $cursor !== null && $cursor->backward;
-        $limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
 
         $items = [];
         $keys = [];
         $hasMore = false;
         foreach ($this->stream() as $key => $entity) {
-            if ($limit !== null && \count($items) >= $limit) {
+            if ($this->limit !== null && \count($items) >= $this->limit) {
                 $hasMore = true;
 
                 break;
