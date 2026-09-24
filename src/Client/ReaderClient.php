@@ -51,7 +51,7 @@ class ReaderClient
      * @param GetInput<Entity> $input
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<int, Entity>
@@ -79,7 +79,7 @@ class ReaderClient
      * @param RefreshInput<Entity> $input
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function refresh(RefreshInput $input): void
@@ -200,7 +200,7 @@ class ReaderClient
      *
      * @param list<array{EntityDefinition<Entity>, array<string, AttributeValue>, ?Entity}> $requests - definition, serialized key and target
      *
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<int, Entity>

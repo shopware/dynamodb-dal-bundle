@@ -34,7 +34,7 @@ final class GetOutput implements \IteratorAggregate
 
     /**
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Traversable<int, Entity>
@@ -46,7 +46,7 @@ final class GetOutput implements \IteratorAggregate
 
     /**
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return list<Entity>
@@ -64,7 +64,7 @@ final class GetOutput implements \IteratorAggregate
      * @param class-string<E> $class
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return list<E>
@@ -85,7 +85,7 @@ final class GetOutput implements \IteratorAggregate
      * All found entities bucketed by their exact entity class.
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return array<class-string<Entity>, non-empty-list<Entity>>
@@ -102,7 +102,7 @@ final class GetOutput implements \IteratorAggregate
 
     /**
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return ?Entity
@@ -114,7 +114,7 @@ final class GetOutput implements \IteratorAggregate
 
     /**
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a stored item does not serialize
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return list<Entity>

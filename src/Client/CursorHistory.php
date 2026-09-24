@@ -64,7 +64,7 @@ final readonly class CursorHistory implements \Stringable
      *
      * @param array<string, string> $positions - name => token
      *
-     * @throws \JsonException if a name is not valid UTF-8
+     * @throws \JsonException if a name or a token is not valid UTF-8
      */
     public static function combine(array $positions): string
     {
