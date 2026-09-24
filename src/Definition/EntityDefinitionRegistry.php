@@ -38,6 +38,12 @@ class EntityDefinitionRegistry
         $this->definitions = iterator_to_array($definitions);
 
         foreach ($this->definitions as $logicalName => $definition) {
+            // The container build already refuses a shared table, but cannot see two environment variables naming the same one
+            $sharing = $this->logicalByPhysical[$definition->getTable()] ?? null;
+            if ($sharing !== null) {
+                throw new \LogicException("Entities {$this->definitions[$sharing]->getClass()} and {$definition->getClass()} are both stored in table \"{$definition->getTable()}\"; each entity needs a table of its own");
+            }
+
             $this->logicalByPhysical[$definition->getTable()] = $logicalName;
             $this->logicalByEntityClass[$definition->getClass()] = $logicalName;
         }

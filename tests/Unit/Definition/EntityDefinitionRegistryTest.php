@@ -34,6 +34,19 @@ class EntityDefinitionRegistryTest extends TestCase
         static::assertSame($customer, $registry->getByTableName('prod-customer'));
     }
 
+    /**
+     * Two environment variables can name one table, which only shows once they are resolved.
+     */
+    public function testRefusesTwoDefinitionsStoredInTheSameTable(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . OrderEntity::class . ' and ' . CustomerEntity::class . ' are both stored in table "prod-shared"; each entity needs a table of its own'));
+
+        new EntityDefinitionRegistry([
+            'order' => $this->definition('order', 'prod-shared', OrderEntity::class),
+            'customer' => $this->definition('customer', 'prod-shared', CustomerEntity::class),
+        ]);
+    }
+
     public function testGetThrowsForUnknownLogicalName(): void
     {
         $registry = new EntityDefinitionRegistry([]);

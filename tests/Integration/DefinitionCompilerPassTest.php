@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Attribute\Table;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\DefinitionBuilder;
@@ -57,6 +58,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 #[CoversClass(DefinitionCompilerPass::class)]
 #[CoversClass(DefinitionBuilder::class)]
 #[CoversClass(ServiceTaggingPass::class)]
+#[CoversClass(EntityDefinitionRegistry::class)]
 class DefinitionCompilerPassTest extends TestCase
 {
     use CompilesContainerTrait;
@@ -425,6 +427,50 @@ class DefinitionCompilerPassTest extends TestCase
         static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . EntityWithMapFieldEntity::class . ' both declare #[Table(name: "phpunit_test")]; each entity needs a name of its own'));
 
         $this->compileContainer([ValidEntity::class => self::TABLE, EntityWithMapFieldEntity::class => 'another-table']);
+    }
+
+    /**
+     * Nothing but the table tells which entity class an item belongs to, in a `BatchGetItem` response as in a scan.
+     */
+    public function testTwoEntitiesInTheSameTableFailTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . ContactEntity::class . ' are both stored in table "phpunit_test_table"; each entity needs a table of its own'));
+
+        $this->compileContainer([ValidEntity::class => self::TABLE, ContactEntity::class => self::TABLE], [ContactEntityNormalizer::class]);
+    }
+
+    public function testTwoEntitiesInTheTableOfOneEnvironmentVariableFailTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . ContactEntity::class . ' are both stored in table "%env(DYNAMODB_TABLE_SHARED)%"; each entity needs a table of its own'));
+
+        $this->compileContainer(
+            [ValidEntity::class => '%env(DYNAMODB_TABLE_SHARED)%', ContactEntity::class => '%env(DYNAMODB_TABLE_SHARED)%'],
+            [ContactEntityNormalizer::class],
+            configure: static function (ContainerBuilder $container): void {
+                $container->setParameter('env(DYNAMODB_TABLE_SHARED)', 'shared');
+            },
+        );
+    }
+
+    /**
+     * Two environment variables are two tables to the build, which cannot see their values; only the registry,
+     * built from the resolved tables, can tell that both name the same one.
+     */
+    public function testTwoEntitiesInTheTablesOfTwoEnvironmentVariablesWithTheSameValueFailOnceResolved(): void
+    {
+        $container = $this->compileContainer(
+            [ValidEntity::class => '%env(DYNAMODB_TABLE_FIRST)%', ContactEntity::class => '%env(DYNAMODB_TABLE_SECOND)%'],
+            [ContactEntityNormalizer::class],
+            [EntityDefinitionRegistry::class],
+            static function (ContainerBuilder $container): void {
+                $container->setParameter('env(DYNAMODB_TABLE_FIRST)', 'shared');
+                $container->setParameter('env(DYNAMODB_TABLE_SECOND)', 'shared');
+            },
+        );
+
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . ContactEntity::class . ' are both stored in table "shared"; each entity needs a table of its own'));
+
+        $container->get('test.' . EntityDefinitionRegistry::class);
     }
 
     /**
