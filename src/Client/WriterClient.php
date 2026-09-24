@@ -96,8 +96,8 @@ class WriterClient
     }
 
     /**
-     * Updates the given items. An update writes only the fields it names, so unlike {@see self::put()}.
-     * 
+     * Updates the given items. Unlike {@see self::put()}, an update writes only the fields it names.
+     *
      * {@see UpdateInput::$refresh} decides how updates are applied to the existing entity:
      * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
      * 2. `true` = entity changes are applied, if necessary a readback is performed.
@@ -106,7 +106,7 @@ class WriterClient
      *
      * This operation is atomic and uses {@see self::transactWrite} for batch writes, since
      * `BatchWriteItem` cannot update items.
-     * Batch writes are limited to 25 operations per batch.
+     * Transactional writes are limited to 100 operations per batch.
      *
      * @template Entity of AbstractEntity
      *

@@ -18,8 +18,8 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
  * Base for the suites that drive the DAL against a real DynamoDB.
  *
  * The endpoint comes from `DYNAMODB_ENDPOINT` and defaults to the `compose.yaml` service. When nothing
- * answers there the whole suite skips, so `composer phpunit` stays green on a machine without a
- * container runtime — run `docker compose up -d` to get the coverage.
+ * answers there every test fails with a pointer to `docker compose up -d`, so a missing container can
+ * never pass for a green run.
  *
  * The fixture tables are created once per class and emptied before every test, so a scan or a count
  * only ever sees what the test itself wrote.
@@ -30,14 +30,14 @@ abstract class DynamoDbTestCase extends TestCase
 
     private static ?DynamoDbTestKernel $kernel = null;
 
-    private static ?string $skipReason = null;
+    private static ?string $unavailableReason = null;
 
     public static function setUpBeforeClass(): void
     {
         $endpoint = self::endpoint();
 
         if (!self::isListening($endpoint)) {
-            self::$skipReason = self::skipReason($endpoint, 'nothing is listening there');
+            self::$unavailableReason = self::unavailableReason($endpoint, 'nothing is listening there');
 
             return;
         }
@@ -46,13 +46,13 @@ abstract class DynamoDbTestCase extends TestCase
         self::$kernel->boot();
 
         // Something answering on the port is not necessarily DynamoDB, so ask it for a table list
-        // before a whole suite fails against, say, a web server that happens to hold that port.
+        // rather than let every test trip over, say, a web server that happens to hold that port.
         try {
             self::bootedDynamoClient()->listTables()->resolve();
         } catch (\Throwable $exception) {
             self::$kernel->shutdown();
             self::$kernel = null;
-            self::$skipReason = self::skipReason($endpoint, $exception->getMessage());
+            self::$unavailableReason = self::unavailableReason($endpoint, $exception->getMessage());
 
             return;
         }
@@ -68,13 +68,13 @@ abstract class DynamoDbTestCase extends TestCase
         }
 
         self::$kernel = null;
-        self::$skipReason = null;
+        self::$unavailableReason = null;
     }
 
     protected function setUp(): void
     {
-        if (self::$skipReason !== null) {
-            static::markTestSkipped(self::$skipReason);
+        if (self::$unavailableReason !== null) {
+            static::fail(self::$unavailableReason);
         }
 
         $this->truncateTables();
@@ -127,7 +127,7 @@ abstract class DynamoDbTestCase extends TestCase
         return \is_string($endpoint) && $endpoint !== '' ? $endpoint : 'http://127.0.0.1:8000';
     }
 
-    private static function skipReason(string $endpoint, string $detail): string
+    private static function unavailableReason(string $endpoint, string $detail): string
     {
         return \sprintf(
             'No DynamoDB at %s (%s). Start one with `docker compose up -d`, or point DYNAMODB_ENDPOINT at your own.',

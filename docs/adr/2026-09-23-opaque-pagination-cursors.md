@@ -7,7 +7,7 @@ date: 2026-09-23
 
 ## Status
 
-Proposed. Replaces the bundle's original cursor model: `Cursor`, `CursorCollection`,
+Implemented. Replaces the bundle's original cursor model: `Cursor`, `CursorCollection`,
 `CursorHistory` and `CursorNormalizer` in `Client\Cursor`.
 
 ## Context
