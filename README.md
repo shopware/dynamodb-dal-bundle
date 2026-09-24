@@ -60,7 +60,7 @@ retries, wrap `aws.base-client` with `AsyncAws\Core\HttpClient\AwsHttpClientFact
 Read the [guidelines](docs/GUIDELINES.md) before opening a pull request.
 
 ```bash
-docker compose up -d   # DynamoDB Local on port 8000; point DYNAMODB_ENDPOINT elsewhere to use another
+docker compose up -d   # DynamoDB Local on port 8345; point DYNAMODB_ENDPOINT elsewhere to use another
 composer phpunit       # the integration suite fails when no DynamoDB answers
 composer phpstan
 composer ecs
