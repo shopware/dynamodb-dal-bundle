@@ -8,9 +8,9 @@ use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Serializes {@see \BackedEnum}.
+ * Serializes {@see \BackedEnum} to its backing value as a string (`S`), an int-backed one included.
  * Enums without any cases can not be serialized.
- * Enums missing a value or can not be deserialized will fallback to the first case available.
+ * A stored value that is no case of the enum fails to deserialize, so a case can only be removed once no row holds it.
  *
  * @internal
  *
@@ -46,10 +46,18 @@ class BackedEnumFieldSerializer extends AbstractFieldSerializer
             throw new MissingAttributeValueException($definition, 'S');
         }
 
+        $type = $definition->getType();
+
         try {
-            return ($definition->getType())::from($value);
+            return $type::from($value);
         } catch (\TypeError) {
-            return ($definition->getType())::from((int) $value);
+            $int = filter_var($value, \FILTER_VALIDATE_INT);
+            if ($int === false) {
+                // Like PHP's `BackedEnum::from()`
+                throw new \ValueError(\sprintf('"%s" is not a valid backing value for enum %s', $value, $type));
+            }
+
+            return $type::from($int);
         }
     }
 }
