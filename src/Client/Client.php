@@ -78,7 +78,7 @@ class Client
     }
 
     /**
-     * Counts matches via `Select=COUNT`, summed across all pages.
+     * Counts matches via `Select=COUNT`, summed across all pages. The input's `limit` does not apply.
      *
      * @param EntityDefinition<AbstractEntity> $definition
      */

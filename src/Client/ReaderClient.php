@@ -115,13 +115,32 @@ class ReaderClient
         }
 
         $input = $this->createSearchInput($definition, $query, $cursor);
-        $output = $input instanceof DynamoDbScanInput ? $this->client->scan($input) : $this->client->query($input);
 
-        foreach ($output->getItems() as $item) {
-            $entity = $this->serializer->deserialize($definition, $item);
-            if ($entity !== null) {
-                yield array_intersect_key($item, $keyFields) => $entity;
+        if ($query->filter === null && $query->limit !== null) {
+            // One past the limit, so page() can tell whether another page follows. DynamoDB filters after
+            // applying `Limit`, so a filtered search reads full pages instead.
+            $input->setLimit($query->limit + 1);
+        }
+
+        // Page by page rather than via async-aws' getItems(), which requests the next page before handing out
+        // the current one's items: once the consumer stops, no further page is read.
+        while (true) {
+            $output = $input instanceof DynamoDbScanInput ? $this->client->scan($input) : $this->client->query($input);
+
+            foreach ($output->getItems(true) as $item) {
+                $entity = $this->serializer->deserialize($definition, $item);
+                if ($entity !== null) {
+                    yield array_intersect_key($item, $keyFields) => $entity;
+                }
             }
+
+            $lastEvaluatedKey = $output->getLastEvaluatedKey();
+            if ($lastEvaluatedKey === []) {
+                return;
+            }
+
+            $input = clone $input;
+            $input->setExclusiveStartKey($lastEvaluatedKey);
         }
     }
 
@@ -263,11 +282,6 @@ class ReaderClient
 
         if ($filterResult->values !== []) {
             $input->setExpressionAttributeValues($filterResult->values);
-        }
-
-        if ($search->filter === null && $search->limit !== null) {
-            // always over-fetch to keep pagination logic working
-            $input->setLimit($search->limit + 1);
         }
 
         return $input;

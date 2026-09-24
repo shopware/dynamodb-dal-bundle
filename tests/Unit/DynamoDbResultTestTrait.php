@@ -2,10 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit;
 
-use AsyncAws\Core\Result;
 use AsyncAws\Core\Test\ResultMockFactory;
-use AsyncAws\DynamoDb\Input\QueryInput;
-use AsyncAws\DynamoDb\Input\ScanInput;
 use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\BatchWriteItemOutput;
 use AsyncAws\DynamoDb\Result\GetItemOutput;
@@ -23,15 +20,11 @@ trait DynamoDbResultTestTrait
      */
     protected static function queryOutput(array $items = [], array $lastEvaluatedKey = [], ?int $count = null): QueryOutput
     {
-        $output = ResultMockFactory::create(QueryOutput::class, [
+        return ResultMockFactory::create(QueryOutput::class, [
             'Items' => $items,
             'LastEvaluatedKey' => $lastEvaluatedKey,
             'Count' => $count,
         ]);
-
-        self::injectDynamoDbInput($output, new QueryInput(['TableName' => 'test-table']));
-
-        return $output;
     }
 
     /**
@@ -40,15 +33,11 @@ trait DynamoDbResultTestTrait
      */
     protected static function scanOutput(array $items = [], array $lastEvaluatedKey = [], ?int $count = null): ScanOutput
     {
-        $output = ResultMockFactory::create(ScanOutput::class, [
+        return ResultMockFactory::create(ScanOutput::class, [
             'Items' => $items,
             'LastEvaluatedKey' => $lastEvaluatedKey,
             'Count' => $count,
         ]);
-
-        self::injectDynamoDbInput($output, new ScanInput(['TableName' => 'test-table']));
-
-        return $output;
     }
 
     /**
@@ -98,11 +87,5 @@ trait DynamoDbResultTestTrait
         }
 
         return $item;
-    }
-
-    // getItems() paginates through Result::$input; ResultMockFactory cannot fill it, it looks for "...Request" not async-aws's "...Input".
-    private static function injectDynamoDbInput(Result $output, QueryInput|ScanInput $input): void
-    {
-        new \ReflectionProperty(Result::class, 'input')->setValue($output, $input);
     }
 }

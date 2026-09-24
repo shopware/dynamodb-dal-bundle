@@ -67,6 +67,24 @@ class SearchOutputTest extends TestCase
         static::assertSame(['a'], $pulled->getArrayCopy(), 'first() must not pull past the first match');
     }
 
+    public function testStreamingStopsAtTheLimitWithoutPullingFurther(): void
+    {
+        [$a, $b, $c] = self::entities('a', 'b', 'c');
+
+        /** @var \ArrayObject<int, string> $reached */
+        $reached = new \ArrayObject();
+
+        $result = $this->searchOutput((static function () use ($a, $b, $c, $reached): \Generator {
+            yield self::key('a') => $a;
+            yield self::key('b') => $b;
+            $reached->append('c');
+            yield self::key('c') => $c;
+        })(), new ScanInput(limit: 2));
+
+        static::assertSame([$a, $b], $result->toArray());
+        static::assertCount(0, $reached, 'unlike page(), a stream has no next page to peek for');
+    }
+
     public function testEmptyResultHasNoFirst(): void
     {
         $result = $this->searchOutput(self::stream());
