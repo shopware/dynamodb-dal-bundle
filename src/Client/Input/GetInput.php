@@ -52,7 +52,7 @@ class GetInput
     }
 
     /**
-     * @param ?bool $consistentRead - scan's `ConsistentRead`. Strongly consistent read; off by default (eventually consistent reads are cheaper)
+     * @param ?bool $consistentRead - `ConsistentRead` of the `GetItem`/`BatchGetItem`. Strongly consistent read; off by default (eventually consistent reads are cheaper)
      *
      * @return self<Entity>
      */
