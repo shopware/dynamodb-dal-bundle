@@ -4,9 +4,10 @@ namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -31,6 +32,8 @@ abstract class AbstractFieldSerializer
      *
      * @param FieldDefinition<AbstractEntity, TargetType> $definition
      * @param ValueType $value
+     *
+     * @throws WrongTypeException
      */
     abstract public function serialize(FieldDefinition $definition, mixed $value): AttributeValue;
 
@@ -39,8 +42,7 @@ abstract class AbstractFieldSerializer
      *
      * @param FieldDefinition<AbstractEntity, TargetType> $definition
      *
-     * @throws DALException if the provided AttributeValue does not contain the expected value type (e.g. missing "S" for a string field)
-     * @throws \Throwable if deserialization fails for any other reason (e.g. invalid value format)
+     * @throws MissingAttributeValueException
      *
      * @return ValueType
      */

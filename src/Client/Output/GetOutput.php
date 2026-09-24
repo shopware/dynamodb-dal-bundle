@@ -3,6 +3,9 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
  * The typed result of a single- or multi-table {@see GetInput} — a bounded key read,
@@ -30,6 +33,10 @@ final class GetOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return \Traversable<int, Entity>
      */
     public function getIterator(): \Traversable
@@ -38,6 +45,10 @@ final class GetOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return list<Entity>
      */
     public function toArray(): array
@@ -51,6 +62,10 @@ final class GetOutput implements \IteratorAggregate
      * @template E of Entity
      *
      * @param class-string<E> $class
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return list<E>
      */
@@ -69,6 +84,10 @@ final class GetOutput implements \IteratorAggregate
     /**
      * All found entities bucketed by their exact entity class.
      *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return array<class-string<Entity>, non-empty-list<Entity>>
      */
     public function grouped(): array
@@ -82,6 +101,10 @@ final class GetOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return ?Entity
      */
     public function first(): ?AbstractEntity
@@ -90,7 +113,13 @@ final class GetOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key does not serialize, or a stored item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return list<Entity>
+     *
+     * @phpstan-ignore-next-line throws.unusedType -- the source generator throws as iterator_to_array() reads it
      */
     private function load(): array
     {

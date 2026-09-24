@@ -44,12 +44,17 @@
 - Rethrow a `DALException` as it is. Wrap any other throwable in an exception that names the field
 - Use `\LogicException` for programming errors and container build failures
 - AsyncAws exceptions, such as `ConditionalCheckFailedException`, pass through unwrapped
+- Every function declared as public API has to define `@throws` to document what it throws.
+  PHPStan enforces it and takes a function without `@throws` to throw nothing.
+  The bundle class, the compiler passes, `DefinitionBuilder`, the commands, the profiler and the tests are not API and declare none
 
 ## Comments and docblocks
 
 - `/** … */` is for docblocks and annotations. A comment inside a method body uses `//`
 - A comment explains why. It doesn't repeat what the code, a declaration or an attribute already says
 - A docblock with only types (`@param`, `@var`, `@return`, `@throws`) needs no prose
+- A `@throws` says when only if neither the exception's nor the function's name does: `@throws UnknownFieldException`
+  needs no description, nor does `@throws DALException` on `compile()`, but `@throws \LogicException` does
 - Reference related code with `{@see}`
 
 ## Documentation

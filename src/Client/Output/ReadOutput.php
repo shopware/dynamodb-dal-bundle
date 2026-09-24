@@ -3,6 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Exception\DALException;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
  * A DynamoDB read result that streams its source generator **once**. It is single-use: the first of
@@ -33,6 +35,10 @@ abstract class ReadOutput implements \IteratorAggregate
      * by an earlier `getIterator()`/`toArray()`/`first()`/`page()` — build a new result from the same query
      * to read it again.
      *
+     * @throws \LogicException if this output has already been read
+     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return \Generator<int, Entity>
      */
     public function getIterator(): \Generator
@@ -43,6 +49,10 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws \LogicException if this output has already been read
+     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return list<Entity>
      */
     public function toArray(): array
@@ -51,6 +61,10 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws \LogicException if this output has already been read
+     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return ?Entity
      */
     public function first(): ?AbstractEntity
@@ -63,6 +77,10 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
+     * @throws \LogicException if this output has already been read
+     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return \Generator<Key, Entity>
      */
     protected function stream(): \Generator

@@ -27,6 +27,8 @@ final readonly class Cursor
 
     /**
      * The URL-safe token form: base64url of `{"k": {attribute: {S|N|B: value}}, "b": true}`.
+     *
+     * @throws \JsonException if a key attribute is not valid UTF-8
      */
     public function encode(): string
     {
@@ -37,7 +39,7 @@ final readonly class Cursor
     }
 
     /**
-     * @throws InvalidCursorException if the token is not one {@see encode()} produced
+     * @throws InvalidCursorException
      */
     public static function decode(string $token): self
     {
@@ -70,6 +72,8 @@ final readonly class Cursor
      * passed on to DynamoDB.
      *
      * @param array<array-key, mixed> $scalar
+     *
+     * @throws InvalidCursorException
      */
     private static function toAttributeValue(string $name, array $scalar): AttributeValue
     {

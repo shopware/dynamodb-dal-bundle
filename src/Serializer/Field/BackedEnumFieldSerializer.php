@@ -18,6 +18,9 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  */
 class BackedEnumFieldSerializer extends AbstractFieldSerializer
 {
+    /**
+     * @throws \LogicException if the enum has no cases
+     */
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         if (!is_subclass_of($type, \BackedEnum::class, true)) {

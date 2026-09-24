@@ -19,6 +19,10 @@ class FloatFieldSerializer extends AbstractFieldSerializer
         return $type === 'float';
     }
 
+    /**
+     * @throws WrongTypeException
+     * @throws \JsonException if the value is `INF` or `NAN`
+     */
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if (!\is_float($value) && !\is_int($value)) {

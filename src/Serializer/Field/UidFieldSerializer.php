@@ -29,6 +29,10 @@ class UidFieldSerializer extends AbstractFieldSerializer
         return AttributeValue::create(['S' => $value->toString()]);
     }
 
+    /**
+     * @throws MissingAttributeValueException
+     * @throws \InvalidArgumentException if the stored value is not a uid of the field's type
+     */
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         if (($value = $attributeValue->getS()) === null) {

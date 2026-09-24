@@ -63,6 +63,8 @@ final readonly class CursorHistory implements \Stringable
      * — into a single position. A search still on its first page has no token and is left out.
      *
      * @param array<string, string> $positions - name => token
+     *
+     * @throws \JsonException if a name or a token is not valid UTF-8
      */
     public static function combine(array $positions): string
     {
@@ -130,11 +132,14 @@ final readonly class CursorHistory implements \Stringable
      */
     public function previous(): ?self
     {
+        /** @phpstan-ignore-next-line missingType.checkedException -- the positions were validated on construction */
         return $this->positions === [] ? null : new self(\array_slice($this->positions, 0, -1));
     }
 
     /**
      * The history one page further, resuming from `$position`.
+     *
+     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
      */
     public function append(string $position): self
     {
@@ -143,6 +148,8 @@ final readonly class CursorHistory implements \Stringable
 
     /**
      * The history one page further, or `null` if there is no further page — takes {@see Page::$next} as is.
+     *
+     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
      */
     public function advance(?string $position): ?self
     {

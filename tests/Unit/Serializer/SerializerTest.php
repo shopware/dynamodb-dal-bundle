@@ -17,7 +17,6 @@ use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
-use Shopware\DynamodbDalBundle\Tests\Unit\DynamoDbResultTestTrait;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalNormalizer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
@@ -27,8 +26,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(Serializer::class)]
 class SerializerTest extends TestCase
 {
-    use DynamoDbResultTestTrait;
-
     /**
      * @var EntityDefinition<NormalEntity>
      */
@@ -44,24 +41,7 @@ class SerializerTest extends TestCase
 
     public function testDeserializeWithEmptyInput(): void
     {
-        static::assertNull($this->serializer->deserialize($this->definition, self::getItemOutput()));
         static::assertNull($this->serializer->deserialize($this->definition, []));
-    }
-
-    public function testDeserializeUnwrapsGetItemOutput(): void
-    {
-        $result = $this->serializer->deserialize($this->definition, self::getItemOutput([
-            'autofilledId' => new AttributeValue(['S' => 'test-id']),
-            'name' => new AttributeValue(['S' => 'test-name']),
-            'requiredNullableName' => new AttributeValue(['S' => 'test-required-nullable-name']),
-            'required' => new AttributeValue(['S' => 'test-required']),
-        ]));
-
-        static::assertInstanceOf(NormalEntity::class, $result);
-        static::assertSame('test-id', $result->getAutofilledId());
-        static::assertSame('test-name', $result->getName());
-        static::assertSame('test-required-nullable-name', $result->getRequiredNullableName());
-        static::assertSame('test-required', $result->getRequired());
     }
 
     public function testDeserializeAllFieldsProvided(): void

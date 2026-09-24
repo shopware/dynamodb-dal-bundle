@@ -49,6 +49,8 @@ class ExpressionCompileContext
 
     /**
      * Register the path with placeholder names under `#{prefix}_{N}` placeholder
+     *
+     * @throws UnknownFieldException
      */
     public function attribute(string $fieldName): string
     {
@@ -63,6 +65,10 @@ class ExpressionCompileContext
      * Serialize the value via the (nested) field's serializer and register it under a unique `:{prefix}_{path}_{N}` placeholder.
      *
      * $useValueFieldDefinition is for DynamoDB functions that compare one collection element instead of the collection field itself.
+     *
+     * @throws UnknownFieldException
+     * @throws NullFilterValueException
+     * @throws DALException if the value does not serialize for the field
      */
     public function placeholder(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
     {

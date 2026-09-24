@@ -32,6 +32,8 @@ class EntityDefinitionRegistry
      * @internal
      *
      * @param iterable<string, EntityDefinition<AbstractEntity>> $definitions - keyed by logical table name
+     *
+     * @throws \LogicException if two definitions are stored in the same table
      */
     public function __construct(iterable $definitions)
     {
@@ -52,7 +54,7 @@ class EntityDefinitionRegistry
     /**
      * Resolves a definition by its logical table name (the `#[Table(name: ..)]` value).
      *
-     * @throws UnknownEntityDefinitionException when no definition is registered for the given logical name
+     * @throws UnknownEntityDefinitionException
      *
      * @return EntityDefinition<AbstractEntity>
      */
@@ -65,7 +67,7 @@ class EntityDefinitionRegistry
      * Resolves a definition by its physical DynamoDB table name — the key DynamoDB uses in a
      * `BatchGetItem` response, which a caller needs to map back to an entity for deserialization.
      *
-     * @throws UnknownEntityDefinitionException when no definition is registered for the given physical table
+     * @throws UnknownEntityDefinitionException
      *
      * @return EntityDefinition<AbstractEntity>
      */
@@ -79,7 +81,7 @@ class EntityDefinitionRegistry
      *
      * @param class-string<Entity> $class
      *
-     * @throws UnknownEntityDefinitionException when no definition is registered for the given entity class
+     * @throws UnknownEntityDefinitionException
      *
      * @return EntityDefinition<Entity>
      */
