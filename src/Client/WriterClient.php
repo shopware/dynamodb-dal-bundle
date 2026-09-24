@@ -13,6 +13,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
@@ -112,6 +113,7 @@ class WriterClient
 
     /**
      * Updates the given items. Unlike {@see self::put()}, an update writes only the fields it names.
+     * Every update is conditioned on its item existing, so a missing key fails instead of creating a partial item.
      *
      * {@see UpdateInput::$refresh} decides how updates are applied to the existing entity:
      * 1. `null` = best effort of keeping the entity up-to-date. Nested updates will not be applied.
@@ -130,8 +132,8 @@ class WriterClient
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if a field, a key or a condition does not serialize, or a stored item does not deserialize
-     * @throws ConditionalCheckFailedException for a lone input
-     * @throws TransactionCanceledException for several inputs, e.g. when a condition fails
+     * @throws ConditionalCheckFailedException for a lone input, when the item does not exist or the condition fails
+     * @throws TransactionCanceledException for several inputs, e.g. when an item does not exist or a condition fails
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function update(string $class, UpdateInput ...$inputs): void
@@ -140,7 +142,7 @@ class WriterClient
 
         if (\count($inputs) === 1) {
             $result = $this->serializer->serialize($definition, $inputs[0]->fields);
-            $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
+            $expression = $this->compileUpdateCondition($definition, $inputs[0]);
             // update entity if the caller did not explicitly disallowed it
             $entity = $inputs[0]->refresh !== false && $inputs[0]->key instanceof AbstractEntity ? $inputs[0]->key : null;
 
@@ -223,7 +225,7 @@ class WriterClient
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if an entity, a field, a key or a condition does not serialize, or a stored item does not deserialize
-     * @throws TransactionCanceledException e.g. when a condition fails; a conflict is retried first
+     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void
@@ -251,7 +253,7 @@ class WriterClient
 
                 if ($operation instanceof UpdateInput) {
                     $result = $this->serializer->serialize($definition, $operation->fields);
-                    $expression = $this->compileExpression($definition, $operation->conditionExpression);
+                    $expression = $this->compileUpdateCondition($definition, $operation);
 
                     $writeRequests[] = new TransactWriteItem(['Update' => [
                         'TableName' => $definition->getTable(),
@@ -413,6 +415,24 @@ class WriterClient
         }
 
         return new ExpressionCompiledResult();
+    }
+
+    /**
+     * The update's condition, joined with a check that the item exists.
+     * `UpdateItem` otherwise creates a missing item from just its key and the updated fields.
+     *
+     * @param UpdateInput<AbstractEntity> $input
+     *
+     * @throws DALException
+     */
+    private function compileUpdateCondition(EntityDefinition $definition, UpdateInput $input): ExpressionCompiledResult
+    {
+        $exists = Filter::exists($definition->getKeySchema()->hashKey);
+
+        return $this->compileExpression(
+            $definition,
+            $input->conditionExpression ? Filter::and($exists, $input->conditionExpression) : $exists,
+        );
     }
 
     /**

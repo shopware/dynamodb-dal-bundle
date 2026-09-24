@@ -101,21 +101,45 @@ class UpdateExpressionTest extends DynamoDbTestCase
     public function testUpdateOfAnEntryUnderAMissingAttributeIsRejected(): void
     {
         // A nested path cannot create what it descends through: with no `meta` map on the item there is
-        // nothing to put the entry in, and DynamoDB refuses the whole update.
+        // nothing to put the entry in, and DynamoDB refuses the whole update. A put always writes the map,
+        // so it has to be removed raw.
+        $this->put(RecordEntity::create(self::TENANT, 'a'));
+        $this->dynamo()->updateItem([
+            'TableName' => DynamoDbTestKernel::TABLES['record'],
+            'Key' => [
+                'tenantId' => new AttributeValue(['S' => self::TENANT]),
+                'id' => new AttributeValue(['S' => 'a']),
+            ],
+            'UpdateExpression' => 'REMOVE meta',
+        ])->resolve();
+
         static::expectException(ClientException::class);
         static::expectExceptionMessageMatches('/document path provided in the update expression is invalid/');
+
+        $this->update('a', ['meta.first' => 'one']);
+    }
+
+    public function testUpdateOfAnEntryOnAMissingItemFailsTheExistenceCheckFirst(): void
+    {
+        // The item's existence is checked before the path is resolved, so a missing item fails the
+        // condition, not the path.
+        static::expectException(ConditionalCheckFailedException::class);
 
         $this->update('never-written', ['meta.first' => 'one']);
     }
 
-    public function testUpdateOfAWholeAttributeCreatesTheMissingRow(): void
+    public function testUpdateOfAWholeAttributeDoesNotCreateTheMissingRow(): void
     {
-        // The contrast with the nested path above: `UpdateItem` has no notion of "only if present", so a
-        // write that must not resurrect a deleted row has to say so with a condition of its own.
-        $this->update('absent-whole', ['meta' => ['first' => 'one']]);
+        // `UpdateItem` alone would create a row from the key and what was written, which the DAL then
+        // refuses to deserialize over the required fields it lacks.
+        try {
+            $this->update('absent-whole', ['meta' => ['first' => 'one']]);
+            static::fail('An update of a missing item should fail its condition.');
+        } catch (ConditionalCheckFailedException) {
+            // Expected.
+        }
 
-        // Read raw: the row the update conjured carries only the key and what was written, so the DAL
-        // would refuse to deserialize it over the required fields it is missing.
+        // Read raw, so a partial row could not hide behind a deserialization failure.
         $item = $this->dynamo()->getItem([
             'TableName' => DynamoDbTestKernel::TABLES['record'],
             'Key' => [
@@ -124,9 +148,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
             ],
         ])->getItem();
 
-        static::assertArrayHasKey('meta', $item);
-        static::assertSame(['first' => ['S' => 'one']], $item['meta']->requestBody()['M'] ?? null);
-        static::assertArrayNotHasKey('createdAt', $item);
+        static::assertSame([], $item);
     }
 
     public function testUpdateMayRequireTheVeryEntryItWrites(): void

@@ -131,6 +131,8 @@ class Client
     }
 
     /**
+     * Updates existing items. An update never creates an item: a key without one fails like a failed condition.
+     *
      * @template Entity of AbstractEntity
      *
      * @param class-string<Entity> $class
@@ -138,8 +140,8 @@ class Client
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if a field, a key or a condition does not serialize, or a stored item does not deserialize
-     * @throws ConditionalCheckFailedException for a lone input
-     * @throws TransactionCanceledException for several inputs, e.g. when a condition fails
+     * @throws ConditionalCheckFailedException for a lone input, when the item does not exist or the condition fails
+     * @throws TransactionCanceledException for several inputs, e.g. when an item does not exist or a condition fails
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function update(string $class, UpdateInput ...$inputs): void
@@ -154,7 +156,7 @@ class Client
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if an entity, a field, a key or a condition does not serialize, or a stored item does not deserialize
-     * @throws TransactionCanceledException e.g. when a condition fails; a conflict is retried first
+     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void
