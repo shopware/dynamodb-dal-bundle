@@ -1,4 +1,4 @@
-<?php declare(strict_types=1); // @phpstan-ignore symplify.multipleClassLikeInFile
+<?php declare(strict_types=1);
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 

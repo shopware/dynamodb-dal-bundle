@@ -133,17 +133,16 @@ class ClientTest extends DynamoDbTestCase
 
     public function testSearchToArrayStopsAtTheLimit(): void
     {
-        $definition = $this->definition('record');
         foreach (['a', 'b', 'c', 'd'] as $id) {
-            $this->client()->put($definition, new PutInput(RecordEntity::create(self::TENANT, $id, name: $id === 'a' ? null : 'match')));
+            $this->client()->put(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, $id, name: $id === 'a' ? null : 'match')));
         }
 
         $query = new QueryInput(Filter::equals('tenantId', self::TENANT), limit: 2);
-        static::assertSame(['a', 'b'], $this->sortedIds($this->client()->search($definition, $query)->toArray()));
+        static::assertSame(['a', 'b'], $this->sortedIds($this->client()->search(RecordEntity::class, $query)->toArray()));
 
         // A filter leaves DynamoDB's `Limit` unset, so the stream itself has to stop.
         $filtered = new QueryInput(Filter::equals('tenantId', self::TENANT), filter: Filter::equals('name', 'match'), limit: 2);
-        static::assertSame(['b', 'c'], $this->sortedIds($this->client()->search($definition, $filtered)->toArray()));
+        static::assertSame(['b', 'c'], $this->sortedIds($this->client()->search(RecordEntity::class, $filtered)->toArray()));
     }
 
     public function testCountReturnsServerSideTotal(): void

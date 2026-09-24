@@ -97,7 +97,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
 
         $read = $this->read('a');
         static::assertSame('renamed', $read?->name);
-        static::assertSame(99, $read?->counter);
+        static::assertSame(99, $read->counter);
     }
 
     /**
@@ -199,8 +199,8 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
 
         $read = $this->read('a');
         static::assertSame([], $read?->tags);
-        static::assertSame([], $read?->meta);
-        static::assertSame([], $read?->groups);
+        static::assertSame([], $read->meta);
+        static::assertSame([], $read->groups);
     }
 
     public function testJsonFieldRoundTripsANestedStructure(): void
@@ -273,7 +273,6 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
             ->toArray();
 
         static::assertCount(1, $found);
-        static::assertInstanceOf(RecordEntity::class, $found[0]);
         static::assertSame(self::TENANT, $found[0]->tenantId);
     }
 

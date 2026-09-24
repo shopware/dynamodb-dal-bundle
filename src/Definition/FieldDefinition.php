@@ -21,7 +21,7 @@ class FieldDefinition
      * @internal
      *
      * @param Type $type
-     * @param AbstractFieldSerializer<mixed, Type> $serializer
+     * @param AbstractFieldSerializer $serializer - left raw, as no serializer is one of `mixed`: the definition erases its value type and hands it whatever the property holds
      */
     public function __construct(
         private readonly string $name,

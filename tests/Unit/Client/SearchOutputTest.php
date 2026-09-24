@@ -268,7 +268,7 @@ class SearchOutputTest extends TestCase
     }
 
     /**
-     * @param \Generator<array<string, AttributeValue>, NormalEntity> $source
+     * @param \Generator<array<string, AttributeValue>|int, NormalEntity> $source
      *
      * @return SearchOutput<NormalEntity>
      */

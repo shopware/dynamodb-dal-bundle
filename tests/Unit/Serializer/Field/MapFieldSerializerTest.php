@@ -200,17 +200,7 @@ class MapFieldSerializerTest extends TestCase
 
     public function testDeserializeWrapsANestedFailureWithItsPath(): void
     {
-        $definition = $this->createMapDefinition(new class extends AbstractFieldSerializer {
-            public static function supports(string $type, ?string $docblockType = null): bool
-            {
-                return $type === 'string';
-            }
-
-            public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
-            {
-                return AttributeValue::create(['S' => (string) $value]);
-            }
-
+        $definition = $this->createMapDefinition(new class extends StringFieldSerializer {
             public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
             {
                 throw new FieldDeserializationException($definition, path: 'inner');

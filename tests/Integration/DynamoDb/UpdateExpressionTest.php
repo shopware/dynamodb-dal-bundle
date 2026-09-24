@@ -61,8 +61,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->update('a', ['meta.first' => null]);
 
         $found = $this->read('a');
-        static::assertArrayNotHasKey('first', $found?->meta ?? []);
-        static::assertSame('two', $found?->meta['second'] ?? null);
+        static::assertArrayNotHasKey('first', $found->meta ?? []);
+        static::assertSame('two', $found->meta['second'] ?? null);
     }
 
     public function testUpdateWritesAMapKeyDynamoDbCannotSpellLiterally(): void
@@ -95,7 +95,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $found = $this->read('a');
         // Named whole, so it is replaced whole.
         static::assertSame(['h' => ['new']], $found?->groups);
-        static::assertSame(['first' => 'one', 'second' => 'two'], $found?->meta);
+        static::assertSame(['first' => 'one', 'second' => 'two'], $found->meta);
     }
 
     public function testUpdateOfAnEntryUnderAMissingAttributeIsRejected(): void

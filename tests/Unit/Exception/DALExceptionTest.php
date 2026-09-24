@@ -40,10 +40,16 @@ class DALExceptionTest extends TestCase
      */
     public function testEveryFailureIsADalException(): void
     {
-        static::assertInstanceOf(DALException::class, new UnknownEntityDefinitionException('order'));
-        static::assertInstanceOf(DALException::class, new UnknownFieldException($this->entityDefinition(), 'nope'));
-        static::assertInstanceOf(DALException::class, new WrongTypeException($this->fieldDefinition(), 'string', 1));
-        static::assertInstanceOf(\RuntimeException::class, new NullFilterValueException($this->fieldDefinition()));
+        $files = glob(\dirname(__DIR__, 3) . '/src/Exception/*Exception.php') ?: [];
+        static::assertNotEmpty($files);
+
+        foreach ($files as $file) {
+            $class = 'Shopware\DynamodbDalBundle\Exception\\' . basename($file, '.php');
+
+            if ($class !== DALException::class) {
+                static::assertTrue(is_subclass_of($class, DALException::class), "{$class} does not implement DALException");
+            }
+        }
     }
 
     public function testUnknownEntityDefinition(): void

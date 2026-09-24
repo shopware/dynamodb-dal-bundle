@@ -19,7 +19,7 @@ class EntityDefinition
      * @internal
      *
      * @param class-string<Entity> $class
-     * @param iterable<string, FieldDefinition<Entity>> $fieldDefinitions
+     * @param iterable<string, FieldDefinition> $fieldDefinitions - left raw, as a field learns its entity only from the back-reference set here, and each has a type of its own
      * @param array<string, IndexSchema> $indexes - keyed by index name
      */
     public function __construct(

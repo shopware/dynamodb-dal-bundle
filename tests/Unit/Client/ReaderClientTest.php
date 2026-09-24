@@ -239,7 +239,7 @@ class ReaderClientTest extends TestCase
         );
 
         $cursor = new Cursor($this->item('z'), backward: true)->encode();
-        $search = $this->reader->search($this->definition, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor));
+        $search = $this->reader->search(NormalEntity::class, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor));
 
         static::assertSame($a, $search->current());
         static::assertCount(1, $inputs, 'the next page must not be requested while the current one is read');
@@ -249,8 +249,10 @@ class ReaderClientTest extends TestCase
         static::assertCount(2, $inputs);
 
         // The next page resumes after the current one, still reading backward.
-        static::assertSame('a', ($inputs[1]->getExclusiveStartKey()['autofilledId'] ?? null)?->getS());
-        static::assertFalse($inputs[1]->getScanIndexForward());
+        $next = $inputs[1];
+        static::assertNotNull($next);
+        static::assertSame('a', ($next->getExclusiveStartKey()['autofilledId'] ?? null)?->getS());
+        static::assertFalse($next->getScanIndexForward());
     }
 
     public function testSearchWithoutAFilterAsksForOneItemPastTheLimit(): void
@@ -264,7 +266,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput());
 
-        iterator_to_array($this->reader->search($this->definition, new ScanInput(limit: 2)), false);
+        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(limit: 2)), false);
     }
 
     public function testSearchWithAFilterReadsFullPages(): void
@@ -279,7 +281,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput());
 
-        iterator_to_array($this->reader->search($this->definition, new ScanInput(filter: Filter::equals('name', 'foo'), limit: 2)), false);
+        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(filter: Filter::equals('name', 'foo'), limit: 2)), false);
     }
 
     public function testSearchRejectsACursorOfAnotherKeySchema(): void
@@ -356,7 +358,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput(count: 3));
 
-        static::assertSame(3, $this->reader->count($this->definition, new ScanInput(limit: 1)));
+        static::assertSame(3, $this->reader->count(NormalEntity::class, new ScanInput(limit: 1)));
     }
 
     public function testGetSingleKeyIssuesOneGetItemAndDeserializesTheFoundEntity(): void
