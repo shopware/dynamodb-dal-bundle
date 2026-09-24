@@ -125,7 +125,7 @@ abstract class DynamoDbTestCase extends TestCase
     {
         $endpoint = $_SERVER['DYNAMODB_ENDPOINT'] ?? $_ENV['DYNAMODB_ENDPOINT'] ?? getenv('DYNAMODB_ENDPOINT');
 
-        return \is_string($endpoint) && $endpoint !== '' ? $endpoint : 'http://127.0.0.1:8000';
+        return \is_string($endpoint) && $endpoint !== '' ? $endpoint : 'http://127.0.0.1:8345';
     }
 
     private static function unavailableReason(string $endpoint, string $detail): string

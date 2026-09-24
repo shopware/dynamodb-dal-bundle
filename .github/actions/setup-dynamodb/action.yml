@@ -5,7 +5,7 @@ inputs:
   endpoint:
     description: Where DynamoDB Local is reachable — exported as DYNAMODB_ENDPOINT
     required: false
-    default: http://127.0.0.1:8000
+    default: http://127.0.0.1:8345
 
 runs:
   using: composite
@@ -16,12 +16,8 @@ runs:
 
     - name: Wait for DynamoDB Local
       shell: bash
-      env:
-        ENDPOINT: ${{ inputs.endpoint }}
-      run: timeout 60 bash -c 'until curl --silent --output /dev/null "$ENDPOINT"; do sleep 1; done'
+      run: timeout 60 bash -c 'until curl --silent --output /dev/null "${{ inputs.endpoint }}"; do sleep 1; done'
 
     - name: Export DYNAMODB_ENDPOINT
       shell: bash
-      env:
-        ENDPOINT: ${{ inputs.endpoint }}
-      run: echo "DYNAMODB_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+      run: echo "DYNAMODB_ENDPOINT=${{ inputs.endpoint }}" >> "$GITHUB_ENV"

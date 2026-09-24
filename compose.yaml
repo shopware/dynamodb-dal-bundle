@@ -3,7 +3,7 @@ services:
         image: amazon/dynamodb-local:latest
         command: -jar DynamoDBLocal.jar -inMemory -sharedDb
         ports:
-            - '${DYNAMODB_PORT:-8000}:8000'
+            - '${DYNAMODB_PORT:-8345}:8000'
         healthcheck:
             test: ['CMD-SHELL', 'java -version || exit 1']
             interval: 5s
