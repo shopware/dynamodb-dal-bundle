@@ -32,6 +32,8 @@ class DefinitionCompilerPass implements CompilerPassInterface
 
         /** @var array<string, class-string> $classesByName */
         $classesByName = [];
+        /** @var array<string, class-string> $classesByTable */
+        $classesByTable = [];
         foreach ($this->configuredEntities($container) as $entityClass => $table) {
             // An entities are not services, remove them just in case
             $container->removeDefinition($entityClass);
@@ -44,6 +46,16 @@ class DefinitionCompilerPass implements CompilerPassInterface
             }
 
             $classesByName[$itemName] = $entityClass;
+
+            // An item's entity class is told by its table alone, in a BatchGetItem response as in a scan
+            if (isset($classesByTable[$table])) {
+                $configured = $container->resolveEnvPlaceholders($table, '%%env(%s)%%');
+                $configured = \is_string($configured) ? $configured : $table;
+
+                throw new \LogicException("Entities {$classesByTable[$table]} and {$entityClass} are both stored in table \"{$configured}\"; each entity needs a table of its own");
+            }
+
+            $classesByTable[$table] = $entityClass;
 
             $container
                 ->setDefinition("dal.definition.{$itemName}", $definition)

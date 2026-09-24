@@ -428,6 +428,29 @@ class DefinitionCompilerPassTest extends TestCase
     }
 
     /**
+     * Nothing but the table tells which entity class an item belongs to, in a `BatchGetItem` response as in a scan.
+     */
+    public function testTwoEntitiesInTheSameTableFailTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . ContactEntity::class . ' are both stored in table "phpunit_test_table"; each entity needs a table of its own'));
+
+        $this->compileContainer([ValidEntity::class => self::TABLE, ContactEntity::class => self::TABLE], [ContactEntityNormalizer::class]);
+    }
+
+    public function testTwoEntitiesInTheTableOfOneEnvironmentVariableFailTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . ContactEntity::class . ' are both stored in table "%env(DYNAMODB_TABLE_SHARED)%"; each entity needs a table of its own'));
+
+        $this->compileContainer(
+            [ValidEntity::class => '%env(DYNAMODB_TABLE_SHARED)%', ContactEntity::class => '%env(DYNAMODB_TABLE_SHARED)%'],
+            [ContactEntityNormalizer::class],
+            configure: static function (ContainerBuilder $container): void {
+                $container->setParameter('env(DYNAMODB_TABLE_SHARED)', 'shared');
+            },
+        );
+    }
+
+    /**
      * The same reach applies to the other extension point: a field serializer an application
      * registered plainly has to be picked up, or an entity using its type will not compile.
      */
