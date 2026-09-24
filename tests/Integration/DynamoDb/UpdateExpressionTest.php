@@ -207,7 +207,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity->meta = ['first' => 'one', 'second' => 'two'];
         $this->put($entity);
 
-        $this->client()->update($this->definition('record'), new UpdateInput($entity, ['meta.first' => 'one-renewed']));
+        $this->client()->update(RecordEntity::class, new UpdateInput($entity, ['meta.first' => 'one-renewed']));
 
         static::assertSame(['first' => 'one-renewed', 'second' => 'two'], $entity->meta);
     }
@@ -217,14 +217,14 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity = RecordEntity::create(self::TENANT, 'a', tags: ['first', 'second']);
         $this->put($entity);
 
-        $this->client()->update($this->definition('record'), new UpdateInput($entity, ['tags[1]' => 'replaced']));
+        $this->client()->update(RecordEntity::class, new UpdateInput($entity, ['tags[1]' => 'replaced']));
 
         static::assertSame(['first', 'replaced'], $entity->tags);
     }
 
     private function put(RecordEntity $entity): void
     {
-        $this->client()->put($this->definition('record'), new PutInput($entity));
+        $this->client()->put(RecordEntity::class, new PutInput($entity));
     }
 
     /**
@@ -232,7 +232,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
      */
     private function update(string $id, array $fields, ?ExpressionInterface $condition = null): void
     {
-        $this->client()->update($this->definition('record'), new UpdateInput(new Index(self::TENANT, $id), $fields, $condition));
+        $this->client()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, $id), $fields, $condition));
     }
 
     private function read(string $id): ?RecordEntity

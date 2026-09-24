@@ -195,7 +195,7 @@ $entry->currency = 'EUR';
 $entry->amountCents = -1_250;
 $entry->source = 'checkout';
 
-$this->client->put($definition, new PutInput($entry));
+$this->client->put(LedgerEntryEntity::class, new PutInput($entry));
 
 $entry->pk; // "acc-7#EUR"
 $entry->id; // the generated Uuid

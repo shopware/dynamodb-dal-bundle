@@ -5,13 +5,15 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
@@ -30,15 +32,12 @@ class ClientTest extends TestCase
 
     private WriterClient&MockObject $writer;
 
-    private EntityDefinition $definition;
-
     private Client $client;
 
     protected function setUp(): void
     {
         $this->reader = $this->createMock(ReaderClient::class);
         $this->writer = $this->createMock(WriterClient::class);
-        $this->definition = NormalEntity::createDefinition();
 
         $this->client = new Client(
             $this->reader,
@@ -57,13 +56,13 @@ class ClientTest extends TestCase
         // reader's entity stream. Reads no longer touch the DynamoDbClient directly.
         $this->reader->expects(static::once())
             ->method('search')
-            ->with($this->definition, $query)
+            ->with(NormalEntity::class, $query)
             ->willReturnCallback(static function () use ($a, $b): \Generator {
                 yield ['autofilledId' => new AttributeValue(['S' => 'a'])] => $a;
                 yield ['autofilledId' => new AttributeValue(['S' => 'b'])] => $b;
             });
 
-        $result = $this->client->search($this->definition, $query);
+        $result = $this->client->search(NormalEntity::class, $query);
 
         static::assertSame([$a, $b], $result->toArray());
     }
@@ -76,13 +75,13 @@ class ClientTest extends TestCase
         $query = new ScanInput(limit: 1);
 
         $this->reader->expects(static::once())->method('search')
-            ->with($this->definition, $query)
+            ->with(NormalEntity::class, $query)
             ->willReturnCallback(static function () use ($a, $b): \Generator {
                 yield ['autofilledId' => new AttributeValue(['S' => 'a'])] => $a;
                 yield ['autofilledId' => new AttributeValue(['S' => 'b'])] => $b;
             });
 
-        $page = $this->client->search($this->definition, $query)->page();
+        $page = $this->client->search(NormalEntity::class, $query)->page();
 
         static::assertSame([$a], $page->items);
         static::assertNotNull($page->next);
@@ -167,9 +166,42 @@ class ClientTest extends TestCase
 
         $this->reader->expects(static::once())
             ->method('count')
-            ->with($this->definition, $query)
+            ->with(NormalEntity::class, $query)
             ->willReturn(7);
 
-        static::assertSame(7, $this->client->count($this->definition, $query));
+        static::assertSame(7, $this->client->count(NormalEntity::class, $query));
+    }
+
+    public function testPutDelegatesToTheWriter(): void
+    {
+        $put = new PutInput(new NormalEntity()->setAutofilledId('a')->setRequired('req'));
+
+        $this->writer->expects(static::once())
+            ->method('put')
+            ->with(NormalEntity::class, $put);
+
+        $this->client->put(NormalEntity::class, $put);
+    }
+
+    public function testUpdateDelegatesToTheWriter(): void
+    {
+        $update = new UpdateInput(new Index('a'), ['required' => 'req']);
+
+        $this->writer->expects(static::once())
+            ->method('update')
+            ->with(NormalEntity::class, $update);
+
+        $this->client->update(NormalEntity::class, $update);
+    }
+
+    public function testDeleteDelegatesToTheWriter(): void
+    {
+        $delete = DeleteInput::fromIndex('a');
+
+        $this->writer->expects(static::once())
+            ->method('delete')
+            ->with(NormalEntity::class, $delete);
+
+        $this->client->delete(NormalEntity::class, $delete);
     }
 }

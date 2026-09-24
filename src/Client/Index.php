@@ -9,7 +9,7 @@ use Symfony\Component\DependencyInjection\Attribute\Exclude;
 /**
  * A key address: the partition (hash) value and, for a table that declares one, the sort (range) value.
  * `$index` selects which key it addresses — `null` is the base-table primary key, a name is that GSI's
- * key. {@see getFields()} maps the values onto their field names from the matching key schema.
+ * key.
  */
 #[Exclude]
 final class Index
@@ -22,6 +22,8 @@ final class Index
     }
 
     /**
+     * @internal - the serializer maps a key onto its fields; callers address entities by class
+     *
      * The key as a `[fieldName => value]` map, using the base key schema (or the named GSI's). `[]` if the
      * named index is not declared.
      *

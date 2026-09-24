@@ -13,12 +13,16 @@ use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
 use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 
 /**
- * Table-agnostic facade over the {@see ReaderClient}: each method takes the {@see EntityDefinition} it
- * operates on, wraps reads in result objects, and owns the write path. Callers work with entities; the
- * `AttributeValue` (de)serialization lives in the reader and serializer.
+ * The entry point for reading and writing entities.
+ *
+ * Every operation names the entity class it works on: as the first argument when a call covers one class, or
+ * per key or operation in its input when it spans several ({@see get()}, {@see transactWrite()}).
+ * {@see refresh()} takes the class from the entities it re-reads.
+ * From that class the bundle knows the table, the keys and how each field is stored, so callers pass and receive entities and plain PHP values only.
  */
 class Client
 {
@@ -60,19 +64,23 @@ class Client
     }
 
     /**
-     * Opens a {@see SearchOutput} over a {@see ScanInput}/{@see QueryInput}'s matches. For a cheap
-     * server-side total use {@see count()}.
+     * Opens a {@see SearchOutput} over a {@see ScanInput}/{@see QueryInput}'s matches.
+     * Nothing is read until the output is, and that is also when a wrong class or cursor fails.
+     * For a cheap server-side total use {@see count()}.
      *
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
+     *
+     * @throws UnknownEntityDefinitionException once the output is read, if no definition is registered for `$class`
+     * @throws InvalidCursorException once the output is read, if the query's cursor is not a token of this query
      *
      * @return SearchOutput<Entity>
      */
-    public function search(EntityDefinition $definition, ScanInput|QueryInput $query): SearchOutput
+    public function search(string $class, ScanInput|QueryInput $query): SearchOutput
     {
         return new SearchOutput(
-            $this->reader->search($definition, $query),
+            $this->reader->search($class, $query),
             $query,
         );
     }
@@ -80,33 +88,39 @@ class Client
     /**
      * Counts matches via `Select=COUNT`, summed across all pages.
      *
-     * @param EntityDefinition<AbstractEntity> $definition
+     * @param class-string<AbstractEntity> $class
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function count(EntityDefinition $definition, ScanInput|QueryInput $query): int
+    public function count(string $class, ScanInput|QueryInput $query): int
     {
-        return $this->reader->count($definition, $query);
+        return $this->reader->count($class, $query);
     }
 
     /**
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      * @param PutInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function put(EntityDefinition $definition, PutInput ...$inputs): void
+    public function put(string $class, PutInput ...$inputs): void
     {
-        $this->writer->put($definition, ...$inputs);
+        $this->writer->put($class, ...$inputs);
     }
 
     /**
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      * @param UpdateInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function update(EntityDefinition $definition, UpdateInput ...$inputs): void
+    public function update(string $class, UpdateInput ...$inputs): void
     {
-        $this->writer->update($definition, ...$inputs);
+        $this->writer->update($class, ...$inputs);
     }
 
     /**
@@ -124,11 +138,13 @@ class Client
      *
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      * @param DeleteInput<Entity> ...$inputs
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function delete(EntityDefinition $definition, DeleteInput ...$inputs): void
+    public function delete(string $class, DeleteInput ...$inputs): void
     {
-        $this->writer->delete($definition, ...$inputs);
+        $this->writer->delete($class, ...$inputs);
     }
 }

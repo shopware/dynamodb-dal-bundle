@@ -25,7 +25,7 @@ class GetInput
      * @param array<class-string<Entity>, list<Index>> $keysByClass
      */
     public function __construct(
-        array $keysByClass,
+        array $keysByClass = [],
         public readonly ?bool $consistentRead = null,
     ) {
         $this->keysByClass = array_filter($keysByClass, static fn (array $keys): bool => $keys !== []);

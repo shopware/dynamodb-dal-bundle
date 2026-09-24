@@ -8,6 +8,7 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
@@ -20,7 +21,9 @@ use AsyncAws\DynamoDb\Input\ScanInput as DynamoDbScanInput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Client to create generators for reading entities from DynamoDB tables
+ * The read side behind {@see Client}: generators that read entities from DynamoDB tables.
+ *
+ * @internal
  */
 class ReaderClient
 {
@@ -91,14 +94,17 @@ class ReaderClient
      *
      * @template Entity of AbstractEntity
      *
-     * @param EntityDefinition<Entity> $definition
+     * @param class-string<Entity> $class
      *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      * @throws InvalidCursorException if the query's cursor is not a token of this query
      *
      * @return \Generator<array<string, AttributeValue>, Entity>
      */
-    public function search(EntityDefinition $definition, ScanInput|QueryInput $query): \Generator
+    public function search(string $class, ScanInput|QueryInput $query): \Generator
     {
+        $definition = $this->definitionRegistry->getByEntityClass($class);
+
         $keyFields = $definition->getKeySchema()->getFields();
         if ($query instanceof QueryInput && $query->index !== null) {
             $keyFields = [...$keyFields, ...$definition->getIndex($query->index)?->keySchema->getFields() ?? []];
@@ -127,9 +133,15 @@ class ReaderClient
 
     /**
      * Counts matches via `Select=COUNT`, summing the per-page counts (async-aws does not accumulate them).
+     *
+     * @param class-string<AbstractEntity> $class
+     *
+     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
      */
-    public function count(EntityDefinition $definition, ScanInput|QueryInput $query): int
+    public function count(string $class, ScanInput|QueryInput $query): int
     {
+        $definition = $this->definitionRegistry->getByEntityClass($class);
+
         $count = 0;
         $startKey = null;
 

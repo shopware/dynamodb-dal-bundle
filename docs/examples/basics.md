@@ -9,16 +9,13 @@
   - [Putting and deleting](#putting-and-deleting)
 
 This example stores a shop's orders. Each customer's orders share one partition, and an index lists orders
-by status. Every snippet runs in a service that has the `Client` and the `EntityDefinitionRegistry`
-injected:
+by status. Every snippet runs in a service that has the `Client` injected:
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 
 public function __construct(
     private readonly Client $client,
-    private readonly EntityDefinitionRegistry $definitions,
 ) {
 }
 ```
@@ -110,21 +107,21 @@ use App\Entity\OrderEntity;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 
-$order = $this->client->get(new GetInput([
-    OrderEntity::class => [new Index('c-42', 'o-1001')],
-]))->first(); // ?OrderEntity
+$order = $this->client->get(
+    new GetInput()->withKey(OrderEntity::class, new Index('c-42', 'o-1001')),
+)->first(); // ?OrderEntity
 ```
 
 An `Index` holds the partition key value and, for a table with a sort key, the sort key value. Pass them as
 PHP values, such as an enum case or a `DateTimeImmutable`; the bundle serializes them the same way it
 serializes the entity's fields.
 
-`get()` resolves the definition from the entity class. That lets one call read keys of several entity
-classes:
+`withKey()` names the entity class for each set of keys, so one call can read keys of several entity classes:
 
 ```php
 $result = $this->client->get(
-    new GetInput([OrderEntity::class => [new Index('c-42', 'o-1001'), new Index('c-42', 'o-1002')]])
+    new GetInput()
+        ->withKey(OrderEntity::class, new Index('c-42', 'o-1001'), new Index('c-42', 'o-1002'))
         ->withKey(CustomerEntity::class, new Index('c-42')),
 );
 
@@ -136,7 +133,7 @@ $customer = $result->forEntity(CustomerEntity::class)[0] ?? null;
   that DynamoDB leaves unprocessed are requested again.
 - Results come back in no particular order. Keys without a row are left out.
 - `grouped()` returns every found entity, keyed by class. `toArray()` returns them all as a list.
-- `new GetInput([...], consistentRead: true)` makes the read strongly consistent.
+- `->withConsistentRead(true)` makes the read strongly consistent.
 
 `refresh()` reads entities you already hold again, by their own key, and writes the stored values back into
 the same instances. An entity whose row no longer exists is left as it is.
@@ -157,15 +154,13 @@ use App\Entity\OrderStatus;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 
-$definition = $this->definitions->getByEntityClass(OrderEntity::class);
-
 // All orders of one customer, in sort key order
-$orders = $this->client->search($definition, new QueryInput(
+$orders = $this->client->search(OrderEntity::class, new QueryInput(
     Filter::equals('customerId', 'c-42'),
 ))->toArray();
 
 // Paid orders of the last 30 days, newest first, from the index
-$orders = $this->client->search($definition, new QueryInput(
+$orders = $this->client->search(OrderEntity::class, new QueryInput(
     Filter::and(
         Filter::equals('status', OrderStatus::Paid),
         Filter::greaterThanOrEquals('createdAt', new \DateTimeImmutable('-30 days')),
@@ -181,7 +176,7 @@ This restriction comes from DynamoDB. Any other criterion goes into `filter:`. D
 after it has read the items, so a filter reduces the data returned but not the read capacity consumed.
 
 ```php
-$orders = $this->client->search($definition, new QueryInput(
+$orders = $this->client->search(OrderEntity::class, new QueryInput(
     Filter::equals('customerId', 'c-42'),
     filter: Filter::and(
         Filter::greaterThan('totalCents', 10_000),
@@ -209,7 +204,7 @@ if ($criteria->tag !== null) {
     $filter->and(Filter::contains('tags', $criteria->tag));
 }
 
-$result = $this->client->search($definition, new QueryInput(Filter::equals('customerId', 'c-42'), filter: $filter));
+$result = $this->client->search(OrderEntity::class, new QueryInput(Filter::equals('customerId', 'c-42'), filter: $filter));
 ```
 
 ## Scanning and counting
@@ -219,7 +214,7 @@ A scan reads the whole table. Use it for background jobs, not for requests that 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 
-foreach ($this->client->search($definition, new ScanInput(filter: Filter::equals('status', OrderStatus::Open))) as $order) {
+foreach ($this->client->search(OrderEntity::class, new ScanInput(filter: Filter::equals('status', OrderStatus::Open))) as $order) {
     // …
 }
 ```
@@ -228,7 +223,7 @@ foreach ($this->client->search($definition, new ScanInput(filter: Filter::equals
 transferred, but DynamoDB still reads every item the query or scan covers.
 
 ```php
-$open = $this->client->count($definition, new QueryInput(
+$open = $this->client->count(OrderEntity::class, new QueryInput(
     Filter::equals('status', OrderStatus::Open),
     index: 'statusCreatedAtIndex',
 ));
@@ -260,10 +255,10 @@ $order->id = 'o-1001';
 $order->createdAt = new \DateTimeImmutable();
 $order->totalCents = 4_990;
 
-$this->client->put($definition, new PutInput($order));
+$this->client->put(OrderEntity::class, new PutInput($order));
 
-$this->client->delete($definition, new DeleteInput($order));
-$this->client->delete($definition, DeleteInput::fromIndex('c-42', 'o-1002'));
+$this->client->delete(OrderEntity::class, new DeleteInput($order));
+$this->client->delete(OrderEntity::class, DeleteInput::fromIndex('c-42', 'o-1002'));
 ```
 
 - A put creates the item or replaces it entirely. Fields that are `null` are left out of the item.

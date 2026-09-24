@@ -8,11 +8,7 @@
   - [Transactions](#transactions)
   - [How writes are sent](#how-writes-are-sent)
 
-These snippets build on the `OrderEntity` from [Basics](basics.md), with `$definition` set to its definition:
-
-```php
-$definition = $this->definitions->getByEntityClass(OrderEntity::class);
-```
+These snippets build on the `OrderEntity` from [Basics](basics.md).
 
 ## Partial updates
 
@@ -24,13 +20,13 @@ use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 
 // By key, without reading the order first
-$this->client->update($definition, new UpdateInput(
+$this->client->update(OrderEntity::class, new UpdateInput(
     new Index('c-42', 'o-1001'),
     ['status' => OrderStatus::Paid, 'note' => null],
 ));
 
 // By entity: its key addresses the item, and the entity is updated as well
-$this->client->update($definition, new UpdateInput($order, ['status' => OrderStatus::Paid]));
+$this->client->update(OrderEntity::class, new UpdateInput($order, ['status' => OrderStatus::Paid]));
 ```
 
 - `null` removes the attribute. Only nullable fields accept `null`.
@@ -44,7 +40,7 @@ $this->client->update($definition, new UpdateInput($order, ['status' => OrderSta
 A path writes one map entry or one list element and leaves the rest of the attribute unchanged:
 
 ```php
-$this->client->update($definition, new UpdateInput($order, [
+$this->client->update(OrderEntity::class, new UpdateInput($order, [
     'meta.carrier' => 'dhl',  // set one map entry
     'meta.tracking' => null,  // remove one map entry
     'tags[0]' => 'priority',  // replace one list element
@@ -81,17 +77,17 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 
 // Create the order, but never overwrite an existing one
-$this->client->put($definition, new PutInput($order, Filter::notExists('id')));
+$this->client->put(OrderEntity::class, new PutInput($order, Filter::notExists('id')));
 
 // Only pay an open order
-$this->client->update($definition, new UpdateInput(
+$this->client->update(OrderEntity::class, new UpdateInput(
     $order,
     ['status' => OrderStatus::Paid],
     Filter::equals('status', OrderStatus::Open),
 ));
 
 // Only delete a cancelled order
-$this->client->delete($definition, new DeleteInput($order, Filter::equals('status', OrderStatus::Cancelled)));
+$this->client->delete(OrderEntity::class, new DeleteInput($order, Filter::equals('status', OrderStatus::Cancelled)));
 ```
 
 A single write whose condition fails throws AsyncAws's `ConditionalCheckFailedException`. Several inputs with
@@ -109,7 +105,7 @@ public int $version = 0;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 
 try {
-    $this->client->update($definition, new UpdateInput(
+    $this->client->update(OrderEntity::class, new UpdateInput(
         $order,
         ['status' => OrderStatus::Paid, 'version' => $order->version + 1],
         Filter::equals('version', $order->version),
@@ -122,7 +118,7 @@ try {
 ## Transactions
 
 `transactWrite()` runs puts, updates and deletes across entity classes as a single all-or-nothing request.
-Each operation names its entity class, and the bundle resolves the definition from it:
+Each operation names its entity class, just as a single `put()`, `update()` or `delete()` does:
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;

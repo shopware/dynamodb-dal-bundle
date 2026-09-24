@@ -13,11 +13,13 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\PrefixingNormalizer;
 use AsyncAws\Core\Test\ResultMockFactory;
 use AsyncAws\DynamoDb\DynamoDbClient;
@@ -90,7 +92,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('batchWriteItem');
         $this->client->expects(static::never())->method('transactWriteItems');
 
-        $this->writer->put($this->definition);
+        $this->writer->put(NormalEntity::class);
     }
 
     public function testUpdateWithoutInputsIsANoOp(): void
@@ -98,7 +100,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('updateItem');
         $this->client->expects(static::never())->method('transactWriteItems');
 
-        $this->writer->update($this->definition);
+        $this->writer->update(NormalEntity::class);
     }
 
     public function testDeleteWithoutInputsIsANoOp(): void
@@ -107,7 +109,31 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('batchWriteItem');
         $this->client->expects(static::never())->method('transactWriteItems');
 
-        $this->writer->delete($this->definition);
+        $this->writer->delete(NormalEntity::class);
+    }
+
+    public function testPutRejectsAnUnregisteredClass(): void
+    {
+        $this->client->expects(static::never())->method('putItem');
+
+        $this->expectException(UnknownEntityDefinitionException::class);
+        $this->writer->put(OtherEntity::class, new PutInput(new OtherEntity()->setOtherId('o')));
+    }
+
+    public function testUpdateRejectsAnUnregisteredClass(): void
+    {
+        $this->client->expects(static::never())->method('updateItem');
+
+        $this->expectException(UnknownEntityDefinitionException::class);
+        $this->writer->update(OtherEntity::class, new UpdateInput(new Index('o'), ['otherId' => 'o']));
+    }
+
+    public function testDeleteRejectsAnUnregisteredClass(): void
+    {
+        $this->client->expects(static::never())->method('deleteItem');
+
+        $this->expectException(UnknownEntityDefinitionException::class);
+        $this->writer->delete(OtherEntity::class, DeleteInput::fromIndex('o'));
     }
 
     /**
@@ -135,7 +161,7 @@ class WriterClientTest extends TestCase
 
         $entity = $this->entity('a')->setName('test');
 
-        $writer->put($definition, new PutInput($entity));
+        $writer->put(NormalEntity::class, new PutInput($entity));
 
         static::assertSame('test', $entity->getName());
     }
@@ -158,7 +184,7 @@ class WriterClientTest extends TestCase
         $entityB = $this->entity('b');
 
         $this->writer->put(
-            $this->definition,
+            NormalEntity::class,
             new PutInput($entityA, Filter::notExists('autofilledId')),
             new PutInput($entityB),
         );
@@ -186,7 +212,7 @@ class WriterClientTest extends TestCase
             ->method('deserialize')
             ->with($this->definition, $item, $entity);
 
-        $this->writer->update($this->definition, new UpdateInput($entity, ['name' => 'after']));
+        $this->writer->update(NormalEntity::class, new UpdateInput($entity, ['name' => 'after']));
     }
 
     /**
@@ -202,7 +228,7 @@ class WriterClientTest extends TestCase
 
         $this->serializer->expects(static::never())->method('deserialize');
 
-        $this->writer->update($this->definition, new UpdateInput(new Index('a'), ['name' => 'after']));
+        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), ['name' => 'after']));
     }
 
     /**
@@ -221,7 +247,7 @@ class WriterClientTest extends TestCase
         $entityB = $this->entity('b');
 
         $this->writer->update(
-            $this->definition,
+            NormalEntity::class,
             new UpdateInput($entityA, ['name' => 'one']),
             new UpdateInput($entityB, ['name' => 'two']),
         );
@@ -255,7 +281,7 @@ class WriterClientTest extends TestCase
             ->willReturn(ResultMockFactory::create(BatchGetItemOutput::class, ['responses' => [], 'unprocessedKeys' => []]));
 
         $this->nestedWriter($definition)->update(
-            $definition,
+            NormalEntity::class,
             new UpdateInput($this->entity('a'), ['settings.colour' => 'red']),
             new UpdateInput($this->entity('b'), ['settings.colour' => 'blue']),
         );
@@ -275,7 +301,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('batchGetItem');
 
         $this->nestedWriter($definition)->update(
-            $definition,
+            NormalEntity::class,
             new UpdateInput($this->entity('a'), ['settings.colour' => 'red'], refresh: null),
             new UpdateInput($this->entity('b'), ['settings.colour' => 'blue'], refresh: null),
         );
@@ -290,7 +316,7 @@ class WriterClientTest extends TestCase
 
         $this->serializer->expects(static::never())->method('deserialize');
 
-        $this->writer->update($this->definition, new UpdateInput($this->entity('a'), ['name' => 'after'], refresh: false));
+        $this->writer->update(NormalEntity::class, new UpdateInput($this->entity('a'), ['name' => 'after'], refresh: false));
     }
 
     public function testUpdateOfSeveralOptedOutOfTheRefreshReadsNothingBack(): void
@@ -302,7 +328,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('batchGetItem');
 
         $this->writer->update(
-            $this->definition,
+            NormalEntity::class,
             new UpdateInput($this->entity('a'), ['name' => 'one'], refresh: false),
             new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: false),
         );
@@ -320,7 +346,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('batchGetItem');
 
         $this->writer->update(
-            $this->definition,
+            NormalEntity::class,
             new UpdateInput(new Index('a'), ['name' => 'one']),
             new UpdateInput(new Index('b'), ['name' => 'two']),
         );
@@ -335,7 +361,7 @@ class WriterClientTest extends TestCase
             ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
 
         $this->writer->delete(
-            $this->definition,
+            NormalEntity::class,
             new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
             new DeleteInput(new Index('b')),
         );
@@ -360,7 +386,7 @@ class WriterClientTest extends TestCase
             });
 
         $this->writer->delete(
-            $this->definition,
+            NormalEntity::class,
             new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
             new DeleteInput(new Index('b')),
         );
@@ -375,7 +401,7 @@ class WriterClientTest extends TestCase
         $this->expectException(TransactionCanceledException::class);
 
         $this->writer->delete(
-            $this->definition,
+            NormalEntity::class,
             new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
             new DeleteInput(new Index('b')),
         );
@@ -390,7 +416,7 @@ class WriterClientTest extends TestCase
         $this->expectException(TransactionCanceledException::class);
 
         $this->writer->delete(
-            $this->definition,
+            NormalEntity::class,
             new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
             new DeleteInput(new Index('b')),
         );
@@ -405,7 +431,7 @@ class WriterClientTest extends TestCase
         $this->expectException(TransactionCanceledException::class);
 
         $this->writer->delete(
-            $this->definition,
+            NormalEntity::class,
             new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
             new DeleteInput(new Index('b')),
         );
@@ -433,7 +459,7 @@ class WriterClientTest extends TestCase
         $entityA = $this->entity('a');
         $entityB = $this->entity('b');
 
-        $this->writer->put($this->definition, new PutInput($entityA), new PutInput($entityB));
+        $this->writer->put(NormalEntity::class, new PutInput($entityA), new PutInput($entityB));
 
         // First call submits both items keyed by the table; the retry resubmits exactly the unprocessed map
         // (verbatim, not double-nested under the table name again).
