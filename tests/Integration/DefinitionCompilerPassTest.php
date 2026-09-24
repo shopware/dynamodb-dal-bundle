@@ -36,6 +36,8 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MoneyFiel
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingTableNameEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingTypeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\PrivatePropertyEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\PrivateSetPropertyEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\ReadonlyPropertyEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\UnknownHashKeyEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\UnknownIndexHashKeyEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\UnknownIndexRangeKeyEntity;
@@ -208,6 +210,27 @@ class DefinitionCompilerPassTest extends TestCase
         static::expectExceptionObject(new \LogicException('Entity property ' . PrivatePropertyEntity::class . '::$value has to be protected or public'));
 
         $this->compileDefinition(PrivatePropertyEntity::class);
+    }
+
+    /**
+     * A readonly property takes its first value from a read, and throws on the write-back or refresh that
+     * assigns it again, after the write already happened.
+     */
+    public function testAReadonlyFieldFailsTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entity property ' . ReadonlyPropertyEntity::class . '::$value must not be readonly, as every read and write-back assigns it again'));
+
+        $this->compileDefinition(ReadonlyPropertyEntity::class);
+    }
+
+    /**
+     * A private(set) property reads as public, but only its own class can assign it, so no read could fill it.
+     */
+    public function testAPrivateSetFieldFailsTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entity property ' . PrivateSetPropertyEntity::class . '::$value must not be private(set), as it is assigned from ' . AbstractEntity::class));
+
+        $this->compileDefinition(PrivateSetPropertyEntity::class);
     }
 
     public function testMissingTypeEntity(): void
@@ -391,6 +414,17 @@ class DefinitionCompilerPassTest extends TestCase
         static::expectExceptionObject(new \LogicException('Entity ' . AbstractBaseEntity::class . ' is abstract; configure the entities extending it instead'));
 
         $this->compileContainer([AbstractBaseEntity::class => self::TABLE]);
+    }
+
+    /**
+     * The name keys an entity's service and its registry entry, so the second entity by a name would replace
+     * the first, and the first would only fail once a request asked for it.
+     */
+    public function testTwoEntitiesWithTheSameNameFailTheBuild(): void
+    {
+        static::expectExceptionObject(new \LogicException('Entities ' . ValidEntity::class . ' and ' . EntityWithMapFieldEntity::class . ' both declare #[Table(name: "phpunit_test")]; each entity needs a name of its own'));
+
+        $this->compileContainer([ValidEntity::class => self::TABLE, EntityWithMapFieldEntity::class => 'another-table']);
     }
 
     /**

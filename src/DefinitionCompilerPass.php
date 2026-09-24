@@ -30,11 +30,20 @@ class DefinitionCompilerPass implements CompilerPassInterface
 
         $builder = new DefinitionBuilder(array_values($fieldSerializers));
 
+        /** @var array<string, class-string> $classesByName */
+        $classesByName = [];
         foreach ($this->configuredEntities($container) as $entityClass => $table) {
             // An entities are not services, remove them just in case
             $container->removeDefinition($entityClass);
 
             [$itemName, $definition] = $builder->build($entityClass, $table);
+
+            // The name keys the service and the registry, so a second entity by the same name would silently replace the first
+            if (isset($classesByName[$itemName])) {
+                throw new \LogicException("Entities {$classesByName[$itemName]} and {$entityClass} both declare #[Table(name: \"{$itemName}\")]; each entity needs a name of its own");
+            }
+
+            $classesByName[$itemName] = $entityClass;
 
             $container
                 ->setDefinition("dal.definition.{$itemName}", $definition)
