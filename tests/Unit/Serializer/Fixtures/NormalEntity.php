@@ -81,7 +81,6 @@ class NormalEntity extends AbstractEntity
             'normal',
             self::class,
             $normalizer,
-            /** @phpstan-ignore-next-line -- FieldDefinition generic is missing */
             [
                 'autofilledId' => new FieldDefinition(
                     'autofilledId',

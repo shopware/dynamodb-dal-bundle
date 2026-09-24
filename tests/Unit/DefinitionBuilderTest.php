@@ -184,10 +184,7 @@ class DefinitionBuilderTest extends TestCase
      */
     private function build(string $entityClass, ?DefinitionBuilder $builder = null): array
     {
-        $built = ($builder ?? new DefinitionBuilder(self::SERIALIZERS))->build($entityClass, self::TABLE);
-        static::assertNotNull($built);
-
-        return $built;
+        return ($builder ?? new DefinitionBuilder(self::SERIALIZERS))->build($entityClass, self::TABLE);
     }
 
     /**

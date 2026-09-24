@@ -42,7 +42,6 @@ class OtherEntity extends AbstractEntity
             'other-physical',
             self::class,
             null,
-            /** @phpstan-ignore-next-line -- FieldDefinition generic is missing */
             [
                 'otherId' => new FieldDefinition(
                     'otherId',

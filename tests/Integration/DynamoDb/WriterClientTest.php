@@ -5,7 +5,6 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration\DynamoDb;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use PHPUnit\Framework\Attributes\CoversClass;
-use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
@@ -140,7 +139,7 @@ class WriterClientTest extends DynamoDbTestCase
 
         $read = $this->read('a');
         static::assertSame('after', $read?->name);
-        static::assertSame(1, $read?->counter, 'an update must leave the fields it was not given alone');
+        static::assertSame(1, $read->counter, 'an update must leave the fields it was not given alone');
     }
 
     public function testUpdateWithNullValueRemovesTheAttribute(): void
@@ -555,22 +554,5 @@ class WriterClientTest extends DynamoDbTestCase
     private function countRecords(): int
     {
         return $this->client()->count(RecordEntity::class, new ScanInput());
-    }
-
-    /**
-     * @param array<AbstractEntity> $entities
-     *
-     * @return list<string>
-     */
-    private function sortedIds(array $entities): array
-    {
-        $ids = [];
-        foreach ($entities as $entity) {
-            static::assertInstanceOf(RecordEntity::class, $entity);
-            $ids[] = $entity->id;
-        }
-        sort($ids);
-
-        return $ids;
     }
 }

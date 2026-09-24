@@ -63,7 +63,9 @@ class RecordEntity extends AbstractEntity
     public array $groups = [];
 
     /**
-     * No `@var` shape, so this is the JSON-serializer field.
+     * No `@var` shape, so this is the JSON-serializer field. The compiler does not read `@phpstan-var`.
+     *
+     * @phpstan-var array<mixed>
      */
     #[Field]
     public array $payload = [];

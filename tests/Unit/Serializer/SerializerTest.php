@@ -349,7 +349,6 @@ class SerializerTest extends TestCase
             'normal',
             NormalEntity::class,
             new NormalNormalizer(),
-            /** @phpstan-ignore-next-line argument.type (FieldDefinition template covariance in test array) */
             [
                 'autofilledId' => new FieldDefinition('autofilledId', 'string', false, true, 'default-id', $serializer),
                 'name' => new FieldDefinition('name', 'string', true, false, null, $serializer),
@@ -374,7 +373,6 @@ class SerializerTest extends TestCase
             'normal',
             NormalEntity::class,
             null,
-            /** @phpstan-ignore-next-line argument.type (FieldDefinition template covariance in test array) */
             [
                 'required' => new FieldDefinition('required', 'string', false, false, null, $serializer),
             ],
@@ -395,7 +393,6 @@ class SerializerTest extends TestCase
             'normal',
             NormalEntity::class,
             null,
-            /** @phpstan-ignore-next-line argument.type (FieldDefinition template covariance in test array) */
             [
                 'id' => new FieldDefinition('id', 'string', false, false, null, $serializer),
             ],
@@ -415,7 +412,6 @@ class SerializerTest extends TestCase
             'normal',
             NormalEntity::class,
             null,
-            /** @phpstan-ignore-next-line argument.type (FieldDefinition template covariance in test array) */
             [
                 'autofilledId' => new FieldDefinition('autofilledId', 'string', false, false, null, $serializer),
             ],
@@ -590,7 +586,6 @@ class SerializerTest extends TestCase
             'order',
             NormalEntity::class,
             null,
-            /** @phpstan-ignore-next-line argument.type (FieldDefinition template covariance in test array) */
             [
                 'tenantId' => new FieldDefinition('tenantId', 'string', false, false, null, $string),
                 'status' => new FieldDefinition('status', 'string', false, false, null, $string),

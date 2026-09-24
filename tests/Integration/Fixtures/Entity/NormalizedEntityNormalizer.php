@@ -24,8 +24,10 @@ class NormalizedEntityNormalizer extends AbstractNormalizer
 
         // The partition key exists only in the stored row; it is composed from the two fields the
         // call site does set.
-        if (isset($keys['pk']) && ($fields['pk'] ?? null) === null) {
-            $fields['pk'] = \sprintf('%s#%s', $fields['tenantId'] ?? '', $fields['kind'] ?? '');
+        $tenantId = $fields['tenantId'] ?? '';
+        $kind = $fields['kind'] ?? '';
+        if (isset($keys['pk']) && ($fields['pk'] ?? null) === null && \is_string($tenantId) && \is_string($kind)) {
+            $fields['pk'] = \sprintf('%s#%s', $tenantId, $kind);
         }
 
         if (isset($keys['label'])) {

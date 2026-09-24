@@ -34,7 +34,9 @@ trait CompilesContainerTrait
         $container = $this->compileContainerBuilder($entities, $services, $public, $configure);
 
         $class = 'DalTestContainer' . str_replace('.', '', uniqid('', true));
-        eval('?>' . new PhpDumper($container)->dump(['class' => $class]));
+        $code = new PhpDumper($container)->dump(['class' => $class]);
+        static::assertIsString($code);
+        eval('?>' . $code);
 
         /** @var Container $dumped */
         $dumped = new $class();

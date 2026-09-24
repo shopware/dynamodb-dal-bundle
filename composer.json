@@ -39,6 +39,7 @@
         "phpstan/phpstan-strict-rules": "^2.0.11",
         "phpstan/phpstan-symfony": "^2.0.18",
         "phpunit/phpunit": "^13.2.2",
+        "symfony/clock": "^7.3 || ^8.0",
         "symfony/framework-bundle": "^7.3 || ^8.0",
         "symfony/http-client": "^7.3 || ^8.0",
         "symfony/stopwatch": "^7.3 || ^8.0",

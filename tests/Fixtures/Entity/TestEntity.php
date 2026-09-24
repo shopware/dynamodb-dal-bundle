@@ -56,7 +56,10 @@ class TestEntity extends AbstractEntity
     public array $nested = [];
 
     /**
-     * No `@var` shape, so the compiler picks the JSON serializer instead of the map one.
+     * No `@var` shape, so the compiler picks the JSON serializer instead of the map one. It does not
+     * read `@phpstan-var`.
+     *
+     * @phpstan-var array<mixed>
      */
     #[Field]
     public array $payload = [];

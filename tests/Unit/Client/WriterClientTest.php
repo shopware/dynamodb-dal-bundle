@@ -276,6 +276,7 @@ class WriterClientTest extends TestCase
 
                 return \is_array($request)
                     && $request['ConsistentRead'] === true
+                    && \is_array($request['Keys'])
                     && \count($request['Keys']) === 2;
             }))
             ->willReturn(ResultMockFactory::create(BatchGetItemOutput::class, ['responses' => [], 'unprocessedKeys' => []]));
@@ -447,14 +448,19 @@ class WriterClientTest extends TestCase
         $withUnprocessed = ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => $unprocessed]);
         $done = ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]);
 
-        $requestItemsPerCall = [];
+        // An ArrayObject holder, so phpstan does not constant-fold what the callback records.
+        /** @var \ArrayObject<int, array<string, list<WriteRequest>>> $requestItemsPerCall */
+        $requestItemsPerCall = new \ArrayObject();
         $this->client->expects(static::exactly(2))
             ->method('batchWriteItem')
-            ->willReturnCallback(static function (array $args) use (&$requestItemsPerCall, $withUnprocessed, $done): BatchWriteItemOutput {
-                $requestItemsPerCall[] = $args['RequestItems'] ?? null;
+            ->willReturnCallback(
+                /** @param array{RequestItems: array<string, list<WriteRequest>>} $args */
+                static function (array $args) use ($requestItemsPerCall, $withUnprocessed, $done): BatchWriteItemOutput {
+                    $requestItemsPerCall->append($args['RequestItems']);
 
-                return \count($requestItemsPerCall) === 1 ? $withUnprocessed : $done;
-            });
+                    return \count($requestItemsPerCall) === 1 ? $withUnprocessed : $done;
+                },
+            );
 
         $entityA = $this->entity('a');
         $entityB = $this->entity('b');

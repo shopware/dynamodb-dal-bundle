@@ -33,7 +33,7 @@ class CursorHistoryTest extends TestCase
         static::assertSame(3, $history->page());
         static::assertSame($second, $history->current());
         static::assertSame($first, $history->previous()?->current());
-        static::assertSame(1, $history->previous()?->previous()?->page());
+        static::assertSame(1, $history->previous()->previous()?->page());
     }
 
     public function testAdvanceEndsWhereThePageHasNoNextToken(): void

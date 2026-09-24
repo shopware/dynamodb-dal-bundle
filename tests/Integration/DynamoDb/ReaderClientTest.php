@@ -31,7 +31,6 @@ class ReaderClientTest extends DynamoDbTestCase
         ])), false);
 
         static::assertCount(1, $entities);
-        static::assertInstanceOf(RecordEntity::class, $entities[0]);
         static::assertSame('only', $entities[0]->name);
     }
 
@@ -109,7 +108,6 @@ class ReaderClientTest extends DynamoDbTestCase
         ], true)), false);
 
         static::assertCount(1, $entities);
-        static::assertInstanceOf(RecordEntity::class, $entities[0]);
         static::assertSame('strong', $entities[0]->name);
     }
 

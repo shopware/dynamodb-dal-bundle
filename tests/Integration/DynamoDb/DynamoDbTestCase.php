@@ -62,9 +62,10 @@ abstract class DynamoDbTestCase extends TestCase
 
     public static function tearDownAfterClass(): void
     {
-        if (self::$kernel !== null) {
+        $kernel = self::$kernel;
+        if ($kernel !== null) {
             self::dropTables();
-            self::$kernel->shutdown();
+            $kernel->shutdown();
         }
 
         self::$kernel = null;

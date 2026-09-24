@@ -78,6 +78,7 @@ class JsonFieldSerializerTest extends TestCase
         $this->expectException(WrongTypeException::class);
         $this->expectExceptionMessage('Expected type "array|\JsonSerializable" for field "payload" in item "test_entity", got "string"');
 
+        /** @phpstan-ignore-next-line argument.type (intentional wrong type to trigger exception) */
         $this->serializer->serialize($this->definition, 'not-an-array');
     }
 
