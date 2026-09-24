@@ -6,7 +6,6 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
-use AsyncAws\DynamoDb\Result\GetItemOutput;
 use Symfony\Component\Stopwatch\Stopwatch;
 
 /**
@@ -29,14 +28,8 @@ final class TraceableSerializer extends Serializer
     ) {
     }
 
-    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output, ?AbstractEntity $entity = null): ?AbstractEntity
+    public function deserialize(EntityDefinition $definition, array $output, ?AbstractEntity $entity = null): ?AbstractEntity
     {
-        // Force-resolve lazy AsyncAws results before timing so the HTTP round-trip is
-        // attributed to the HTTP profiler, not to the serializer.
-        if ($output instanceof GetItemOutput) {
-            $output->resolve();
-        }
-
         return $this->trace('deserialize', $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output, $entity));
     }
 

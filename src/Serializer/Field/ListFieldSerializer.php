@@ -27,6 +27,11 @@ class ListFieldSerializer extends AbstractFieldSerializer
         return $type === 'array' && $docblockType !== null && ArrayTypeParser::isListType($docblockType);
     }
 
+    /**
+     * @throws \LogicException if the field has no value type, which the container build rules out
+     * @throws WrongTypeException
+     * @throws FieldSerializationException
+     */
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         $valueDef = $definition->getValueFieldDefinition();
@@ -56,6 +61,11 @@ class ListFieldSerializer extends AbstractFieldSerializer
         return AttributeValue::create(['L' => $l]);
     }
 
+    /**
+     * @throws \LogicException if the field has no value type, which the container build rules out
+     * @throws MissingAttributeValueException
+     * @throws FieldDeserializationException
+     */
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         $valueDef = $definition->getValueFieldDefinition();

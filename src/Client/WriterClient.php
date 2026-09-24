@@ -8,6 +8,7 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
@@ -16,8 +17,10 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\ReturnValue;
+use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use AsyncAws\DynamoDb\ValueObject\CancellationReason;
@@ -72,7 +75,11 @@ class WriterClient
      * @param class-string<Entity> $class
      * @param PutInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if an entity or a condition does not serialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function put(string $class, PutInput ...$inputs): void
     {
@@ -121,7 +128,11 @@ class WriterClient
      * @param class-string<Entity> $class
      * @param UpdateInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function update(string $class, UpdateInput ...$inputs): void
     {
@@ -164,7 +175,11 @@ class WriterClient
      * @param class-string<Entity> $class
      * @param DeleteInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key or a condition does not serialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function delete(string $class, DeleteInput ...$inputs): void
     {
@@ -205,6 +220,11 @@ class WriterClient
      * @template Entity of AbstractEntity
      *
      * @param TransactWriteInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if an entity, a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws TransactionCanceledException e.g. when a condition fails; a conflict is retried first
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void
     {
@@ -295,6 +315,9 @@ class WriterClient
 
     /**
      * @param TransactWriteItem[] $chunk
+     *
+     * @throws TransactionCanceledException unless for a conflict with attempts left
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     private function transactWriteChunkWithConflictRetry(array $chunk): void
     {
@@ -330,6 +353,9 @@ class WriterClient
      *
      * @param EntityDefinition<Entity> $definition
      * @param DeleteInput<Entity>|PutInput<Entity> ...$inputs
+     *
+     * @throws DALException if an entity or a key does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      */
     private function batchWriteItem(EntityDefinition $definition, DeleteInput|PutInput ...$inputs): void
     {
@@ -377,6 +403,9 @@ class WriterClient
         return array_any($inputs, static fn ($input): bool => (bool) $input->conditionExpression);
     }
 
+    /**
+     * @throws DALException
+     */
     private function compileExpression(EntityDefinition $definition, ?ExpressionInterface $expression): ExpressionCompiledResult
     {
         if ($expression) {

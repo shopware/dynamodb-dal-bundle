@@ -36,6 +36,7 @@ readonly class Page
      * @param Entity $item - one of {@see $items}, by identity
      *
      * @throws \InvalidArgumentException if `$item` is not on this page
+     * @throws \JsonException if a key attribute of `$item` is not valid UTF-8
      */
     public function cursorAfter(AbstractEntity $item): string
     {
@@ -49,6 +50,7 @@ readonly class Page
      * @param Entity $item - one of {@see $items}, by identity
      *
      * @throws \InvalidArgumentException if `$item` is not on this page
+     * @throws \JsonException if a key attribute of `$item` is not valid UTF-8
      */
     public function cursorBefore(AbstractEntity $item): string
     {
@@ -56,6 +58,8 @@ readonly class Page
     }
 
     /**
+     * @throws \InvalidArgumentException if `$item` is not on this page
+     *
      * @return array<string, AttributeValue>
      */
     private function keyOf(AbstractEntity $item): array

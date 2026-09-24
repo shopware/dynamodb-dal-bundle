@@ -12,7 +12,6 @@ use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
-use AsyncAws\DynamoDb\Result\GetItemOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -28,21 +27,17 @@ class Serializer
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
-     * @param GetItemOutput|array<string, AttributeValue> $output
+     * @param array<string, AttributeValue> $output
      * @param Entity|null $entity - If provided backfills to this entity instead of creating a new one
      *
      * @throws DALException if deserialization of any field fails or a required field value is missing after deserialization and denormalization
      *
      * @return Entity
      */
-    public function deserialize(EntityDefinition $definition, GetItemOutput|array $output, ?AbstractEntity $entity = null): ?AbstractEntity
+    public function deserialize(EntityDefinition $definition, array $output, ?AbstractEntity $entity = null): ?AbstractEntity
     {
-        if ($output instanceof GetItemOutput) {
-            $output = $output->getItem();
-        }
-
         // Any existing item should have at least its primary key fields present.
-        // If array is empty, like returned by {@see GetItemOutput::getItem()}, we can assume that the item does not exist and return null.
+        // If array is empty, like `GetItem` returns for a key that matches no item, we can assume that the item does not exist and return null.
         if (!$output) {
             return null;
         }
@@ -73,6 +68,8 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      * @param array<string, AttributeValue|null> $output
+     *
+     * @throws DALException
      *
      * @return array<string, mixed>
      */
@@ -257,6 +254,8 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      * @param array<string, AttributeValue|null> $output
+     *
+     * @throws DALException
      *
      * @return Index|null - Returns null if the key cannot be build from the provided fields, e.g. empty or key schema not matching
      */

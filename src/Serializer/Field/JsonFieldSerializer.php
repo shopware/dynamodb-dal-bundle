@@ -30,6 +30,10 @@ class JsonFieldSerializer extends AbstractFieldSerializer
         return $type === 'array' || self::isSupportedJsonSerializable($type);
     }
 
+    /**
+     * @throws WrongTypeException
+     * @throws \JsonException if the value cannot be encoded as JSON
+     */
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         if ($value instanceof \JsonSerializable) {
@@ -43,6 +47,11 @@ class JsonFieldSerializer extends AbstractFieldSerializer
         return AttributeValue::create(['S' => json_encode($value, \JSON_THROW_ON_ERROR)]);
     }
 
+    /**
+     * @throws MissingAttributeValueException
+     * @throws \JsonException if the stored string is not JSON
+     * @throws WrongTypeException
+     */
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         $s = $attributeValue->getS();

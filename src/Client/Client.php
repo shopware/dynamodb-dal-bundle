@@ -13,8 +13,12 @@ use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
 use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
+use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
+use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
+use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 
 /**
  * The entry point for reading and writing entities.
@@ -43,6 +47,10 @@ class Client
      *
      * @param GetInput<Entity> $input
      *
+     * @throws UnknownEntityDefinitionException once the output is read
+     * @throws DALException once the output is read, if a key or a stored item does not serialize
+     * @throws AsyncAwsException once the output is read, if a request to DynamoDB fails
+     *
      * @return GetOutput<Entity>
      */
     public function get(GetInput $input): GetOutput
@@ -57,6 +65,10 @@ class Client
      * @template Entity of AbstractEntity
      *
      * @param RefreshInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key or a stored item does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function refresh(RefreshInput $input): void
     {
@@ -72,8 +84,10 @@ class Client
      *
      * @param class-string<Entity> $class
      *
-     * @throws UnknownEntityDefinitionException once the output is read, if no definition is registered for `$class`
-     * @throws InvalidCursorException once the output is read, if the query's cursor is not a token of this query
+     * @throws UnknownEntityDefinitionException once the output is read
+     * @throws InvalidCursorException once the output is read
+     * @throws DALException once the output is read, if the query does not compile, or an item does not deserialize
+     * @throws AsyncAwsException once the output is read, if a request to DynamoDB fails
      *
      * @return SearchOutput<Entity>
      */
@@ -90,7 +104,9 @@ class Client
      *
      * @param class-string<AbstractEntity> $class
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if the query does not compile
+     * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function count(string $class, ScanInput|QueryInput $query): int
     {
@@ -103,7 +119,11 @@ class Client
      * @param class-string<Entity> $class
      * @param PutInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if an entity or a condition does not serialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function put(string $class, PutInput ...$inputs): void
     {
@@ -116,7 +136,11 @@ class Client
      * @param class-string<Entity> $class
      * @param UpdateInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function update(string $class, UpdateInput ...$inputs): void
     {
@@ -127,6 +151,11 @@ class Client
      * @template Entity of AbstractEntity
      *
      * @param TransactWriteInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if an entity, a field, a key or a condition does not serialize, or a stored item does not deserialize
+     * @throws TransactionCanceledException e.g. when a condition fails; a conflict is retried first
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void
     {
@@ -141,7 +170,11 @@ class Client
      * @param class-string<Entity> $class
      * @param DeleteInput<Entity> ...$inputs
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key or a condition does not serialize
+     * @throws ConditionalCheckFailedException for a lone input
+     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function delete(string $class, DeleteInput ...$inputs): void
     {

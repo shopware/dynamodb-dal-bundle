@@ -25,3 +25,35 @@ parameters:
         booleansInLoopConditions: false
         disallowedEmpty: false
         disallowedShortTernary: false
+
+    # Every exception a function throws, or lets through from what it calls, is declared with @throws.
+    # A call to a function without @throws is taken to throw nothing.
+    exceptions:
+        implicitThrows: false
+        # Nothing declares the \Error it may throw, so a catch of one cannot be told dead
+        reportUncheckedExceptionDeadCatch: false
+        check:
+            missingCheckedExceptionInThrows: true
+            tooWideThrowType: true
+
+    ignoreErrors:
+        # @throws documents the API. The container build, the commands and the profiler are not API
+        -
+            identifier: missingType.checkedException
+            paths:
+                - src/Command/*
+                - src/Profiler/*
+                - src/DefinitionBuilder.php
+                - src/DefinitionCompilerPass.php
+                - src/ServiceTaggingPass.php
+                - src/ShopwareDynamodbDalBundle.php
+        # Tests declare no @throws, so a catch around a test helper would look dead and what follows it unreachable
+        -
+            identifier: missingType.checkedException
+            path: tests/*
+        -
+            identifier: catch.neverThrown
+            path: tests/*
+        -
+            identifier: deadCode.unreachable
+            path: tests/*

@@ -7,6 +7,10 @@ use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
@@ -32,6 +36,12 @@ final class SearchOutput extends ReadOutput
     }
 
     /**
+     * @throws \LogicException if this output has already been read
+     * @throws UnknownEntityDefinitionException
+     * @throws InvalidCursorException
+     * @throws DALException if the query does not compile, or an item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return \Generator<int, Entity>
      */
     public function getIterator(): \Generator
@@ -49,6 +59,13 @@ final class SearchOutput extends ReadOutput
      * Returns all items requested until $limit is reached, with tokens for the neighbouring pages.
      *
      * Going back is the same query read in reverse from the first item, so it needs no history of the pages visited before.
+     *
+     * @throws \LogicException if this output has already been read
+     * @throws UnknownEntityDefinitionException
+     * @throws InvalidCursorException
+     * @throws DALException if the query does not compile, or an item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     * @throws \JsonException if a key attribute of a boundary item is not valid UTF-8
      *
      * @return Page<Entity>
      */

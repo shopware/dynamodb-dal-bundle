@@ -27,6 +27,11 @@ class MapFieldSerializer extends AbstractFieldSerializer
         return $type === 'array' && $docblockType !== null && ArrayTypeParser::isMapType($docblockType);
     }
 
+    /**
+     * @throws \LogicException if the field has no value type, which the container build rules out
+     * @throws WrongTypeException
+     * @throws FieldSerializationException
+     */
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
         $valueDef = $definition->getValueFieldDefinition();
@@ -57,6 +62,11 @@ class MapFieldSerializer extends AbstractFieldSerializer
         return AttributeValue::create(['M' => $m]);
     }
 
+    /**
+     * @throws \LogicException if the field has no value type, which the container build rules out
+     * @throws MissingAttributeValueException
+     * @throws FieldDeserializationException
+     */
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
         $valueDef = $definition->getValueFieldDefinition();

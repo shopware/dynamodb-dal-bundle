@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Symfony\Contracts\Service\ResetInterface;
@@ -27,6 +28,9 @@ class ExpressionCompiler implements ResetInterface
      */
     private int $sequence = 0;
 
+    /**
+     * @throws DALException if the expression names a field the entity does not have, or a value that does not serialize for it
+     */
     public function compile(EntityDefinition $definition, ExpressionInterface $filter): ExpressionCompiledResult
     {
         $context = new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));

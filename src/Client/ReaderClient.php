@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
+use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
@@ -14,6 +15,7 @@ use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
+use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\Select;
 use AsyncAws\DynamoDb\Input\QueryInput as DynamoDbQueryInput;
@@ -48,6 +50,10 @@ class ReaderClient
      *
      * @param GetInput<Entity> $input
      *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key or a stored item does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     *
      * @return \Generator<int, Entity>
      */
     public function get(GetInput $input): \Generator
@@ -71,6 +77,10 @@ class ReaderClient
      * @template Entity of AbstractEntity
      *
      * @param RefreshInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if a key or a stored item does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function refresh(RefreshInput $input): void
     {
@@ -96,8 +106,10 @@ class ReaderClient
      *
      * @param class-string<Entity> $class
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
-     * @throws InvalidCursorException if the query's cursor is not a token of this query
+     * @throws UnknownEntityDefinitionException
+     * @throws InvalidCursorException
+     * @throws DALException if the query does not compile, or an item does not deserialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<array<string, AttributeValue>, Entity>
      */
@@ -155,7 +167,9 @@ class ReaderClient
      *
      * @param class-string<AbstractEntity> $class
      *
-     * @throws UnknownEntityDefinitionException if no definition is registered for `$class`
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if the query does not compile
+     * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function count(string $class, ScanInput|QueryInput $query): int
     {
@@ -185,6 +199,9 @@ class ReaderClient
      * @template Entity of AbstractEntity
      *
      * @param list<array{EntityDefinition<Entity>, array<string, AttributeValue>, ?Entity}> $requests - definition, serialized key and target
+     *
+     * @throws DALException if a key or a stored item does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<int, Entity>
      */
@@ -260,6 +277,8 @@ class ReaderClient
      * condition, sort direction and index name.
      *
      * @param Cursor|array<string, AttributeValue>|null $start - a resume position; a backward {@see Cursor} flips the sort direction
+     *
+     * @throws DALException if the filter or key condition does not compile
      */
     private function createSearchInput(EntityDefinition $definition, ScanInput|QueryInput $search, Cursor|array|null $start = null): DynamoDbQueryInput|DynamoDbScanInput
     {

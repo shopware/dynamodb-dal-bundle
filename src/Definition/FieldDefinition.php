@@ -98,6 +98,8 @@ class FieldDefinition
 
     /**
      * @internal - Called by {@see EntityDefinition::__construct()}
+     *
+     * @throws \LogicException if the field already belongs to an entity definition
      */
     public function setEntityDefinition(EntityDefinition $entityDefinition): void
     {
