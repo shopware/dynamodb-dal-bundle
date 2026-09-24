@@ -29,7 +29,7 @@ final class SearchOutput extends ReadOutput
         \Generator $source,
         private readonly ScanInput|QueryInput $search,
     ) {
-        $limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
+        $this->limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
         parent::__construct($source);
     }
 
