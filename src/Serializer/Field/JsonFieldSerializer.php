@@ -11,7 +11,9 @@ use Symfony\Component\Uid\AbstractUid;
 /**
  * Serializes a JSON-compatible array or JsonSerializable value object to/from a single JSON string field.
  *
- * Deserialization returns the decoded array so the entity normalizer can convert it into the target struct.
+ * Deserialization returns the decoded array, never the object: a JsonSerializable property needs a normalizer
+ * that turns the array back into its object, or a field serializer of its own. It is tried last, so any other
+ * serializer that claims the type takes precedence.
  *
  * @internal
  *

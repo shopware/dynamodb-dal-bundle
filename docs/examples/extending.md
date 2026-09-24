@@ -2,6 +2,7 @@
 
 - [Custom types, normalizers and filters](#custom-types-normalizers-and-filters)
   - [A field type of your own](#a-field-type-of-your-own)
+  - [A `JsonSerializable` value object](#a-jsonserializable-value-object)
   - [A normalizer](#a-normalizer)
   - [A filter of your own](#a-filter-of-your-own)
 
@@ -70,12 +71,40 @@ public Money $total;
 ```
 
 - The serializer has to be a service. The bundle finds every service that extends `AbstractFieldSerializer`, so autoconfiguration is not needed.
+- Your serializer takes precedence over the bundle's own, wherever it is registered. If several of yours claim the
+  same type, the first registered wins. To order them otherwise, tag them as `AbstractFieldSerializer` with a
+  `priority`, higher first.
 - `supports()` runs for every field while the container is built. Claim only your own type.
 - Filters and conditions on the field serialize their values with this serializer too, for example
   `Filter::equals('total', new Money(1999, 'EUR'))`.
 - Throw `WrongTypeException` or `MissingAttributeValueException` so the error names the field. The bundle wraps
   any other exception in a `FieldSerializationException` or `FieldDeserializationException` that names the
   field.
+
+## A `JsonSerializable` value object
+
+A property whose class implements `JsonSerializable` is written without a serializer of its own: the bundle stores
+whatever `jsonSerialize()` returns as a JSON string. It reads back as the decoded array, not as the object, because
+the bundle has no way to build one. Assigning that array to the property fails with a `TypeError`, so either:
+
+- give the type a [field serializer of its own](#a-field-type-of-your-own), which takes precedence over the JSON
+  one, or
+- turn the array back into the object in the entity's [normalizer](#a-normalizer):
+
+```php
+public function denormalize(array $fields, array $keys): array
+{
+    if (isset($keys['address']) && \is_array($fields['address'] ?? null)) {
+        $fields['address'] = Address::fromArray($fields['address']);
+    }
+
+    return $fields;
+}
+```
+
+- `jsonSerialize()` has to return an array. Anything else fails to serialize.
+- Elements of a list or map of such a type read back as arrays too. The property is an `array`, so nothing fails,
+  but the normalizer still has to convert them.
 
 ## A normalizer
 

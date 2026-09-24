@@ -11,10 +11,12 @@ use Shopware\DynamodbDalBundle\DefinitionBuilder;
 use Shopware\DynamodbDalBundle\DefinitionCompilerPass;
 use Shopware\DynamodbDalBundle\ServiceTaggingPass;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\BoolFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\FloatFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\IntFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\Field\JsonFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
@@ -41,8 +43,13 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\UnknownRa
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\UnsupportedTypeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\ValidEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\WrongNormalizerEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\AddressFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ContactEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ContactEntityNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 #[CoversClass(DefinitionCompilerPass::class)]
@@ -406,6 +413,66 @@ class DefinitionCompilerPassTest extends TestCase
         static::expectExceptionMessage('is not supported by any serializer');
 
         $this->compileDefinition(EntityWithCustomTypeEntity::class);
+    }
+
+    public function testAJsonSerializablePropertyWithoutASerializerOfItsOwnIsStoredAsJson(): void
+    {
+        $address = $this->compileContactDefinition()->getFieldDefinition('address');
+
+        static::assertNotNull($address);
+        static::assertInstanceOf(JsonFieldSerializer::class, $address->getSerializer());
+    }
+
+    /**
+     * The JSON serializer claims every `JsonSerializable`, so the application's serializer for one has
+     * to win however the two were registered. Registered from a compiler pass, this one comes after
+     * the bundle's own, as it would from a bundle loaded later, and still takes precedence.
+     */
+    public function testAFieldSerializerRegisteredAfterTheBundlesOwnTakesPrecedenceOverTheJsonOne(): void
+    {
+        $definition = $this->compileContactDefinition(static function (ContainerBuilder $container): void {
+            $container->addCompilerPass(new class implements CompilerPassInterface {
+                public function process(ContainerBuilder $container): void
+                {
+                    $container->register(AddressFieldSerializer::class, AddressFieldSerializer::class);
+                }
+            }, PassConfig::TYPE_BEFORE_OPTIMIZATION, 100);
+        });
+
+        $address = $definition->getFieldDefinition('address');
+        static::assertNotNull($address);
+        static::assertInstanceOf(AddressFieldSerializer::class, $address->getSerializer());
+    }
+
+    /**
+     * A serializer the application tagged itself keeps its tag, priority and all: tagged below the
+     * JSON serializer, it is tried after it.
+     */
+    public function testAFieldSerializerTaggedWithAPriorityKeepsIt(): void
+    {
+        $definition = $this->compileContactDefinition(static function (ContainerBuilder $container): void {
+            $container->register(AddressFieldSerializer::class)
+                ->addTag(AbstractFieldSerializer::class, ['priority' => -1000]);
+        });
+
+        $address = $definition->getFieldDefinition('address');
+        static::assertNotNull($address);
+        static::assertInstanceOf(JsonFieldSerializer::class, $address->getSerializer());
+    }
+
+    /**
+     * @param ?\Closure(ContainerBuilder): void $configure
+     *
+     * @return EntityDefinition<ContactEntity>
+     */
+    private function compileContactDefinition(?\Closure $configure = null): EntityDefinition
+    {
+        $container = $this->compileContainer([ContactEntity::class => self::TABLE], [ContactEntityNormalizer::class], configure: $configure);
+
+        $definition = $container->get('dal.definition.contact');
+        static::assertInstanceOf(EntityDefinition::class, $definition);
+
+        return $definition;
     }
 
     /**

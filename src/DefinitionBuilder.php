@@ -22,7 +22,7 @@ use Symfony\Component\DependencyInjection\Reference;
 final readonly class DefinitionBuilder
 {
     /**
-     * @param list<string> $fieldSerializers Service id of every service tagged as an {@see AbstractFieldSerializer}
+     * @param list<string> $fieldSerializers Service id of every service tagged as an {@see AbstractFieldSerializer}, in the order they are tried
      */
     public function __construct(
         private array $fieldSerializers
