@@ -69,6 +69,9 @@ final class UpdateExpression
     /**
      * Whether this only sets or removes whole fields, so the fields alone are the new value of everything it writes.
      * A path into an attribute keeps the rest of that attribute as stored, and an action computes its value from the stored one.
+     * The writer decides by it whether a transaction reads the entity back.
+     *
+     * @internal
      */
     public function onlySetsWholeFields(EntityDefinition $definition): bool
     {

@@ -13,7 +13,7 @@ use Shopware\DynamodbDalBundle\Expression\Update;
  * The entity's normalizer sees the elements as the value of the list, not the list they end up in. Where it removes
  * them, nothing is written, as for an empty list given: a missing list stays missing.
  */
-class ListAppendAction implements NormalizableUpdateActionInterface
+final class ListAppendAction implements NormalizableUpdateActionInterface
 {
     /**
      * @param mixed $values - the list {@see Update::append()} takes, or what the normalizer left in its place. The

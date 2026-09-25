@@ -416,8 +416,10 @@ $this->client->update(OrderEntity::class, new UpdateInput(
 
       public function compile(ExpressionCompileContext $context): ?string
       {
+          // Where the normalizer removed the fallback, write nothing, as `setIfNotExists()` does.
+          // A copy without a fallback would fail for an item that has no `from`.
           if ($this->fallback === null) {
-              return "{$context->attribute($this->to)} = {$context->attribute($this->from)}";
+              return null;
           }
 
           return \sprintf(

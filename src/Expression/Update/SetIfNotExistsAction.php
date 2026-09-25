@@ -12,7 +12,7 @@ use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
  * A `null` value, given or left by the normalizer, writes nothing: the path stays absent where it was, and a stored
  * value is kept. It does not remove the path, which would drop a value this action promises to keep.
  */
-class SetIfNotExistsAction implements NormalizableUpdateActionInterface
+final class SetIfNotExistsAction implements NormalizableUpdateActionInterface
 {
     public function __construct(
         public readonly string $fieldName,

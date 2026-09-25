@@ -820,7 +820,6 @@ class WriterClientTest extends TestCase
         static::assertNotNull($idPath);
 
         return new SerializedResult(
-            $this->definition,
             ['autofilledId' => new SerializedFieldResult($idPath, new AttributeValue(['S' => self::SERIALIZED_ID]))],
             ['autofilledId' => self::SERIALIZED_ID],
             $operation,

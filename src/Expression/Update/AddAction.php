@@ -10,7 +10,7 @@ use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
  * set, creating a missing one. The operand goes through the field's serializer, so an `int` field refuses
  * a fractional step instead of storing one it would read back truncated.
  */
-class AddAction implements UpdateActionInterface
+final class AddAction implements UpdateActionInterface
 {
     public function __construct(
         public readonly string $fieldName,
@@ -23,7 +23,7 @@ class AddAction implements UpdateActionInterface
         return UpdateClause::Add;
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(ExpressionCompileContext $context): string
     {
         return "{$context->attribute($this->fieldName)} {$context->placeholder($this->fieldName, $this->value)}";
     }

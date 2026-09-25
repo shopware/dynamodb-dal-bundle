@@ -29,7 +29,6 @@ class SerializedResultTest extends TestCase
         $nameField = new SerializedFieldResult($this->parse($definition, 'name'), new AttributeValue(['S' => 'test']));
 
         $result = new SerializedResult(
-            $definition,
             ['autofilledId' => $idField, 'name' => $nameField],
             ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'],
             NormalizerOperation::Put,
@@ -49,13 +48,11 @@ class SerializedResultTest extends TestCase
      */
     public function testGetNormalizedFieldsReturnsWhatWasSerialized(): void
     {
-        $definition = $this->createEntityDefinition();
         $fields = ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'];
 
-        $result = new SerializedResult($definition, [], $fields, NormalizerOperation::Update);
+        $result = new SerializedResult([], $fields, NormalizerOperation::Update);
 
         static::assertSame($fields, $result->getNormalizedFields());
-        static::assertSame($definition, $result->getEntityDefinition());
         static::assertSame(NormalizerOperation::Update, $result->getOperation());
     }
 

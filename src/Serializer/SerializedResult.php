@@ -2,33 +2,23 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer;
 
-use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * @internal
- *
- * @template-covariant Definition of EntityDefinition = EntityDefinition
  */
 class SerializedResult
 {
     /**
-     * @param Definition $definition
      * @param array<string, SerializedFieldResult> $fields
      * @param array<string, mixed> $normalizedFields
      * @param NormalizerOperation $operation - what the fields were normalized for
      */
     public function __construct(
-        protected readonly EntityDefinition $definition,
         protected readonly array $fields,
         protected readonly array $normalizedFields,
         protected readonly NormalizerOperation $operation,
     ) {
-    }
-
-    public function getEntityDefinition(): EntityDefinition
-    {
-        return $this->definition;
     }
 
     /**

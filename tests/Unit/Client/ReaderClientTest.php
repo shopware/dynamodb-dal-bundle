@@ -613,7 +613,7 @@ class ReaderClientTest extends TestCase
             $serialized[$name] = new SerializedFieldResult($path, new AttributeValue(['S' => $value]));
         }
 
-        return new SerializedResult($definition, $serialized, $fields, NormalizerOperation::Key);
+        return new SerializedResult($serialized, $fields, NormalizerOperation::Key);
     }
 
     /**
