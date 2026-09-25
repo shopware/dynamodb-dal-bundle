@@ -66,7 +66,7 @@ $this->client->update(OrderEntity::class, new UpdateInput(
     $order,
     // same as Update::setFields(...)
     ['status' => OrderStatus::Paid, 'meta.channel' => 'web'],
-)));
+));
 
 // A single one needs no with()
 $this->client->update(OrderEntity::class, new UpdateInput($order, Update::increment('totalCents', 499)));
@@ -93,7 +93,7 @@ $this->client->update(OrderEntity::class, new UpdateInput(
 | `set($path, $value)`, `remove($path)`, `setFields([...])` | `SET #p = :v`, `REMOVE #p` | The value, or removes it for `null`, like an array of fields |
 | `setIfNotExists($path, $value)` | `SET #p = if_not_exists(#p, :v)` | The value, unless the path holds one already. `null` writes nothing |
 | `increment($path, $by = 1)`, `decrement($path, $by = 1)` | `ADD #p :by` | The stored number plus or minus the step. A missing number counts as 0 |
-| `append($path, [...])`, `prepend($path, [...])` | `SET #p = list_append(…)` | The stored list with the values at its end or start. A missing list counts as empty |
+| `append($path, [...])`, `prepend($path, [...])` | `SET #p = list_append(…)` | The stored list with the values at its end or start. A missing list counts as empty. No values write nothing |
 | `add($path, $value)` | `ADD #p :v` | A number added to the stored one, or elements added to a set |
 | `delete($path, $value)` | `DELETE #p :v` | A set without the given elements |
 | `with(...)` | | Everything the expressions and actions it combines write |
@@ -112,7 +112,10 @@ $this->client->update(OrderEntity::class, new UpdateInput(
   DynamoDB keeps, and never the operand of another action: a step to count by, or elements to add to or delete
   from a set, are no value of the field.
 - An update that has nothing to write throws `UpdateEmptyException` before any request is sent.
-- DynamoDB rejects an update whose paths overlap, such as `set('totalCents', 0)` together with
+- A path given two values, as a field and the value of a `setIfNotExists()` or `append()`, or as the values of two
+  of them, throws `UpdateDuplicatePathException` before any request is sent. The normalizer takes one value per
+  path, so one of them would be lost.
+- DynamoDB rejects any other update whose paths overlap, such as `set('totalCents', 0)` together with
   `increment('totalCents')`, or `increment('totalCents')` twice.
 
 Anything else DynamoDB's update syntax allows can be [an action of your own](extending.md#an-update-action-of-your-own).

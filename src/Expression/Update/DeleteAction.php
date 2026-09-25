@@ -4,10 +4,11 @@ namespace Shopware\DynamodbDalBundle\Expression\Update;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Update;
 
 /**
  * DynamoDB's `DELETE #path :value`: removes elements from a **set**.
- * To remove an attribute or a map entry, set it to `null` instead or use {@see RemoveAction}.
+ * To remove an attribute or a map entry, set it to `null` instead or use {@see Update::remove()}.
  */
 class DeleteAction implements UpdateActionInterface
 {

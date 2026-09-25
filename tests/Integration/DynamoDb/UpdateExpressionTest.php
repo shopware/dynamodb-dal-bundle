@@ -476,16 +476,16 @@ class UpdateExpressionTest extends DynamoDbTestCase
     }
 
     /**
-     * Nothing to append is still an action, so the update is not refused as empty: DynamoDB writes the
-     * list back as it was.
+     * Nothing to append writes nothing, so a missing list is not created as an empty one.
      */
-    public function testAppendingNothingLeavesTheListAsItWas(): void
+    public function testAppendingNothingLeavesAMissingListMissing(): void
     {
-        $this->put(RecordEntity::create(self::TENANT, 'a', tags: ['a', 'b']));
+        $this->put(RecordEntity::create(self::TENANT, 'a', tags: ['stale']));
+        $this->removeRaw('a', 'tags');
 
-        $this->update('a', Update::append('tags', []));
+        $this->update('a', Update::with(Update::append('tags', []), Update::set('name', 'b')));
 
-        static::assertSame(['a', 'b'], $this->read('a')?->tags);
+        static::assertArrayNotHasKey('tags', $this->readRaw('a'));
     }
 
     public function testAnActionReachesAMapKeyDynamoDbCannotSpellLiterally(): void
@@ -555,8 +555,6 @@ class UpdateExpressionTest extends DynamoDbTestCase
     {
         yield 'the same action twice' => [Update::with(Update::increment('counter'), Update::increment('counter'))];
         yield 'a field and an action' => [Update::with(Update::set('counter', 0), Update::increment('counter'))];
-        // Normalized in one map with the fields, which holds the path once, yet both still go out.
-        yield 'a field and the value of an action' => [Update::with(Update::set('name', 'a'), Update::setIfNotExists('name', 'b'))];
         yield 'an attribute and an action on its entry' => [Update::with(Update::set('groups', []), Update::append('groups.g', ['two']))];
         yield 'an attribute and a field on its entry' => [Update::setFields(['groups' => [], 'groups.g' => ['two']])];
     }

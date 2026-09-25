@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Expression;
 
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Contract\NormalizableUpdateActionInterface;
@@ -56,6 +57,7 @@ class ExpressionCompiler implements ResetInterface
      * Normalizes the update, then compiles it.
      *
      * @throws UpdateEmptyException if the update has nothing to write
+     * @throws UpdateDuplicatePathException
      * @throws DALException if the update names a field the entity does not have, or a value that does not serialize for it
      *
      * @return array{UpdateExpression, ExpressionCompiledResult} - the update as normalized, which is what an entity can take back, and its compiled form
@@ -95,18 +97,27 @@ class ExpressionCompiler implements ResetInterface
     /**
      * Passes the update's fields and the input of every {@see NormalizableUpdateActionInterface} through the entity's
      * normalizer in one call, keyed by path, so it sees every value the update stores as given and never an action.
-     * Each action takes its input back, and one whose path the normalizer left out is dropped.
+     * Each action takes its input back, and one whose path the normalizer left out is dropped. A field the normalizer
+     * adds becomes a field, and one it drops is not written.
      *
-     * A field the normalizer adds becomes a field, and one it drops is not written. A path that is a field and the
-     * input of an action at once stays in both, so DynamoDB still refuses the overlap.
+     * @throws UpdateDuplicatePathException
      */
     private function normalizeUpdate(EntityDefinition $definition, UpdateExpression $update): UpdateExpression
     {
         $inputs = [];
         foreach ($update->actions as $action) {
-            if ($action instanceof NormalizableUpdateActionInterface) {
-                $inputs[$action->getPath()] = $action->getValue();
+            if (!$action instanceof NormalizableUpdateActionInterface) {
+                continue;
             }
+
+            // The map holds one value per path, so a second one would replace the first without a word, and a
+            // null among them would even hide the overlap from DynamoDB.
+            $path = $action->getPath();
+            if (\array_key_exists($path, $update->fields) || \array_key_exists($path, $inputs)) {
+                throw new UpdateDuplicatePathException($definition, $path);
+            }
+
+            $inputs[$path] = $action->getValue();
         }
 
         $normalized = $this->serializer->normalize($definition, [...$update->fields, ...$inputs], NormalizerOperation::Update);
@@ -121,11 +132,7 @@ class ExpressionCompiler implements ResetInterface
         }
 
         return new UpdateExpression(
-            array_filter(
-                $normalized,
-                static fn (string $path): bool => \array_key_exists($path, $update->fields) || !\array_key_exists($path, $inputs),
-                \ARRAY_FILTER_USE_KEY,
-            ),
+            array_filter($normalized, static fn (string $path): bool => !\array_key_exists($path, $inputs), \ARRAY_FILTER_USE_KEY),
             $actions,
         );
     }

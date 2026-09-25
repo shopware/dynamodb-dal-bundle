@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
+use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
@@ -17,6 +18,7 @@ use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\CounterDefinition;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(UpdateExpression::class)]
@@ -228,14 +230,53 @@ class UpdateExpressionTest extends TestCase
         static::assertSame(['#count' => 'count'], $context->names);
     }
 
+    /**
+     * A missing list would otherwise be created, as an empty one.
+     */
+    public function testAnAppendWithoutElementsWritesNothing(): void
+    {
+        [$expression, $context] = $this->compile(Update::with(Update::append('tags', []), Update::set('count', 1)));
+
+        static::assertSame('SET #count = :h_0_count', $expression);
+        static::assertSame(['#count' => 'count'], $context->names);
+    }
+
+    #[DataProvider('nullOperandsProvider')]
+    public function testAddAndDeleteRefuseANullOperand(UpdateExpression $update, string $message): void
+    {
+        $this->expectException(NullOperandException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->compile($update);
+    }
+
+    /**
+     * @return iterable<string, array{UpdateExpression, string}>
+     */
+    public static function nullOperandsProvider(): iterable
+    {
+        yield 'ADD' => [Update::add('count', null), 'Operand for field "count"'];
+        yield 'DELETE' => [Update::delete('tags', null), 'Operand for field "tags"'];
+    }
+
     public function testAnActionTakesBackItsValueAndKeepsTheRest(): void
     {
         $prepend = new ListAppendAction('tags', ['a'], prepend: true);
 
         static::assertEquals(new ListAppendAction('tags', ['b'], prepend: true), $prepend->withValue(['b']));
-        static::assertEquals(new ListAppendAction('tags', [], prepend: true), $prepend->withValue(null));
         static::assertEquals(new SetIfNotExistsAction('name', 'b'), new SetIfNotExistsAction('name', 'a')->withValue('b'));
         static::assertEquals(new ListAppendAction('tags', ['a'], prepend: true), $prepend);
+    }
+
+    /**
+     * The action takes back whatever the normalizer left, and compiling refuses it as the list field does.
+     */
+    public function testAnAppendRefusesElementsThatAreNoListOnCompile(): void
+    {
+        $this->expectException(WrongTypeException::class);
+        $this->expectExceptionMessage('Expected type "array" for field "tags" in item "counter", got "string"');
+
+        $this->compile(Update::with(new ListAppendAction('tags', ['a'])->withValue('b')));
     }
 
     public function testWithExtendsTheExpressionAndLeavesItAlone(): void

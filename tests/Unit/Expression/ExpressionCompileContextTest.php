@@ -6,7 +6,7 @@ use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
-use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
@@ -304,8 +304,8 @@ class ExpressionCompileContextTest extends TestCase
 
     public function testNullValueThrows(): void
     {
-        $this->expectException(NullFilterValueException::class);
-        $this->expectExceptionMessage('Filter value for field "name"');
+        $this->expectException(NullOperandException::class);
+        $this->expectExceptionMessage('Operand for field "name"');
 
         $this->compile(Filter::equals('name', null));
     }

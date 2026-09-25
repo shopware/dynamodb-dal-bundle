@@ -2,7 +2,9 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
@@ -10,6 +12,7 @@ use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Expression\Update\AddAction;
 use Shopware\DynamodbDalBundle\Expression\Update\ListAppendAction;
 use Shopware\DynamodbDalBundle\Expression\Update\SetIfNotExistsAction;
+use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -17,6 +20,7 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\CounterDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\RecordingNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(ExpressionCompiler::class)]
@@ -141,27 +145,60 @@ class ExpressionCompilerTest extends TestCase
     }
 
     /**
-     * A single map cannot hold a path twice, but the request has to, or DynamoDB would not refuse the overlap
-     * and one of the two would win without a word.
+     * The normalizer's map holds a path once, so one of two values would win without a word. Where the winner is
+     * `null`, the other would even write nothing, and DynamoDB would never see the overlap.
      */
-    public function testAPathThatIsAFieldAndTheValueOfAnActionStaysInBoth(): void
+    #[DataProvider('pathsGivenTwoValuesProvider')]
+    public function testAPathGivenTwoValuesIsRefused(UpdateExpression $update): void
     {
-        [$normalized] = $this->compiler->compileUpdate(
-            CounterDefinition::create(),
-            Update::with(Update::set('name', 'a'), Update::setIfNotExists('name', 'b')),
-        );
+        $this->expectException(UpdateDuplicatePathException::class);
+        $this->expectExceptionMessage('Update of item "counter" writes path "name" more than once');
 
-        static::assertSame(['name' => 'b'], $normalized->fields);
-        static::assertEquals([new SetIfNotExistsAction('name', 'b')], $normalized->actions);
+        $this->compiler->compileUpdate(CounterDefinition::create(), $update);
     }
 
-    public function testASetIfNotExistsTheNormalizerLeavesWithoutAValueWritesNothing(): void
+    /**
+     * @return iterable<string, array{UpdateExpression}>
+     */
+    public static function pathsGivenTwoValuesProvider(): iterable
     {
-        $normalizer = new RecordingNormalizer(static fn (NormalizerContext $context) => $context->remove('name'));
+        yield 'a field and the value of an action' => [Update::with(Update::set('name', 'a'), Update::setIfNotExists('name', 'b'))];
+        yield 'a field and an action without a value' => [Update::with(Update::set('name', 'a'), Update::setIfNotExists('name', null))];
+        yield 'an action without a value and a field' => [Update::with(Update::setIfNotExists('name', null), Update::set('name', 'a'))];
+        yield 'a removed field and the value of an action' => [Update::with(Update::remove('name'), Update::setIfNotExists('name', 'a'))];
+        yield 'the values of two actions' => [Update::with(Update::setIfNotExists('name', 'a'), Update::setIfNotExists('name', null), Update::set('count', 1))];
+    }
+
+    public function testAnAppendWithoutElementsHasNothingToWrite(): void
+    {
+        $this->expectException(UpdateEmptyException::class);
+
+        $this->compiler->compileUpdate(CounterDefinition::create(), Update::append('tags', []));
+    }
+
+    public function testAnAppendTheNormalizerLeavesWithoutAListIsRefusedForItsField(): void
+    {
+        $normalizer = new RecordingNormalizer(static fn (NormalizerContext $context) => $context->set('tags', 'x'));
+
+        try {
+            $this->compiler->compileUpdate(CounterDefinition::create($normalizer), Update::append('tags', ['x']));
+            static::fail('The append should have been refused.');
+        } catch (WrongTypeException $exception) {
+            static::assertSame('tags', $exception->fieldDefinition->getName());
+            static::assertSame('string', $exception->actualType);
+        }
+    }
+
+    public function testAnActionTheNormalizerLeavesWithoutAValueWritesNothing(): void
+    {
+        $normalizer = new RecordingNormalizer(static function (NormalizerContext $context): void {
+            $context->remove('name');
+            $context->remove('tags');
+        });
 
         [, $compiled] = $this->compiler->compileUpdate(
             CounterDefinition::create($normalizer),
-            Update::with(Update::setIfNotExists('name', 'blank'), Update::set('count', 1)),
+            Update::with(Update::setIfNotExists('name', 'blank'), Update::append('tags', ['x']), Update::set('count', 1)),
         );
 
         static::assertSame('SET #count = :ex_1_0_count', $compiled->expression);

@@ -25,6 +25,7 @@ interface NormalizableUpdateActionInterface extends UpdateActionInterface
 
     /**
      * This action with the input the normalizer left, `null` where it removed the value. It must not change this one.
+     * What that input writes, if anything, is up to {@see UpdateActionInterface::compile()}.
      */
     public function withValue(mixed $value): self;
 }

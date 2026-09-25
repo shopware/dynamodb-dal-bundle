@@ -430,7 +430,11 @@ $this->client->update(OrderEntity::class, new UpdateInput(
   }
   ```
 
-  `withValue()` gets `null` where the normalizer removed the value, and the action decides what that writes. Where
-  the normalizer leaves the path out, the action is dropped from the update.
+  `withValue()` only rebuilds the action. It gets `null` where the normalizer removed the value, and `compile()`
+  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `placeholder()`, whose
+  field serializer refuses it with a `WrongTypeException`. Where the normalizer leaves the path out, the action is
+  dropped from the update.
+- A path may carry one value per update. Another action or a field giving the same path a value throws
+  `UpdateDuplicatePathException`.
 - An operand that is no value of the field, such as a step, elements added to a set, or another path as
   `CopyAction` copies, stays as given, and the action implements `UpdateActionInterface` alone.

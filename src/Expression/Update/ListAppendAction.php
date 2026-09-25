@@ -4,30 +4,26 @@ namespace Shopware\DynamodbDalBundle\Expression\Update;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\NormalizableUpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Update;
 
 /**
  * Adds elements to the end of a list, or to its start with `$prepend`, counting a missing list as empty:
  * `SET #path = list_append(if_not_exists(#path, :empty), :values)`.
  *
  * The entity's normalizer sees the elements as the value of the list, not the list they end up in. Where it removes
- * them, nothing is appended, as for an empty list given.
+ * them, nothing is written, as for an empty list given: a missing list stays missing.
  */
 class ListAppendAction implements NormalizableUpdateActionInterface
 {
     /**
-     * @var list<mixed>
-     */
-    public readonly array $values;
-
-    /**
-     * @param list<mixed> $values
+     * @param mixed $values - the list {@see Update::append()} takes, or what the normalizer left in its place. The
+     *                      list field's serializer refuses anything else on compile.
      */
     public function __construct(
         public readonly string $fieldName,
-        array $values,
+        public readonly mixed $values,
         public readonly bool $prepend = false,
     ) {
-        $this->values = array_values($values);
     }
 
     public function getClause(): UpdateClause
@@ -40,24 +36,23 @@ class ListAppendAction implements NormalizableUpdateActionInterface
         return $this->fieldName;
     }
 
-    /**
-     * @return list<mixed>
-     */
-    public function getValue(): array
+    public function getValue(): mixed
     {
         return $this->values;
     }
 
-    /**
-     * @param ?list<mixed> $value - `null` where the normalizer removed the elements
-     */
     public function withValue(mixed $value): self
     {
-        return new self($this->fieldName, $value ?? [], $this->prepend);
+        return new self($this->fieldName, $value, $this->prepend);
     }
 
     public function compile(ExpressionCompileContext $context): ?string
     {
+        // Appending nothing would still create a missing list, as an empty one
+        if ($this->values === null || $this->values === []) {
+            return null;
+        }
+
         $attribute = $context->attribute($this->fieldName);
         $current = "if_not_exists({$attribute}, {$context->placeholder($this->fieldName, [])})";
         $values = $context->placeholder($this->fieldName, $this->values);
