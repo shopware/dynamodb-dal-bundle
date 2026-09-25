@@ -20,6 +20,8 @@ enum NormalizerOperation
 
     /**
      * An update writes the fields present, paths into an attribute included, and removes those that are `null`.
+     * The value an update action stores as given is present under its path too: the one `setIfNotExists()` offers,
+     * or the elements `append()` adds and not the whole list. There, `null` writes nothing.
      * The item exists, since every update is conditioned on it.
      */
     case Update;

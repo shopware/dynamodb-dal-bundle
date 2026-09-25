@@ -6,7 +6,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
-use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
@@ -67,7 +67,7 @@ class ExpressionCompileContext
      * $useValueFieldDefinition is for DynamoDB functions that compare one collection element instead of the collection field itself.
      *
      * @throws UnknownFieldException
-     * @throws NullFilterValueException
+     * @throws NullOperandException
      * @throws DALException if the value does not serialize for the field
      */
     public function placeholder(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
@@ -80,7 +80,7 @@ class ExpressionCompileContext
         }
 
         if ($value === null) {
-            throw new NullFilterValueException($field);
+            throw new NullOperandException($field);
         }
 
         try {

@@ -187,7 +187,7 @@ $orders = $this->client->search(OrderEntity::class, new QueryInput(
 ```
 
 - Values are PHP values, serialized by the field's serializer. `null` is refused with
-  `NullFilterValueException`; to match a missing attribute, use `Filter::notExists()`.
+  `NullOperandException`; to match a missing attribute, use `Filter::notExists()`.
 - `Filter` also provides `equalsAny` (DynamoDB's `IN`), `sizeEquals`, `or`, `not`, `notEquals`,
   `notEqualsAny`, `notContains` and `notExists`.
 - `consistentRead: true` only works on a base-table query. DynamoDB rejects it on a global secondary index.

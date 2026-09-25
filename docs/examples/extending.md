@@ -1,10 +1,11 @@
-# Custom types, normalizers and filters
+# Custom types, normalizers, filters and update actions
 
-- [Custom types, normalizers and filters](#custom-types-normalizers-and-filters)
+- [Custom types, normalizers, filters and update actions](#custom-types-normalizers-filters-and-update-actions)
   - [A field type of your own](#a-field-type-of-your-own)
   - [A `JsonSerializable` value object](#a-jsonserializable-value-object)
   - [A normalizer](#a-normalizer)
   - [A filter of your own](#a-filter-of-your-own)
+  - [An update action of your own](#an-update-action-of-your-own)
 
 ## A field type of your own
 
@@ -229,6 +230,9 @@ $entry->updatedAt; // stamped without the caller naming it
 - Override only the side you need. The other one leaves the fields as they are.
 - Never assume a field is present. `has()` tells whether it is, even as `null`, and `get()` returns `null` for
   one that is absent or not present.
+- An update passes the fields it sets or removes, and under its path the value an
+  [action](writes.md#update-expressions) stores as given, such as the one of `setIfNotExists()` or the elements of
+  `append()`. The normalizer handles it like any field and never sees the action.
 - An update may write into an attribute without naming it, such as `meta.kind` instead of `meta`.
   `hasWithin('meta')` and `getWithin('meta')` find the attribute and every path nested under it,
   but not `metadata`.
@@ -249,7 +253,7 @@ $entry->updatedAt; // stamped without the caller naming it
   no item, the fields it wrote are, including those the normalizer added. `denormalize()` then runs as `Put` or
   `Update`, on the fields that write sent.
 - A lone update keyed by an entity gets the updated item back from DynamoDB instead, as does the read-back after
-  an update of a nested path. `denormalize()` then runs as `Read`, with every field. A rule that turns stored
+  an update of a nested path or with an action. `denormalize()` then runs as `Read`, with every field. A rule that turns stored
   values into entity values, such as the `Address` above, therefore runs whatever the operation.
 - A table key field may be nullable only on an entity with a normalizer, which then has to fill it in.
 - A test builds the context with `NormalizerContext::fromFields()`, runs the normalizer and reads the fields back:
@@ -268,19 +272,19 @@ $entry->updatedAt; // stamped without the caller naming it
 
 ## A filter of your own
 
-`Filter` covers DynamoDB's comparisons and functions. Anything else can implement `ExpressionInterface`: its
+`Filter` covers DynamoDB's comparisons and functions. Anything else can implement `FilterInterface`: its
 `compile()` returns an expression fragment and registers the attribute names and values it uses on the context.
 
 ```php
 namespace App\Dal;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
 /**
  * Matches a list or map with more than `$count` elements, or a string longer than `$count` characters.
  */
-final readonly class SizeGreaterThanFilter implements ExpressionInterface
+final readonly class SizeGreaterThanFilter implements FilterInterface
 {
     public function __construct(
         private string $fieldName,
@@ -317,3 +321,122 @@ new QueryInput(
 - Return `null` to add nothing, for example for an optional criterion. Register no names or values in that case.
 - If the fragment joins several clauses with `AND` or `OR`, set `$context->isCompound = true`. An enclosing
   `and()` or `or()` then wraps it in parentheses.
+
+## An update action of your own
+
+[`Update`](writes.md#update-expressions) covers DynamoDB's update actions and functions. Anything else its update
+syntax allows can implement `UpdateActionInterface`: `getClause()` names the clause the action belongs to, and
+`compile()` returns its fragment without the clause keyword, using the same context as a filter.
+
+```php
+namespace App\Dal;
+
+use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\Update\UpdateClause;
+
+/**
+ * Copies one attribute's stored value to another path.
+ */
+final readonly class CopyAction implements UpdateActionInterface
+{
+    public function __construct(
+        private string $from,
+        private string $to,
+    ) {
+    }
+
+    public function getClause(): UpdateClause
+    {
+        return UpdateClause::Set;
+    }
+
+    public function compile(ExpressionCompileContext $context): ?string
+    {
+        return "{$context->attribute($this->to)} = {$context->attribute($this->from)}";
+    }
+}
+```
+
+`Update::with()` takes it alongside the built-in ones:
+
+```php
+// DynamoDB evaluates every operand against the stored item, so the copy keeps the status before the change
+$this->client->update(OrderEntity::class, new UpdateInput(
+    $order,
+    Update::with(
+        Update::set('status', OrderStatus::Cancelled),
+        new CopyAction('status', 'meta.previousStatus'),
+    ),
+));
+```
+
+- The clauses are written once each, in the order `SET`, `REMOVE`, `ADD`, `DELETE`. Fragments of one clause are
+  joined with commas.
+- Return `null` to add nothing. An update whose fields and actions all add nothing throws `UpdateEmptyException`.
+- An action's result is computed by DynamoDB, so an entity updated in a transaction is read back afterwards (see
+  [Keeping the entity in sync](writes.md#keeping-the-entity-in-sync)).
+- An action whose input is a value of its field, as `setIfNotExists()` stores one, implements
+  `NormalizableUpdateActionInterface` instead. The entity's normalizer then sees that input under `getPath()`,
+  like a field the update sets, and the action takes back what it leaves through `withValue()`:
+
+  ```php
+  /**
+   * Copies another path's stored value, or writes the fallback where that path holds none.
+   */
+  final readonly class CopyOrFallbackAction implements NormalizableUpdateActionInterface
+  {
+      public function __construct(
+          private string $from,
+          private string $to,
+          private mixed $fallback,
+      ) {
+      }
+
+      public function getClause(): UpdateClause
+      {
+          return UpdateClause::Set;
+      }
+
+      // The fallback is stored as given at `to`, so it is what the normalizer sees there
+      public function getPath(): string
+      {
+          return $this->to;
+      }
+
+      public function getValue(): mixed
+      {
+          return $this->fallback;
+      }
+
+      public function withValue(mixed $value): self
+      {
+          return new self($this->from, $this->to, $value);
+      }
+
+      public function compile(ExpressionCompileContext $context): ?string
+      {
+          // Where the normalizer removed the fallback, write nothing, as `setIfNotExists()` does.
+          // A copy without a fallback would fail for an item that has no `from`.
+          if ($this->fallback === null) {
+              return null;
+          }
+
+          return \sprintf(
+              '%s = if_not_exists(%s, %s)',
+              $context->attribute($this->to),
+              $context->attribute($this->from),
+              $context->placeholder($this->to, $this->fallback),
+          );
+      }
+  }
+  ```
+
+  `withValue()` only rebuilds the action. It gets `null` where the normalizer removed the value, and `compile()`
+  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `placeholder()`, whose
+  field serializer refuses it with a `WrongTypeException`. Where the normalizer leaves the path out, the action is
+  dropped from the update.
+- A path may carry one value per update. Another action or a field giving the same path a value throws
+  `UpdateDuplicatePathException`.
+- An operand that is no value of the field, such as a step, elements added to a set, or another path as
+  `CopyAction` copies, stays as given, and the action implements `UpdateActionInterface` alone.

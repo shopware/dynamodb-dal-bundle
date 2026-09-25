@@ -60,7 +60,7 @@ class ReaderClientTest extends TestCase
 
         $registry = $this->registry();
 
-        $this->reader = new ReaderClient($this->dynamo, $this->serializer, new ExpressionCompiler(), $registry);
+        $this->reader = new ReaderClient($this->dynamo, $this->serializer, new ExpressionCompiler($this->serializer), $registry);
     }
 
     public function testSearchScanDeserializesEveryItem(): void
@@ -445,7 +445,7 @@ class ReaderClientTest extends TestCase
         $reader = new ReaderClient(
             $this->dynamo,
             $this->serializer,
-            new ExpressionCompiler(),
+            new ExpressionCompiler($this->serializer),
             new EntityDefinitionRegistry([
                 $this->definition->getName() => $this->definition,
                 $otherDefinition->getName() => $otherDefinition,
@@ -613,7 +613,7 @@ class ReaderClientTest extends TestCase
             $serialized[$name] = new SerializedFieldResult($path, new AttributeValue(['S' => $value]));
         }
 
-        return new SerializedResult($definition, $serialized, $fields, NormalizerOperation::Key);
+        return new SerializedResult($serialized, $fields, NormalizerOperation::Key);
     }
 
     /**

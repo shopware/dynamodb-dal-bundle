@@ -3,6 +3,7 @@
 - [Updates, conditions and transactions](#updates-conditions-and-transactions)
   - [Partial updates](#partial-updates)
   - [Nested updates](#nested-updates)
+  - [Update expressions](#update-expressions)
   - [Keeping the entity in sync](#keeping-the-entity-in-sync)
   - [Conditional writes](#conditional-writes)
   - [Transactions](#transactions)
@@ -51,6 +52,74 @@ $this->client->update(OrderEntity::class, new UpdateInput($order, [
 - A map key may contain any character except `.`, `[` and `]`.
 - A condition can check the entry it writes, for example `Filter::equals('meta.carrier', 'ups')`.
 
+## Update expressions
+
+An array of fields only sets and removes values you already know. `Update` builds an expression whose actions
+DynamoDB evaluates against the stored item, so two writers that count or append at the same time both land. Each
+method returns a whole expression, and `Update::with()` combines several, as `Filter::and()` combines filters. A basic
+update sets the values you already know in one `setFields()`, next to the actions:
+
+```php
+use Shopware\DynamodbDalBundle\Expression\Update;
+
+$this->client->update(OrderEntity::class, new UpdateInput(
+    $order,
+    // same as Update::setFields(...)
+    ['status' => OrderStatus::Paid, 'meta.channel' => 'web'],
+));
+
+// A single one needs no with()
+$this->client->update(OrderEntity::class, new UpdateInput($order, Update::increment('totalCents', 499)));
+```
+
+A complex one names each path on its own. `set()` and `remove()` do what `setFields()` does for one path, and
+`setIfNotExists()` writes a value only where none is stored yet:
+
+```php
+$this->client->update(OrderEntity::class, new UpdateInput(
+    $order,
+    Update::with(
+        Update::set('status', OrderStatus::Paid), // like ['status' => OrderStatus::Paid]
+        Update::remove('note'),                   // like ['note' => null]
+        Update::increment('totalCents', 499),
+        Update::append('tags', ['gift-wrapped']),
+        Update::setIfNotExists('meta.channel', 'web'),
+    ),
+));
+```
+
+| Method | DynamoDB | Writes |
+|---|---|---|
+| `set($path, $value)`, `remove($path)`, `setFields([...])` | `SET #p = :v`, `REMOVE #p` | The value, or removes it for `null`, like an array of fields |
+| `setIfNotExists($path, $value)` | `SET #p = if_not_exists(#p, :v)` | The value, unless the path holds one already. `null` writes nothing |
+| `increment($path, $by = 1)`, `decrement($path, $by = 1)` | `ADD #p :by` | The stored number plus or minus the step. A missing number counts as 0 |
+| `append($path, [...])`, `prepend($path, [...])` | `SET #p = list_append(…)` | The stored list with the values at its end or start. A missing list counts as empty. No values write nothing |
+| `add($path, $value)` | `ADD #p :v` | A number added to the stored one, or elements added to a set |
+| `delete($path, $value)` | `DELETE #p :v` | A set without the given elements |
+| `with(...)` | | Everything the expressions and actions it combines write |
+
+- `with()` takes expressions and [actions of your own](extending.md#an-update-action-of-your-own), nested as deep as
+  you like. A path set by several takes the last value.
+- An expression's own `with()` extends it into a new one, e.g. `$update->with(Update::remove('note'))`, and
+  leaves it as it is.
+- An array of fields given to `UpdateInput` is shorthand for `Update::setFields([...])`.
+- Every path may address a map entry or list element, as `meta.channel` does above. The attribute it descends into
+  has to exist, as for [nested updates](#nested-updates).
+- Operands go through the field's serializer, so `increment()` on an `int` field refuses a step of `0.5`.
+- The entity's normalizer sees the fields that are set or removed, as it does for a put. In the same call it sees
+  the value of a `setIfNotExists()` and the elements of an `append()` or `prepend()` under their path, as if they
+  were set, and whatever it leaves there is what the action writes. It sees the value offered, not the one
+  DynamoDB keeps, and never the operand of another action: a step to count by, or elements to add to or delete
+  from a set, are no value of the field.
+- An update that has nothing to write throws `UpdateEmptyException` before any request is sent.
+- A path given two values, as a field and the value of a `setIfNotExists()` or `append()`, or as the values of two
+  of them, throws `UpdateDuplicatePathException` before any request is sent. The normalizer takes one value per
+  path, so one of them would be lost.
+- DynamoDB rejects any other update whose paths overlap, such as `set('totalCents', 0)` together with
+  `increment('totalCents')`, or `increment('totalCents')` twice.
+
+Anything else DynamoDB's update syntax allows can be [an action of your own](extending.md#an-update-action-of-your-own).
+
 ## Keeping the entity in sync
 
 When an `UpdateInput` addresses an entity rather than an `Index`, its `refresh` argument controls what happens
@@ -58,8 +127,8 @@ to that entity:
 
 | `refresh` | Single update | Update in a transaction |
 |---|---|---|
-| `true` (default) | The entity gets the whole stored item back from the update (`ReturnValues=ALL_NEW`) | The written fields are applied to the entity. If any written field is a nested path, the item is read back with a strongly consistent read |
-| `null` | Same as `true` | The written top-level fields are applied to the entity; nested paths are not |
+| `true` (default) | The entity gets the whole stored item back from the update (`ReturnValues=ALL_NEW`) | The written fields are applied to the entity. If a written field is a nested path, or the update has an action, the item is read back with a strongly consistent read |
+| `null` | Same as `true` | The written top-level fields are applied to the entity; nested paths and actions are not |
 | `false` | The entity is left untouched | The entity is left untouched |
 
 Several `UpdateInput`s passed to `update()` also run as a transaction, and `transactWrite()` always does.

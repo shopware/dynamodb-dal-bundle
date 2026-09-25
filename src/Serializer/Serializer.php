@@ -125,8 +125,6 @@ class Serializer
      * @param NormalizerOperation $operation - what the fields are for, as the normalizer is told
      *
      * @throws DALException if a provided field does not exist in the definition or a required field value is missing
-     *
-     * @return SerializedResult<EntityDefinition<Entity>>
      */
     public function serialize(EntityDefinition $definition, AbstractEntity|array $fields, NormalizerOperation $operation): SerializedResult
     {
@@ -150,7 +148,7 @@ class Serializer
                 throw new UnknownFieldException($definition, $name);
             }
 
-            // DynamoDB has no null attribute: an unset value is absent from a put, and removed by an update.
+            // DynamoDB has no null attribute, so an unset value is absent from a put.
             if ($value === null && $path->definition->allowsNull()) {
                 $result[$name] = new SerializedFieldResult($path, null);
 
@@ -175,7 +173,7 @@ class Serializer
             $result[$name] = new SerializedFieldResult($path, $serialized);
         }
 
-        return new SerializedResult($definition, $result, $fields, $operation);
+        return new SerializedResult($result, $fields, $operation);
     }
 
     /**

@@ -28,6 +28,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(Serializer::class);
 
     $services->set(ExpressionCompiler::class)
+        ->args([service(Serializer::class)])
         ->tag('kernel.reset', ['method' => 'reset']);
 
     $services->set(ReaderClient::class)

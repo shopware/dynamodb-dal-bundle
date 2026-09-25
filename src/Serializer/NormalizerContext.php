@@ -6,7 +6,8 @@ namespace Shopware\DynamodbDalBundle\Serializer;
  * The fields a normalizer works on, keyed by field name or, for an update, by path, and why it runs.
  *
  * A normalizer changes them in place. `null` is absence, as everywhere in the DAL: a put leaves the
- * attribute out, an update removes it. A path that is not present is not written at all.
+ * attribute out, an update removes it, and an update action whose value it is, such as `setIfNotExists()`,
+ * writes nothing. A path that is not present is not written at all.
  */
 final class NormalizerContext
 {

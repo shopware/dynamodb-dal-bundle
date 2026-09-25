@@ -5,14 +5,14 @@ namespace Shopware\DynamodbDalBundle\Expression;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Output of {@see ExpressionCompiler::compile()}: the compiled expression string plus
+ * Output of {@see ExpressionCompiler::compileFilter()} and {@see ExpressionCompiler::compileUpdate()}: the compiled expression string plus
  * the `ExpressionAttributeNames` / `ExpressionAttributeValues` placeholder maps it
  * references.
  *
  * Typical single-expression usage (scan/query with one filter):
  *
  * ```
- * $result = $compiler->compile($definition, $criteria);
+ * $result = $compiler->compileFilter($definition, $criteria);
  *
  * $client->scan([
  *     'TableName' => $definition->getTable(),
@@ -25,8 +25,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  * both expressions need to share one placeholder map at the request level:
  *
  * ```
- * $key    = $compiler->compile($definition, $keyFilter);
- * $filter = $compiler->compile($definition, $filterFilter);
+ * $key    = $compiler->compileFilter($definition, $keyFilter);
+ * $filter = $compiler->compileFilter($definition, $filterFilter);
  *
  * $client->query([
  *     'TableName' => $definition->getTable(),
@@ -52,12 +52,12 @@ class ExpressionCompiledResult
     }
 
     /**
-     * Returns a spread-ready `[FilterExpression|KeyConditionExpression|ConditionExpression => $expression]` shape.
+     * Returns a spread-ready `[FilterExpression|KeyConditionExpression|ConditionExpression|UpdateExpression => $expression]` shape.
      * Empty when this result has no expression.
      *
-     * @param 'filter'|'key-condition'|'condition' $key
+     * @param 'filter'|'key-condition'|'condition'|'update' $key
      *
-     * @return ($key is 'filter' ? array{FilterExpression?: string} : ($key is 'key-condition' ? array{KeyConditionExpression?: string} : array{ConditionExpression?: string}))
+     * @return ($key is 'filter' ? array{FilterExpression?: string} : ($key is 'key-condition' ? array{KeyConditionExpression?: string} : ($key is 'condition' ? array{ConditionExpression?: string} : array{UpdateExpression?: string})))
      */
     public function getExpression(string $key): array
     {
@@ -69,6 +69,7 @@ class ExpressionCompiledResult
             'filter' => ['FilterExpression' => $this->expression],
             'key-condition' => ['KeyConditionExpression' => $this->expression],
             'condition' => ['ConditionExpression' => $this->expression],
+            'update' => ['UpdateExpression' => $this->expression],
         };
     }
 

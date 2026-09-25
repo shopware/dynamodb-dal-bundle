@@ -25,8 +25,7 @@
 - Everything outside the consumer-facing API is `@internal`. The tag goes first in the class docblock
 - Constructors of autowired services and of value objects the container builds are `@internal`, even when the
   class is public. The class is API; its constructor signature is not
-- Extension points are abstract classes (`AbstractFieldSerializer`, `AbstractNormalizer`) or interfaces
-  (`ExpressionInterface`). The bundle's own implementations of them are `@internal`
+- Extension points are abstract classes (`AbstractFieldSerializer`, `AbstractNormalizer`) or interfaces (`FilterInterface`, `UpdateActionInterface`)
 - Decide which side of that boundary a new class belongs to when you add it
 - Client operations are addressed by entity class, never by `EntityDefinition`
 

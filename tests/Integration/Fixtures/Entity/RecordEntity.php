@@ -63,6 +63,14 @@ class RecordEntity extends AbstractEntity
     public array $groups = [];
 
     /**
+     * Numbers under a map, for arithmetic on a nested path.
+     *
+     * @var array<string, int>
+     */
+    #[Field]
+    public array $counts = [];
+
+    /**
      * No `@var` shape, so this is the JSON-serializer field. The compiler does not read `@phpstan-var`.
      *
      * @phpstan-var array<mixed>

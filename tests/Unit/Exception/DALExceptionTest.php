@@ -11,9 +11,11 @@ use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
-use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
+use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
@@ -29,9 +31,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(FieldMissingSerializedValueException::class)]
 #[CoversClass(FieldSerializationException::class)]
 #[CoversClass(MissingAttributeValueException::class)]
-#[CoversClass(NullFilterValueException::class)]
+#[CoversClass(NullOperandException::class)]
 #[CoversClass(UnknownEntityDefinitionException::class)]
 #[CoversClass(UnknownFieldException::class)]
+#[CoversClass(UpdateDuplicatePathException::class)]
+#[CoversClass(UpdateEmptyException::class)]
 #[CoversClass(WrongTypeException::class)]
 class DALExceptionTest extends TestCase
 {
@@ -68,6 +72,25 @@ class DALExceptionTest extends TestCase
         static::assertSame('Unknown field "doesNotExist" in item "customer"', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame('doesNotExist', $exception->field);
+    }
+
+    public function testUpdateEmpty(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $exception = new UpdateEmptyException($entityDefinition);
+
+        static::assertSame('Update of item "customer" has nothing to write', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+    }
+
+    public function testUpdateDuplicatePath(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $exception = new UpdateDuplicatePathException($entityDefinition, 'meta.label');
+
+        static::assertSame('Update of item "customer" writes path "meta.label" more than once', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame('meta.label', $exception->path);
     }
 
     /**
@@ -128,14 +151,20 @@ class DALExceptionTest extends TestCase
         static::assertSame(\stdClass::class, $exception->actualType);
     }
 
-    public function testNullFilterValue(): void
+    /**
+     * Thrown for a filter and an update alike, so the message points at the absence each of them means.
+     */
+    public function testNullOperand(): void
     {
-        $exception = new NullFilterValueException($this->fieldDefinition());
+        $fieldDefinition = $this->fieldDefinition();
+        $exception = new NullOperandException($fieldDefinition);
 
-        static::assertStringStartsWith(
-            'Filter value for field "label" in item "customer" must not be null.',
+        static::assertSame(
+            'Operand for field "label" in item "customer" must not be null.'
+                . ' Use exists/not(exists) to filter for absence of an attribute, or Update::remove() to remove one.',
             $exception->getMessage(),
         );
+        static::assertSame($fieldDefinition, $exception->fieldDefinition);
     }
 
     public function testFieldSerializationKeepsTheCause(): void

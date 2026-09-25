@@ -4,7 +4,7 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Index;
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 
 /**
  * @template-covariant Entity of AbstractEntity = never
@@ -16,7 +16,7 @@ final class DeleteInput
      */
     public function __construct(
         public readonly AbstractEntity|Index $key,
-        public readonly ?ExpressionInterface $conditionExpression = null,
+        public readonly ?FilterInterface $conditionExpression = null,
     ) {
     }
 

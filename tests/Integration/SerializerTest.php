@@ -20,9 +20,7 @@ use Symfony\Component\DependencyInjection\Container;
 
 /**
  * Drives the real {@see Serializer} against a compiled {@see EntityDefinition} — its real normalizer and
- * field serializers, no mocks — and asserts the {@see SerializedResult} it produces: that
- * `getUpdateExpression()` builds the right SET / REMOVE / combined clauses with matching placeholder
- * maps, and that an item reads back into the entity it was written from.
+ * field serializers, no mocks — and asserts that an item reads back into the entity it was written from.
  */
 #[CoversClass(Serializer::class)]
 #[CoversClass(SerializedResult::class)]
@@ -43,71 +41,6 @@ class SerializerTest extends TestCase
             [NormalizedEntityNormalizer::class, ContactEntityNormalizer::class],
             [Serializer::class],
         );
-    }
-
-    public function testGetUpdateExpressionBuildsASetClauseForASingleValue(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => 'a name'], NormalizerOperation::Update)->getUpdateExpression();
-
-        static::assertSame('SET #name = :sv_name', $expression['UpdateExpression']);
-        static::assertSame(['#name' => 'name'], $expression['ExpressionAttributeNames'] ?? null);
-        static::assertEquals(
-            [':sv_name' => new AttributeValue(['S' => 'a name'])],
-            $expression['ExpressionAttributeValues'] ?? null,
-        );
-    }
-
-    public function testGetUpdateExpressionBuildsASetClauseForSeveralValues(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), [
-            'name' => 'a name',
-            'counter' => 7,
-        ], NormalizerOperation::Update)->getUpdateExpression();
-
-        // Both assignments live in one SET clause; ordering follows the provided field order.
-        static::assertSame('SET #name = :sv_name, #counter = :sv_counter', $expression['UpdateExpression']);
-        static::assertSame(['#name' => 'name', '#counter' => 'counter'], $expression['ExpressionAttributeNames'] ?? null);
-        static::assertEquals([
-            ':sv_name' => new AttributeValue(['S' => 'a name']),
-            ':sv_counter' => new AttributeValue(['N' => '7']),
-        ], $expression['ExpressionAttributeValues'] ?? null);
-    }
-
-    public function testGetUpdateExpressionBuildsARemoveClauseForNullValues(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['name' => null], NormalizerOperation::Update)->getUpdateExpression();
-
-        static::assertSame('REMOVE #name', $expression['UpdateExpression']);
-        static::assertSame(['#name' => 'name'], $expression['ExpressionAttributeNames'] ?? null);
-        static::assertArrayNotHasKey('ExpressionAttributeValues', $expression);
-    }
-
-    public function testGetUpdateExpressionCombinesSetAndRemove(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), [
-            'name' => null,
-            'counter' => 7,
-        ], NormalizerOperation::Update)->getUpdateExpression();
-
-        static::assertSame('SET #counter = :sv_counter REMOVE #name', $expression['UpdateExpression']);
-        static::assertSame(['#name' => 'name', '#counter' => 'counter'], $expression['ExpressionAttributeNames'] ?? null);
-    }
-
-    public function testGetUpdateExpressionForAnEmptyFieldSetProducesNoClauses(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), [], NormalizerOperation::Update)->getUpdateExpression();
-
-        static::assertSame('', $expression['UpdateExpression']);
-        static::assertArrayNotHasKey('ExpressionAttributeNames', $expression);
-        static::assertArrayNotHasKey('ExpressionAttributeValues', $expression);
-    }
-
-    public function testGetUpdateExpressionAddressesOneMapEntry(): void
-    {
-        $expression = $this->serializer()->serialize($this->definition('record'), ['meta.kind' => 'invoice'], NormalizerOperation::Update)->getUpdateExpression();
-
-        static::assertSame('SET #meta.#kind = :sv_meta_2ekind', $expression['UpdateExpression']);
-        static::assertSame(['#meta' => 'meta', '#kind' => 'kind'], $expression['ExpressionAttributeNames'] ?? null);
     }
 
     /**

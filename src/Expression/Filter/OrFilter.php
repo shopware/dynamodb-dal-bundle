@@ -2,22 +2,22 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class OrFilter implements ExpressionInterface
+class OrFilter implements FilterInterface
 {
     /**
-     * @var list<ExpressionInterface>
+     * @var list<FilterInterface>
      */
     public array $filters;
 
-    public function __construct(ExpressionInterface ...$filters)
+    public function __construct(FilterInterface ...$filters)
     {
         $this->filters = array_values($filters);
     }
 
-    public function or(ExpressionInterface ...$filters): self
+    public function or(FilterInterface ...$filters): self
     {
         $filters = array_values($filters);
         $this->filters = array_values(array_merge($this->filters, $filters));

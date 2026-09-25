@@ -18,6 +18,9 @@ class NormalizedEntityNormalizer extends AbstractNormalizer
 
     public function normalize(NormalizerContext $context): void
     {
+        // Any write that names the label without a value stores the default rather than dropping a required field.
+        $context->setIfUnset('label', self::DEFAULT_LABEL);
+
         // Only an update is known to change a stored row; a put may be its first write.
         if ($context->operation === NormalizerOperation::Update) {
             $context->set('updatedAt', new \DateTimeImmutable('@' . self::UPDATED_AT));
@@ -39,8 +42,6 @@ class NormalizedEntityNormalizer extends AbstractNormalizer
         if ($context->get('pk') === null && \is_string($tenantId) && \is_string($kind)) {
             $context->set('pk', \sprintf('%s#%s', $tenantId, $kind));
         }
-
-        $context->setIfUnset('label', self::DEFAULT_LABEL);
     }
 
     public function denormalize(NormalizerContext $context): void

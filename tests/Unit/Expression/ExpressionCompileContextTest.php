@@ -2,11 +2,11 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
-use Shopware\DynamodbDalBundle\Exception\NullFilterValueException;
+use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
@@ -304,8 +304,8 @@ class ExpressionCompileContextTest extends TestCase
 
     public function testNullValueThrows(): void
     {
-        $this->expectException(NullFilterValueException::class);
-        $this->expectExceptionMessage('Filter value for field "name"');
+        $this->expectException(NullOperandException::class);
+        $this->expectExceptionMessage('Operand for field "name"');
 
         $this->compile(Filter::equals('name', null));
     }
@@ -505,7 +505,7 @@ class ExpressionCompileContextTest extends TestCase
     /**
      * @return array{0: ?string, 1: ExpressionCompileContext}
      */
-    private function compile(ExpressionInterface $filter, ?EntityDefinition $definition = null): array
+    private function compile(FilterInterface $filter, ?EntityDefinition $definition = null): array
     {
         $context = new ExpressionCompileContext(
             $definition ?? NormalEntity::createDefinition(),

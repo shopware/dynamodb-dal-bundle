@@ -29,28 +29,18 @@ class SerializedResultTest extends TestCase
         $nameField = new SerializedFieldResult($this->parse($definition, 'name'), new AttributeValue(['S' => 'test']));
 
         $result = new SerializedResult(
-            $definition,
             ['autofilledId' => $idField, 'name' => $nameField],
             ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'],
             NormalizerOperation::Put,
         );
 
-        static::assertEquals([
+        $fields = [
             'autofilledId' => new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
             'name' => new AttributeValue(['S' => 'test']),
-        ], $result->getFields());
-        static::assertEquals([
-            ':sv_autofilledId' => new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
-            ':sv_name' => new AttributeValue(['S' => 'test']),
-        ], $result->getExpressionAttributeValues());
-        static::assertSame([
-            '#autofilledId' => 'autofilledId',
-            '#name' => 'name',
-        ], $result->getExpressionAttributeNames());
-        static::assertSame([
-            'autofilledId' => '#autofilledId = :sv_autofilledId',
-            'name' => '#name = :sv_name',
-        ], $result->getExpressions());
+        ];
+
+        static::assertEquals($fields, $result->getFields());
+        static::assertEquals(['Item' => $fields], $result->getPutExpression());
     }
 
     /**
@@ -58,13 +48,11 @@ class SerializedResultTest extends TestCase
      */
     public function testGetNormalizedFieldsReturnsWhatWasSerialized(): void
     {
-        $definition = $this->createEntityDefinition();
         $fields = ['autofilledId' => '00000000-0000-0000-0000-000000000000', 'name' => 'test'];
 
-        $result = new SerializedResult($definition, [], $fields, NormalizerOperation::Update);
+        $result = new SerializedResult([], $fields, NormalizerOperation::Update);
 
         static::assertSame($fields, $result->getNormalizedFields());
-        static::assertSame($definition, $result->getEntityDefinition());
         static::assertSame(NormalizerOperation::Update, $result->getOperation());
     }
 

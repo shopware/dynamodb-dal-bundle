@@ -26,6 +26,13 @@ class ArchiveEntity extends AbstractEntity
     #[Field]
     public array $meta = [];
 
+    /**
+     * A DynamoDB string set, through a field serializer of the application's own, for `ADD` and `DELETE`
+     * on a set. `null` while the set is empty, since DynamoDB stores no empty set.
+     */
+    #[Field]
+    public ?StringSet $labels = null;
+
     public static function create(string $id, string $label = ''): self
     {
         $entity = new self();

@@ -2,7 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
@@ -97,17 +97,17 @@ final class Filter
         return new SizeEqualsFilter($fieldName, $value);
     }
 
-    public static function and(ExpressionInterface ...$filters): AndFilter
+    public static function and(FilterInterface ...$filters): AndFilter
     {
         return new AndFilter(...$filters);
     }
 
-    public static function or(ExpressionInterface ...$filters): OrFilter
+    public static function or(FilterInterface ...$filters): OrFilter
     {
         return new OrFilter(...$filters);
     }
 
-    public static function not(ExpressionInterface $filter): NotFilter
+    public static function not(FilterInterface $filter): NotFilter
     {
         return new NotFilter($filter);
     }

@@ -12,7 +12,7 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
-use Shopware\DynamodbDalBundle\Expression\Contract\ExpressionInterface;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
@@ -583,7 +583,7 @@ class ExpressionTest extends DynamoDbTestCase
     /**
      * @return list<string>
      */
-    private function scan(ExpressionInterface $filter): array
+    private function scan(FilterInterface $filter): array
     {
         return $this->ids($this->client()->search(RecordEntity::class, new ScanInput($filter))->toArray(), sorted: true);
     }
