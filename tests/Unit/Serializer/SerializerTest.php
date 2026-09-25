@@ -434,6 +434,27 @@ class SerializerTest extends TestCase
         $this->serializer->serialize($definition, ['required' => null], NormalizerOperation::Put);
     }
 
+    public function testSerializeThrowsWhenRequiredFieldNullDespiteADefault(): void
+    {
+        // Only a read falls back on the default; an entity holds it already unless it was unset() or removed.
+        $serializer = new StringFieldSerializer();
+        $definition = new EntityDefinition(
+            'normal',
+            'normal',
+            NormalEntity::class,
+            null,
+            [
+                'id' => new FieldDefinition('id', 'string', false, false, null, $serializer),
+                'status' => new FieldDefinition('status', 'string', false, true, 'draft', $serializer),
+            ],
+            new KeySchema('id'),
+        );
+
+        $this->expectException(FieldMissingSerializedValueException::class);
+
+        $this->serializer->serialize($definition, ['id' => 'x', 'status' => null], NormalizerOperation::Put);
+    }
+
     public function testSerializeWithNullNormalizerReturnsFieldsUnchanged(): void
     {
         $serializer = new StringFieldSerializer();
@@ -617,6 +638,27 @@ class SerializerTest extends TestCase
         static::expectException(FieldMissingSerializedValueException::class);
 
         $this->serializer->serializeKey($definition, new Index(null, null));
+    }
+
+    public function testSerializeKeyDoesNotFallBackOnTheDefaultOfAMissingSortValue(): void
+    {
+        // A key filling in the default would address (user-1, PROFILE) instead of refusing.
+        $serializer = new StringFieldSerializer();
+        $definition = new EntityDefinition(
+            'user',
+            'user',
+            NormalEntity::class,
+            null,
+            [
+                'pk' => new FieldDefinition('pk', 'string', false, false, null, $serializer),
+                'sk' => new FieldDefinition('sk', 'string', false, true, 'PROFILE', $serializer),
+            ],
+            new KeySchema('pk', 'sk'),
+        );
+
+        static::expectException(FieldMissingSerializedValueException::class);
+
+        $this->serializer->serializeKey($definition, new Index('user-1'));
     }
 
     /**
