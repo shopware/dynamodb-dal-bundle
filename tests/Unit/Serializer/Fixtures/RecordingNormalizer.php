@@ -7,7 +7,7 @@ use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 
 /**
- * Records every call as it arrives, and lets a test change the fields a write normalizes.
+ * Records every call as it arrives, and lets a test change the fields either side works on.
  */
 class RecordingNormalizer extends AbstractNormalizer
 {
@@ -18,9 +18,12 @@ class RecordingNormalizer extends AbstractNormalizer
 
     /**
      * @param ?\Closure(NormalizerContext): void $normalize
+     * @param ?\Closure(NormalizerContext): void $denormalize
      */
-    public function __construct(private readonly ?\Closure $normalize = null)
-    {
+    public function __construct(
+        private readonly ?\Closure $normalize = null,
+        private readonly ?\Closure $denormalize = null,
+    ) {
     }
 
     public function normalize(NormalizerContext $context): void
@@ -35,5 +38,9 @@ class RecordingNormalizer extends AbstractNormalizer
     public function denormalize(NormalizerContext $context): void
     {
         $this->calls[] = ['denormalize', $context->operation, $context->getFields()];
+
+        if ($this->denormalize !== null) {
+            ($this->denormalize)($context);
+        }
     }
 }

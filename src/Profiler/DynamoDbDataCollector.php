@@ -38,6 +38,7 @@ use Symfony\Component\HttpFoundation\Response;
  * }
  * @phpstan-type SerializerOperation array{
  *     operation: string,
+ *     normalizer_operation: string,
  *     entity_name: string,
  *     entity_class: string,
  *     duration_ms: float,

@@ -324,6 +324,42 @@ class SerializerTest extends TestCase
     }
 
     /**
+     * A field the normalizer leaves out of a read is not set, so the entity keeps what it has.
+     */
+    public function testAReadDoesNotSetWhatTheNormalizerOmits(): void
+    {
+        $normalizer = new RecordingNormalizer(denormalize: static function (NormalizerContext $context): void {
+            $context->omit('name');
+        });
+        $entity = new NormalEntity()->setName('kept');
+
+        $this->serializer->deserialize(NormalEntity::createDefinition($normalizer), [
+            'autofilledId' => new AttributeValue(['S' => 'test-id']),
+            'required' => new AttributeValue(['S' => 'test-required']),
+            'name' => new AttributeValue(['S' => 'stored']),
+        ], $entity);
+
+        static::assertSame('kept', $entity->getName());
+        static::assertSame('test-required', $entity->getRequired());
+    }
+
+    /**
+     * Omitting is no way around a required field: the entity could be left without a value for it.
+     */
+    public function testAReadStillNeedsARequiredFieldTheNormalizerOmits(): void
+    {
+        $normalizer = new RecordingNormalizer(denormalize: static function (NormalizerContext $context): void {
+            $context->omit('required');
+        });
+
+        static::expectException(FieldMissingDeserializedValueException::class);
+        $this->serializer->deserialize(NormalEntity::createDefinition($normalizer), [
+            'autofilledId' => new AttributeValue(['S' => 'test-id']),
+            'required' => new AttributeValue(['S' => 'test-required']),
+        ]);
+    }
+
+    /**
      * Removing a path writes its absence, leaving it out does not touch it at all.
      */
     public function testAnUpdateWritesWhatTheNormalizerLeaves(): void

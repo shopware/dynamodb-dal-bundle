@@ -20,6 +20,8 @@ final class NormalizerContext
     }
 
     /**
+     * What the serializer builds for a normalizer, and what a normalizer's own test builds to run it.
+     *
      * @param array<string, mixed> $fields
      */
     public static function fromFields(NormalizerOperation $operation, array $fields): self
@@ -39,10 +41,12 @@ final class NormalizerContext
     /**
      * Whether the path or one nested under it is present, even as `null`, like {@see self::has()} but for a whole
      * attribute: `meta` for an update that writes `meta.kind`.
+     * 
+     * Usually only applies to maps and lists.
      */
     public function hasWithin(string $path): bool
     {
-        return $this->getWithin($path) !== [];
+        return array_any(array_keys($this->fields), static fn (string $candidate): bool => self::isWithin($candidate, $path));
     }
 
     /**
@@ -56,6 +60,8 @@ final class NormalizerContext
     /**
      * The path and every path nested under it that is present, keyed by path: `['meta.kind' => 'invoice']` for
      * `meta`. A path only nests at a `.` or `[`, so `metadata` is not under `meta`.
+     * 
+     * Usually only applies to maps and lists.
      *
      * @return array<string, mixed>
      */
@@ -63,9 +69,7 @@ final class NormalizerContext
     {
         return array_filter(
             $this->fields,
-            static fn (string $candidate): bool => $candidate === $path
-                || str_starts_with($candidate, $path . '.')
-                || str_starts_with($candidate, $path . '['),
+            static fn (string $candidate): bool => self::isWithin($candidate, $path),
             \ARRAY_FILTER_USE_KEY,
         );
     }
@@ -98,7 +102,9 @@ final class NormalizerContext
     }
 
     /**
-     * Leaves the path out, so an update does not touch the attribute, and a read does not apply it to the entity.
+     * Leaves the path out, so an update does not touch the attribute, and a read does not set the property. A read
+     * still needs a value for every field that is neither nullable nor has a default, so omitting one fails like
+     * leaving it `null`.
      */
     public function omit(string $path): void
     {
@@ -111,5 +117,12 @@ final class NormalizerContext
     public function getFields(): array
     {
         return $this->fields;
+    }
+
+    private static function isWithin(string $candidate, string $path): bool
+    {
+        return $candidate === $path
+            || str_starts_with($candidate, $path . '.')
+            || str_starts_with($candidate, $path . '[');
     }
 }

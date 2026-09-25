@@ -222,8 +222,8 @@ $entry->updatedAt; // stamped without the caller naming it
 |---|---|---|
 | `Put` | A put | Every field, `null` where the property is not initialized |
 | `Update` | An update, whose row is known to exist | Only the paths the update writes, `null` for one it removes |
-| `Key` | A lookup, delete or update by key, and a key read from a pagination cursor | Only the key fields |
-| `Read` | An item read from DynamoDB | Every field, as its default or `null` where the row has none |
+| `Key` | A lookup, delete or update by key | Only the key fields |
+| `Read` | An item DynamoDB returns | Every field, `null` where the row has none, or the default of a field that is not nullable |
 
 - `#[Table(normalizer: ...)]` takes a service ID. In a standard Symfony application, that is the class name.
 - Override only the side you need. The other one leaves the fields as they are.
@@ -233,22 +233,32 @@ $entry->updatedAt; // stamped without the caller naming it
   `hasWithin('meta')` and `getWithin('meta')` find the attribute and every path nested under it,
   but not `metadata`.
 - `set()` adds or replaces a path. `remove()` makes it absent: a put leaves the attribute out, an update removes
-  it. `omit()` leaves it out entirely: an update does not touch it, a read does not apply it to the entity.
+  it. `omit()` leaves it out entirely: an update does not touch the attribute, and a read does not set the
+  property. A read still needs every field that is neither nullable nor has a default, so omitting one fails like
+  leaving it `null`.
 - `setIfUnset()` fills a path only where it is present and `null`, such as a generated ID on a put. A path the
   fields do not name stays out, so an update that does not write `createdAt` never overwrites the stored one, and a
   key never gains an attribute. Use `set()` to add a path, such as `updatedAt` on an update.
-- A key runs through the normalizer on its own, also an update's, whose fields run as `Update` separately.
-  Canonicalize a key there, such as trimming or lowercasing it, so a lookup matches the stored row. Generate
-  nothing for it.
+- A key runs through the normalizer on its own, as `Key`. That includes an update's key, whose fields run as
+  `Update` separately. Generate nothing for a key.
+- A rule that has to hold for every operation, such as trimming or lowercasing an ID, goes before any check of
+  the operation. A put then stores the form that a lookup by key asks for. Filters, a query's key condition
+  included, do not pass through the normalizer, so pass them the canonical value.
 - A value the normalizer leaves `null` on a required field fails as usual.
 - After a put, generated values are written back to the entity. After an update in a transaction, which returns
-  no item, the fields it wrote are, including those the normalizer added. `denormalize()` then runs with the
-  write's operation, `Put` or `Update`, instead of `Read`.
+  no item, the fields it wrote are, including those the normalizer added. `denormalize()` then runs as `Put` or
+  `Update`, on the fields that write sent.
+- A lone update keyed by an entity gets the updated item back from DynamoDB instead, as does the read-back after
+  an update of a nested path. `denormalize()` then runs as `Read`, with every field. A rule that turns stored
+  values into entity values, such as the `Address` above, therefore runs whatever the operation.
 - A table key field may be nullable only on an entity with a normalizer, which then has to fill it in.
-- A test builds the context the normalizer should handle and reads the fields back:
+- A test builds the context with `NormalizerContext::fromFields()`, runs the normalizer and reads the fields back:
 
   ```php
-  $context = new NormalizerContext(NormalizerOperation::Update, ['amountCents' => -1_300]);
+  $context = NormalizerContext::fromFields(NormalizerOperation::Update, [
+      'amountCents' => -1_300,
+      'createdAt' => new \DateTimeImmutable('2026-01-01'),
+  ]);
 
   new LedgerEntryNormalizer()->normalize($context);
 

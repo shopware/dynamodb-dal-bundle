@@ -31,17 +31,30 @@ final class TraceableSerializer extends Serializer
 
     public function deserialize(EntityDefinition $definition, array $output, ?AbstractEntity $entity = null): ?AbstractEntity
     {
-        return $this->trace('deserialize', $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output, $entity));
+        return $this->trace('deserialize', NormalizerOperation::Read, $definition, fn (): ?AbstractEntity => $this->inner->deserialize($definition, $output, $entity));
     }
 
     public function deserializeFields(EntityDefinition $definition, array $output, NormalizerOperation $operation): array
     {
-        return $this->trace('deserializeFields', $definition, fn (): array => $this->inner->deserializeFields($definition, $output, $operation));
+        return $this->trace('deserializeFields', $operation, $definition, fn (): array => $this->inner->deserializeFields($definition, $output, $operation));
     }
 
     public function serialize(EntityDefinition $definition, AbstractEntity|array $fields, NormalizerOperation $operation): SerializedResult
     {
-        return $this->trace('serialize', $definition, fn (): SerializedResult => $this->inner->serialize($definition, $fields, $operation));
+        return $this->trace('serialize', $operation, $definition, fn (): SerializedResult => $this->inner->serialize($definition, $fields, $operation));
+    }
+
+    public function normalize(EntityDefinition $definition, array $fields, NormalizerOperation $operation): array
+    {
+        return $this->trace('normalize', $operation, $definition, fn (): array => $this->inner->normalize($definition, $fields, $operation));
+    }
+
+    /**
+     * The writer calls this on its own to apply a write's fields back onto the entity.
+     */
+    public function denormalize(EntityDefinition $definition, array $fields, NormalizerOperation $operation): array
+    {
+        return $this->trace('denormalize', $operation, $definition, fn (): array => $this->inner->denormalize($definition, $fields, $operation));
     }
 
     /**
@@ -51,7 +64,7 @@ final class TraceableSerializer extends Serializer
      *
      * @return TReturn
      */
-    private function trace(string $operation, EntityDefinition $definition, callable $callback): mixed
+    private function trace(string $operation, NormalizerOperation $normalizerOperation, EntityDefinition $definition, callable $callback): mixed
     {
         $caller = $this->findCaller();
         $stopwatchEvent = $this->stopwatch?->start(\sprintf('dynamodb.serializer.%s', $operation), 'dynamodb.serializer');
@@ -65,6 +78,7 @@ final class TraceableSerializer extends Serializer
 
             $this->collector->addSerializerOperation([
                 'operation' => $operation,
+                'normalizer_operation' => $normalizerOperation->name,
                 'entity_name' => $definition->getName(),
                 'entity_class' => $definition->getClass(),
                 'duration_ms' => $durationMs,

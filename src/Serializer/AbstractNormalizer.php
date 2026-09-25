@@ -24,8 +24,8 @@ abstract class AbstractNormalizer
     }
 
     /**
-     * Called after fields are deserialized, possibly for only a subset of them: a whole item for a read, a key
-     * read from a cursor, or the fields a write stored, before they are applied back onto its entity.
+     * Called after fields are deserialized, possibly for only a subset of them: a whole item for a read, or the
+     * fields a write sent, before they are applied back onto its entity.
      * Never rely on a field being present; a field {@see NormalizerContext::has()} names that is `null` may be filled in here.
      */
     public function denormalize(NormalizerContext $context): void
