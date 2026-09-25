@@ -6,7 +6,8 @@ use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
@@ -38,10 +39,10 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
             Filter::notExists('id'),
         );
 
-        $this->client()->put(RecordEntity::class, $claim('first'));
+        $this->client()->put($claim('first'));
 
         try {
-            $this->client()->put(RecordEntity::class, $claim('second'));
+            $this->client()->put($claim('second'));
             static::fail('The second claim should have been rejected.');
         } catch (ConditionalCheckFailedException) {
             // Expected: the row is already claimed.
@@ -54,8 +55,8 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
     {
         $this->put(RecordEntity::create(self::TENANT, 'a', RecordStatus::Open));
 
-        $this->client()->update(RecordEntity::class, new UpdateInput(
-            new Index(self::TENANT, 'a'),
+        $this->client()->update(new UpdateInput(
+            new Key(RecordEntity::class, self::TENANT, 'a'),
             ['status' => RecordStatus::Done],
             Filter::equals('status', RecordStatus::Open),
         ));
@@ -68,8 +69,8 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a', RecordStatus::Done));
 
         try {
-            $this->client()->update(RecordEntity::class, new UpdateInput(
-                new Index(self::TENANT, 'a'),
+            $this->client()->update(new UpdateInput(
+                new Key(RecordEntity::class, self::TENANT, 'a'),
                 ['status' => RecordStatus::Failed],
                 Filter::equals('status', RecordStatus::Open),
             ));
@@ -91,9 +92,9 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a', name: 'original', counter: 1));
 
         // Someone else bumps the counter between our read and our write.
-        $this->client()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['counter' => 99]));
+        $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), ['counter' => 99]));
 
-        $this->client()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['name' => 'renamed']));
+        $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), ['name' => 'renamed']));
 
         $read = $this->read('a');
         static::assertSame('renamed', $read?->name);
@@ -107,11 +108,11 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
     public function testUpdateDoesNotRecreateARowDeletedSinceItWasRead(): void
     {
         $this->put(RecordEntity::create(self::TENANT, 'a'));
-        $this->client()->delete(RecordEntity::class, new DeleteInput(new Index(self::TENANT, 'a')));
+        $this->client()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'a')));
 
         try {
-            $this->client()->update(RecordEntity::class, new UpdateInput(
-                new Index(self::TENANT, 'a'),
+            $this->client()->update(new UpdateInput(
+                new Key(RecordEntity::class, self::TENANT, 'a'),
                 ['name' => 'resurrected'],
                 Filter::exists('id'),
             ));
@@ -121,7 +122,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         }
 
         static::assertNull($this->read('a'));
-        static::assertSame(0, $this->client()->count(RecordEntity::class, new ScanInput()));
+        static::assertSame(0, $this->client()->count(new ScanInput(RecordEntity::class)));
     }
 
     public function testSoftDeleteMarkerHidesAndUnhidesTheRow(): void
@@ -129,31 +130,30 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a'));
 
         $live = static fn (): QueryInput => new QueryInput(
+            RecordEntity::class,
             Filter::equals('tenantId', self::TENANT),
             filter: Filter::notExists('deletedAt'),
         );
 
-        static::assertCount(1, $this->client()->search(RecordEntity::class, $live())->toArray());
+        static::assertCount(1, $this->client()->search($live())->toArray());
 
-        $this->client()->update(RecordEntity::class, new UpdateInput(
-            new Index(self::TENANT, 'a'),
+        $this->client()->update(new UpdateInput(
+            new Key(RecordEntity::class, self::TENANT, 'a'),
             ['deletedAt' => new \DateTimeImmutable('@1700000001')],
         ));
-        static::assertCount(0, $this->client()->search(RecordEntity::class, $live())->toArray());
+        static::assertCount(0, $this->client()->search($live())->toArray());
 
         // Clearing the marker is an update to null, which removes the attribute rather than storing one.
-        $this->client()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), ['deletedAt' => null]));
-        static::assertCount(1, $this->client()->search(RecordEntity::class, $live())->toArray());
+        $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), ['deletedAt' => null]));
+        static::assertCount(1, $this->client()->search($live())->toArray());
     }
 
     public function testNormalizerComposesTheKeyOnWriteAndTheRowIsFoundUnderIt(): void
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->client()->put(NormalizedEntity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
 
-        $found = $this->client()->get(new GetInput([
-            NormalizedEntity::class => [new Index(self::TENANT . '#invoice', $entity->id)],
-        ]))->first();
+        $found = $this->client()->get(new GetInput([new Key(NormalizedEntity::class, self::TENANT . '#invoice', $entity->id)]))->first();
 
         static::assertInstanceOf(NormalizedEntity::class, $found);
         static::assertSame(self::TENANT, $found->tenantId);
@@ -181,9 +181,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
             ],
         ])->resolve();
 
-        $found = $this->client()->get(new GetInput([
-            NormalizedEntity::class => [new Index(self::TENANT . '#legacy', $id)],
-        ]))->first();
+        $found = $this->client()->get(new GetInput([new Key(NormalizedEntity::class, self::TENANT . '#legacy', $id)]))->first();
 
         static::assertInstanceOf(NormalizedEntity::class, $found);
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $found->label);
@@ -235,21 +233,19 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a'));
         $this->put(RecordEntity::create(self::TENANT, 'b'));
 
-        $this->client()->delete(
-            RecordEntity::class,
-            new DeleteInput(new Index(self::TENANT, 'a')),
-            new DeleteInput(new Index(self::TENANT, 'never-written')),
+        $this->client()->batchWrite(
+            new BatchWriteInput()->withDelete(new Key(RecordEntity::class, self::TENANT, 'a'), new Key(RecordEntity::class, self::TENANT, 'never-written')),
         );
 
         static::assertNull($this->read('a'));
         static::assertNotNull($this->read('b'));
     }
 
-    public function testBatchDeleteWithNoKeysIsANoOp(): void
+    public function testAnEmptyBatchIsANoOp(): void
     {
         $this->put(RecordEntity::create(self::TENANT, 'a'));
 
-        $this->client()->delete(RecordEntity::class);
+        $this->client()->batchWrite(new BatchWriteInput());
 
         static::assertNotNull($this->read('a'));
     }
@@ -260,7 +256,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create('tenant-2', 'b'));
         $this->put(RecordEntity::create('tenant-3', 'c'));
 
-        static::assertCount(3, $this->client()->search(RecordEntity::class, new ScanInput())->toArray());
+        static::assertCount(3, $this->client()->search(new ScanInput(RecordEntity::class))->toArray());
     }
 
     public function testATenantScopedQueryNeverCrossesPartitions(): void
@@ -269,7 +265,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create('tenant-2', 'shared-id'));
 
         $found = $this->client()
-            ->search(RecordEntity::class, new QueryInput(Filter::equals('tenantId', self::TENANT)))
+            ->search(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT)))
             ->toArray();
 
         static::assertCount(1, $found);
@@ -282,7 +278,8 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create('tenant-2', 'b', RecordStatus::Open, new \DateTimeImmutable('@1700000001')));
         $this->put(RecordEntity::create(self::TENANT, 'c', RecordStatus::Done));
 
-        $open = $this->client()->count(RecordEntity::class, new QueryInput(
+        $open = $this->client()->count(new QueryInput(
+            RecordEntity::class,
             Filter::equals('status', RecordStatus::Open),
             index: 'statusIndex',
         ));
@@ -292,12 +289,12 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
 
     private function put(AbstractEntity $entity): void
     {
-        $this->client()->put(RecordEntity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
     }
 
     private function read(string $id): ?RecordEntity
     {
-        $entity = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, $id)]]))->first();
+        $entity = $this->client()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, $id)]))->first();
         static::assertTrue($entity === null || $entity instanceof RecordEntity);
 
         /** @var ?RecordEntity $entity */

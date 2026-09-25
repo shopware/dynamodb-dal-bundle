@@ -2,9 +2,12 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\Refresh;
+use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
@@ -13,6 +16,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
@@ -48,7 +52,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Unit-level coverage for the branches of {@see WriterClient} that the integration test cannot reach with a
- * real DynamoDB: the zero-input no-ops, the condition-expression fallback to a transaction, and the
+ * real DynamoDB: empty batches and transactions, the order a transaction sends its operations in, and the
  * batch-write retry loop (which only runs when the service returns UnprocessedItems). The DynamoDB client is
  * mocked; write results are produced with {@see ResultMockFactory} so their final `resolve()` works. A real
  * {@see NormalEntity} definition and {@see ExpressionCompiler} are used so condition filters compile for real.
@@ -96,30 +100,19 @@ class WriterClientTest extends TestCase
         );
     }
 
-    public function testPutWithoutInputsIsANoOp(): void
+    public function testAnEmptyBatchSendsNothing(): void
     {
-        $this->client->expects(static::never())->method('putItem');
         $this->client->expects(static::never())->method('batchWriteItem');
-        $this->client->expects(static::never())->method('transactWriteItems');
 
-        $this->writer->put(NormalEntity::class);
+        $this->writer->batchWrite(new BatchWriteInput());
     }
 
-    public function testUpdateWithoutInputsIsANoOp(): void
+    public function testAnEmptyTransactionSendsNothing(): void
     {
-        $this->client->expects(static::never())->method('updateItem');
         $this->client->expects(static::never())->method('transactWriteItems');
+        $this->client->expects(static::never())->method('batchGetItem');
 
-        $this->writer->update(NormalEntity::class);
-    }
-
-    public function testDeleteWithoutInputsIsANoOp(): void
-    {
-        $this->client->expects(static::never())->method('deleteItem');
-        $this->client->expects(static::never())->method('batchWriteItem');
-        $this->client->expects(static::never())->method('transactWriteItems');
-
-        $this->writer->delete(NormalEntity::class);
+        $this->writer->transactWrite(new TransactWriteInput());
     }
 
     public function testPutRejectsAnUnregisteredClass(): void
@@ -127,7 +120,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('putItem');
 
         $this->expectException(UnknownEntityDefinitionException::class);
-        $this->writer->put(OtherEntity::class, new PutInput(new OtherEntity()->setOtherId('o')));
+        $this->writer->put(new PutInput(new OtherEntity()->setOtherId('o')));
     }
 
     public function testUpdateRejectsAnUnregisteredClass(): void
@@ -135,7 +128,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('updateItem');
 
         $this->expectException(UnknownEntityDefinitionException::class);
-        $this->writer->update(OtherEntity::class, new UpdateInput(new Index('o'), ['otherId' => 'o']));
+        $this->writer->update(new UpdateInput(new Key(OtherEntity::class, 'o'), ['otherId' => 'o']));
     }
 
     public function testDeleteRejectsAnUnregisteredClass(): void
@@ -143,7 +136,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::never())->method('deleteItem');
 
         $this->expectException(UnknownEntityDefinitionException::class);
-        $this->writer->delete(OtherEntity::class, DeleteInput::fromIndex('o'));
+        $this->writer->delete(new DeleteInput(new Key(OtherEntity::class, 'o')));
     }
 
     /**
@@ -161,7 +154,7 @@ class WriterClientTest extends TestCase
 
         $entity = $this->entity('a')->setName('test');
 
-        $writer->put(NormalEntity::class, new PutInput($entity));
+        $writer->put(new PutInput($entity));
 
         static::assertSame('test', $entity->getName());
     }
@@ -179,11 +172,10 @@ class WriterClientTest extends TestCase
             ->method('transactWriteItems')
             ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
 
-        $writer->update(
-            NormalEntity::class,
+        $writer->transactWrite(new TransactWriteInput()->with(
             new UpdateInput($this->entity('a'), ['name' => 'one']),
             new UpdateInput($this->entity('b'), ['name' => 'two']),
-        );
+        ));
 
         static::assertSame([
             ['normalize', NormalizerOperation::Update, ['name' => 'one']],
@@ -207,7 +199,7 @@ class WriterClientTest extends TestCase
             ->method('putItem')
             ->willReturn(ResultMockFactory::create(PutItemOutput::class));
 
-        $this->normalizingWriter($normalizer)->put(NormalEntity::class, new PutInput($this->entity('a')));
+        $this->normalizingWriter($normalizer)->put(new PutInput($this->entity('a')));
 
         static::assertSame([NormalizerOperation::Put], $this->denormalizedAs($normalizer));
     }
@@ -220,10 +212,8 @@ class WriterClientTest extends TestCase
             ->method('batchWriteItem')
             ->willReturn(ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]));
 
-        $this->normalizingWriter($normalizer)->put(
-            NormalEntity::class,
-            new PutInput($this->entity('a')),
-            new PutInput($this->entity('b')),
+        $this->normalizingWriter($normalizer)->batchWrite(
+            new BatchWriteInput()->withPut($this->entity('a'), $this->entity('b')),
         );
 
         static::assertSame([NormalizerOperation::Put, NormalizerOperation::Put], $this->denormalizedAs($normalizer));
@@ -237,11 +227,10 @@ class WriterClientTest extends TestCase
             ->method('transactWriteItems')
             ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
 
-        $this->normalizingWriter($normalizer)->put(
-            NormalEntity::class,
+        $this->normalizingWriter($normalizer)->transactWrite(new TransactWriteInput()->with(
             new PutInput($this->entity('a'), Filter::notExists('autofilledId')),
             new PutInput($this->entity('b')),
-        );
+        ));
 
         static::assertSame([NormalizerOperation::Put, NormalizerOperation::Put], $this->denormalizedAs($normalizer));
     }
@@ -263,37 +252,112 @@ class WriterClientTest extends TestCase
             ]]));
 
         $entity = $this->entity('a');
-        $this->normalizingWriter($normalizer)->update(NormalEntity::class, new UpdateInput($entity, ['name' => 'after']));
+        $this->normalizingWriter($normalizer)->update(new UpdateInput($entity, ['name' => 'after']));
 
         static::assertSame([NormalizerOperation::Read], $this->denormalizedAs($normalizer));
         static::assertSame('after', $entity->getName());
     }
 
-    public function testPutWithAConditionOnSeveralInputsFallsBackToTransactWriteItems(): void
+    /**
+     * A failed transaction reports one cancellation reason per operation, by position, so the operations go out in
+     * the order they were added, whichever entity class each one is on.
+     */
+    public function testATransactionSendsItsOperationsInTheOrderTheyWereAdded(): void
     {
-        $this->client->expects(static::never())->method('batchWriteItem');
         $this->client->expects(static::once())
             ->method('transactWriteItems')
             ->with(static::callback(static function (array $args): bool {
                 $items = $args['TransactItems'] ?? [];
+                static::assertIsArray($items);
+                static::assertCount(3, $items);
 
-                return \count($items) === 2
-                    && $items[0] instanceof TransactWriteItem
-                    && $items[1] instanceof TransactWriteItem;
+                static::assertInstanceOf(TransactWriteItem::class, $items[0]);
+                static::assertNotNull($items[0]->getPut());
+                static::assertInstanceOf(TransactWriteItem::class, $items[1]);
+                static::assertSame('other-physical', $items[1]->getDelete()?->getTableName());
+                static::assertInstanceOf(TransactWriteItem::class, $items[2]);
+                static::assertNotNull($items[2]->getUpdate());
+
+                return true;
             }))
             ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
 
-        $entityA = $this->entity('a');
-        $entityB = $this->entity('b');
+        $entity = $this->entity('a');
 
-        $this->writer->put(
-            NormalEntity::class,
-            new PutInput($entityA, Filter::notExists('autofilledId')),
-            new PutInput($entityB),
+        $this->twoTableWriter()->transactWrite(
+            new TransactWriteInput()
+                ->with(new PutInput($entity, Filter::notExists('autofilledId')))
+                ->with(new DeleteInput(new Key(OtherEntity::class, 'o')))
+                ->with(new UpdateInput(new Key(NormalEntity::class, 'b'), ['name' => 'two'])),
         );
 
-        static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
-        static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+        static::assertSame(self::SERIALIZED_ID, $entity->getAutofilledId());
+    }
+
+    /**
+     * `BatchWriteItem`'s limit of 25 counts requests across tables, so one request carries every table's share.
+     */
+    public function testABatchSpanningTablesSendsThemInOneRequest(): void
+    {
+        $this->client->expects(static::once())
+            ->method('batchWriteItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertSame(['normal', 'other-physical'], array_keys($args['RequestItems'] ?? []));
+
+                return true;
+            }))
+            ->willReturn(ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]));
+
+        $this->twoTableWriter()->batchWrite(
+            new BatchWriteInput()
+                ->withPut($this->entity('a'))
+                ->withDelete(new Key(OtherEntity::class, 'o')),
+        );
+    }
+
+    /**
+     * A condition that checks nothing would let the write through unconditionally, so it is refused instead.
+     */
+    public function testAConditionThatChecksNothingIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('putItem');
+
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->writer->put(new PutInput($this->entity('a'), Filter::equalsAny('name', [])));
+    }
+
+    /**
+     * An update's own existence check would otherwise stand in for the condition, and hide that it checks nothing.
+     */
+    public function testAnUpdateConditionThatChecksNothingIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('updateItem');
+
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'after'], Filter::and()));
+    }
+
+    /**
+     * The existence check and the caller's condition are compiled apart, then joined as `Filter::and()` joins them.
+     */
+    public function testUpdateJoinsItsConditionWithTheExistenceCheck(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertSame('attribute_exists(#autofilledId) AND (#name = :ex_2_0_name OR #name = :ex_2_1_name)', $args['ConditionExpression'] ?? null);
+
+                return true;
+            }))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
+
+        $this->writer->update(new UpdateInput(
+            new Key(NormalEntity::class, 'a'),
+            ['required' => 'req'],
+            Filter::or(Filter::equals('name', 'one'), Filter::equals('name', 'two')),
+        ));
     }
 
     /**
@@ -315,7 +379,7 @@ class WriterClientTest extends TestCase
             ->method('deserialize')
             ->with($this->definition, $item, $entity);
 
-        $this->writer->update(NormalEntity::class, new UpdateInput($entity, ['name' => 'after']));
+        $this->writer->update(new UpdateInput($entity, ['name' => 'after']));
     }
 
     /**
@@ -331,7 +395,7 @@ class WriterClientTest extends TestCase
 
         $this->serializer->expects(static::never())->method('deserialize');
 
-        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), ['name' => 'after']));
+        $this->writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'after']));
     }
 
     /**
@@ -349,11 +413,10 @@ class WriterClientTest extends TestCase
         $entityA = $this->entity('a');
         $entityB = $this->entity('b');
 
-        $this->writer->update(
-            NormalEntity::class,
+        $this->writer->transactWrite(new TransactWriteInput()->with(
             new UpdateInput($entityA, ['name' => 'one']),
             new UpdateInput($entityB, ['name' => 'two']),
-        );
+        ));
 
         static::assertSame('one', $entityA->getName());
         static::assertSame('two', $entityB->getName());
@@ -377,7 +440,7 @@ class WriterClientTest extends TestCase
             }))
             ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
 
-        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), ['name' => 'after']));
+        $this->writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'after']));
     }
 
     /**
@@ -390,7 +453,7 @@ class WriterClientTest extends TestCase
 
         $this->expectException(UpdateEmptyException::class);
 
-        $this->writer->update(NormalEntity::class, new UpdateInput(new Index('a'), []));
+        $this->writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), []));
     }
 
     public function testUpdateOfSeveralThatWritesNothingIsRefusedBeforeTheTransaction(): void
@@ -399,11 +462,10 @@ class WriterClientTest extends TestCase
 
         $this->expectException(UpdateEmptyException::class);
 
-        $this->writer->update(
-            NormalEntity::class,
-            new UpdateInput(new Index('a'), ['name' => 'one']),
-            new UpdateInput(new Index('b'), new UpdateExpression()),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'one']),
+            new UpdateInput(new Key(NormalEntity::class, 'b'), new UpdateExpression()),
+        ));
     }
 
     /**
@@ -440,11 +502,10 @@ class WriterClientTest extends TestCase
 
         $entityA = $this->entity('a');
 
-        $writer->update(
-            NormalEntity::class,
+        $writer->transactWrite(new TransactWriteInput()->with(
             new UpdateInput($entityA, ['name' => 'after']),
             new UpdateInput($this->entity('b'), ['name' => 'other']),
-        );
+        ));
 
         static::assertSame('after', $entityA->getName());
     }
@@ -480,7 +541,7 @@ class WriterClientTest extends TestCase
             }))
             ->willReturn(ResultMockFactory::create(UpdateItemOutput::class));
 
-        $writer->update(NormalEntity::class, new UpdateInput(new Index('a'), Update::setIfNotExists('name', 'first')));
+        $writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), Update::setIfNotExists('name', 'first')));
     }
 
     /**
@@ -500,15 +561,14 @@ class WriterClientTest extends TestCase
             ->with(static::callback(static fn (array $args): bool => ($args['ConsistentRead'] ?? null) === true))
             ->willReturn(ResultMockFactory::create(GetItemOutput::class, ['item' => []]));
 
-        $this->writer->update(
-            NormalEntity::class,
+        $this->writer->transactWrite(new TransactWriteInput()->with(
             new UpdateInput($this->entity('a'), Update::setIfNotExists('name', 'first')),
             new UpdateInput($this->entity('b'), ['name' => 'two']),
-        );
+        ));
     }
 
     /**
-     * `refresh: null` buys no read: the fields beside an action are applied, the action's target is not.
+     * `refresh: Refresh::WithoutReadBack` buys no read: the fields beside an action are applied, the action's target is not.
      */
     public function testUpdateOfSeveralWithoutAReadbackAppliesTheFieldsBesideAnAction(): void
     {
@@ -520,11 +580,10 @@ class WriterClientTest extends TestCase
 
         $entity = $this->entity('a')->setRequiredNullableName('before');
 
-        $this->writer->update(
-            NormalEntity::class,
-            new UpdateInput($entity, Update::with(Update::set('name', 'one'), Update::setIfNotExists('requiredNullableName', 'after')), refresh: null),
-            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: null),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new UpdateInput($entity, Update::with(Update::set('name', 'one'), Update::setIfNotExists('requiredNullableName', 'after')), refresh: Refresh::WithoutReadBack),
+            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: Refresh::WithoutReadBack),
+        ));
 
         static::assertSame('one', $entity->getName());
         static::assertSame('before', $entity->getRequiredNullableName());
@@ -555,15 +614,14 @@ class WriterClientTest extends TestCase
             }))
             ->willReturn(ResultMockFactory::create(BatchGetItemOutput::class, ['responses' => [], 'unprocessedKeys' => []]));
 
-        $this->nestedWriter($definition)->update(
-            NormalEntity::class,
+        $this->nestedWriter($definition)->transactWrite(new TransactWriteInput()->with(
             new UpdateInput($this->entity('a'), ['settings.colour' => 'red']),
             new UpdateInput($this->entity('b'), ['settings.colour' => 'blue']),
-        );
+        ));
     }
 
     /**
-     * `refresh: null` buys no read, so the same nested update leaves that attribute behind instead.
+     * `refresh: Refresh::WithoutReadBack` buys no read, so the same nested update leaves that attribute behind instead.
      */
     public function testUpdateOfSeveralWithoutAReadbackNeverReadsBackForANestedPath(): void
     {
@@ -575,11 +633,10 @@ class WriterClientTest extends TestCase
 
         $this->client->expects(static::never())->method('batchGetItem');
 
-        $this->nestedWriter($definition)->update(
-            NormalEntity::class,
-            new UpdateInput($this->entity('a'), ['settings.colour' => 'red'], refresh: null),
-            new UpdateInput($this->entity('b'), ['settings.colour' => 'blue'], refresh: null),
-        );
+        $this->nestedWriter($definition)->transactWrite(new TransactWriteInput()->with(
+            new UpdateInput($this->entity('a'), ['settings.colour' => 'red'], refresh: Refresh::WithoutReadBack),
+            new UpdateInput($this->entity('b'), ['settings.colour' => 'blue'], refresh: Refresh::WithoutReadBack),
+        ));
     }
 
     public function testUpdateOptedOutOfTheRefreshAsksForNothingBack(): void
@@ -591,7 +648,7 @@ class WriterClientTest extends TestCase
 
         $this->serializer->expects(static::never())->method('deserialize');
 
-        $this->writer->update(NormalEntity::class, new UpdateInput($this->entity('a'), ['name' => 'after'], refresh: false));
+        $this->writer->update(new UpdateInput($this->entity('a'), ['name' => 'after'], refresh: Refresh::None));
     }
 
     public function testUpdateOfSeveralOptedOutOfTheRefreshReadsNothingBack(): void
@@ -602,11 +659,10 @@ class WriterClientTest extends TestCase
 
         $this->client->expects(static::never())->method('batchGetItem');
 
-        $this->writer->update(
-            NormalEntity::class,
-            new UpdateInput($this->entity('a'), ['name' => 'one'], refresh: false),
-            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: false),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new UpdateInput($this->entity('a'), ['name' => 'one'], refresh: Refresh::None),
+            new UpdateInput($this->entity('b'), ['name' => 'two'], refresh: Refresh::None),
+        ));
     }
 
     /**
@@ -620,26 +676,10 @@ class WriterClientTest extends TestCase
 
         $this->client->expects(static::never())->method('batchGetItem');
 
-        $this->writer->update(
-            NormalEntity::class,
-            new UpdateInput(new Index('a'), ['name' => 'one']),
-            new UpdateInput(new Index('b'), ['name' => 'two']),
-        );
-    }
-
-    public function testDeleteWithAConditionOnSeveralInputsFallsBackToTransactWriteItems(): void
-    {
-        $this->client->expects(static::never())->method('batchWriteItem');
-        $this->client->expects(static::once())
-            ->method('transactWriteItems')
-            ->with(static::callback(static fn (array $args): bool => \count($args['TransactItems'] ?? []) === 2))
-            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
-
-        $this->writer->delete(
-            NormalEntity::class,
-            new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
-            new DeleteInput(new Index('b')),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'one']),
+            new UpdateInput(new Key(NormalEntity::class, 'b'), ['name' => 'two']),
+        ));
     }
 
     public function testTransactWriteRetriesOnTransactionConflictAndSucceeds(): void
@@ -660,11 +700,10 @@ class WriterClientTest extends TestCase
                 return $success;
             });
 
-        $this->writer->delete(
-            NormalEntity::class,
-            new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
-            new DeleteInput(new Index('b')),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::exists('autofilledId')),
+            new DeleteInput(new Key(NormalEntity::class, 'b')),
+        ));
     }
 
     public function testTransactWriteRethrowsAfterExhaustingConflictRetries(): void
@@ -675,11 +714,10 @@ class WriterClientTest extends TestCase
 
         $this->expectException(TransactionCanceledException::class);
 
-        $this->writer->delete(
-            NormalEntity::class,
-            new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
-            new DeleteInput(new Index('b')),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::exists('autofilledId')),
+            new DeleteInput(new Key(NormalEntity::class, 'b')),
+        ));
     }
 
     public function testTransactWriteDoesNotRetryANonConflictCancellationReason(): void
@@ -690,11 +728,10 @@ class WriterClientTest extends TestCase
 
         $this->expectException(TransactionCanceledException::class);
 
-        $this->writer->delete(
-            NormalEntity::class,
-            new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
-            new DeleteInput(new Index('b')),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::exists('autofilledId')),
+            new DeleteInput(new Key(NormalEntity::class, 'b')),
+        ));
     }
 
     public function testTransactWriteDoesNotRetryWhenAConflictIsMixedWithAnotherFailureReason(): void
@@ -705,11 +742,10 @@ class WriterClientTest extends TestCase
 
         $this->expectException(TransactionCanceledException::class);
 
-        $this->writer->delete(
-            NormalEntity::class,
-            new DeleteInput(new Index('a'), Filter::exists('autofilledId')),
-            new DeleteInput(new Index('b')),
-        );
+        $this->writer->transactWrite(new TransactWriteInput()->with(
+            new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::exists('autofilledId')),
+            new DeleteInput(new Key(NormalEntity::class, 'b')),
+        ));
     }
 
     public function testBatchWriteResubmitsUnprocessedItemsUntilNoneRemain(): void
@@ -739,7 +775,7 @@ class WriterClientTest extends TestCase
         $entityA = $this->entity('a');
         $entityB = $this->entity('b');
 
-        $this->writer->put(NormalEntity::class, new PutInput($entityA), new PutInput($entityB));
+        $this->writer->batchWrite(new BatchWriteInput()->withPut($entityA, $entityB));
 
         // First call submits both items keyed by the table; the retry resubmits exactly the unprocessed map
         // (verbatim, not double-nested under the table name again).
@@ -773,6 +809,23 @@ class WriterClientTest extends TestCase
             new ExpressionCompiler($serializer),
             $registry,
             new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+        );
+    }
+
+    /**
+     * A writer over two tables, for requests that span entity classes.
+     */
+    private function twoTableWriter(): WriterClient
+    {
+        $other = OtherEntity::createDefinition();
+        $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition, $other->getName() => $other]);
+
+        return new WriterClient(
+            $this->client,
+            $this->serializer,
+            new ExpressionCompiler($this->serializer),
+            $registry,
+            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler($this->serializer), $registry),
         );
     }
 

@@ -14,11 +14,15 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * Not `final`, so a test can double it.
+ *
  * @template Entity of AbstractEntity
  *
  * @extends ReadOutput<Entity, array<string, AttributeValue>|int>
+ *
+ * @final
  */
-final class SearchOutput extends ReadOutput
+class SearchOutput extends ReadOutput
 {
     private readonly ?int $limit;
 
@@ -26,6 +30,7 @@ final class SearchOutput extends ReadOutput
      * @internal
      *
      * @param \Generator<array<string, AttributeValue>|int, Entity> $source - each entity keyed by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed by position (a test double) streams all the same, but its tokens are refused when used
+     * @param ScanInput<Entity>|QueryInput<Entity> $search
      */
     public function __construct(
         \Generator $source,
@@ -62,10 +67,9 @@ final class SearchOutput extends ReadOutput
      *
      * @throws \LogicException if this output has already been read
      * @throws UnknownEntityDefinitionException
-     * @throws InvalidCursorException
+     * @throws InvalidCursorException also if a key attribute of a boundary item is not valid UTF-8
      * @throws DALException if the query does not compile, or an item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
-     * @throws \JsonException if a key attribute of a boundary item is not valid UTF-8
      *
      * @return Page<Entity>
      */

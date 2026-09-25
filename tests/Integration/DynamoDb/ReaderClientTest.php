@@ -4,7 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration\DynamoDb;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
@@ -26,9 +26,7 @@ class ReaderClientTest extends DynamoDbTestCase
     {
         $this->seed(RecordEntity::create(self::TENANT, 'a', name: 'only'));
 
-        $entities = iterator_to_array($this->reader()->get(new GetInput([
-            RecordEntity::class => [new Index(self::TENANT, 'a')],
-        ])), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, 'a')])), false);
 
         static::assertCount(1, $entities);
         static::assertSame('only', $entities[0]->name);
@@ -36,9 +34,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
     public function testGetWithAMissingKeyYieldsNothing(): void
     {
-        $entities = iterator_to_array($this->reader()->get(new GetInput([
-            RecordEntity::class => [new Index(self::TENANT, 'absent')],
-        ])), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, 'absent')])), false);
 
         static::assertSame([], $entities);
     }
@@ -49,9 +45,7 @@ class ReaderClientTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, $id));
         }
 
-        $entities = iterator_to_array($this->reader()->get(new GetInput([
-            RecordEntity::class => [new Index(self::TENANT, 'a'), new Index(self::TENANT, 'b')],
-        ])), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, 'a'), new Key(RecordEntity::class, self::TENANT, 'b')])), false);
 
         static::assertSame(['a', 'b'], $this->sortedIds($entities));
     }
@@ -61,10 +55,7 @@ class ReaderClientTest extends DynamoDbTestCase
         $this->seed(RecordEntity::create(self::TENANT, 'a'));
         $this->seed(ArchiveEntity::create('arch-1', 'kept'));
 
-        $entities = iterator_to_array($this->reader()->get(new GetInput([
-            RecordEntity::class => [new Index(self::TENANT, 'a')],
-            ArchiveEntity::class => [new Index('arch-1')],
-        ])), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, 'a'), new Key(ArchiveEntity::class, 'arch-1')])), false);
 
         $classes = array_map(static fn (AbstractEntity $entity): string => $entity::class, $entities);
         sort($classes);
@@ -82,10 +73,10 @@ class ReaderClientTest extends DynamoDbTestCase
         for ($i = 0; $i < 120; ++$i) {
             $id = \sprintf('id-%03d', $i);
             $this->seed(RecordEntity::create(self::TENANT, $id));
-            $keys[] = new Index(self::TENANT, $id);
+            $keys[] = new Key(RecordEntity::class, self::TENANT, $id);
         }
 
-        $entities = iterator_to_array($this->reader()->get(new GetInput([RecordEntity::class => $keys])), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput($keys)), false);
 
         static::assertCount(120, $entities);
         static::assertCount(120, array_unique($this->sortedIds($entities)));
@@ -96,16 +87,14 @@ class ReaderClientTest extends DynamoDbTestCase
         static::expectException(UnknownEntityDefinitionException::class);
 
         /** @phpstan-ignore-next-line argument.type -- deliberately not an entity of this application */
-        iterator_to_array($this->reader()->get(new GetInput([\stdClass::class => [new Index('x')]])), false);
+        iterator_to_array($this->reader()->get(new GetInput([new Key(\stdClass::class, 'x')])), false);
     }
 
     public function testGetWithConsistentReadIssuesAStronglyConsistentRead(): void
     {
         $this->seed(RecordEntity::create(self::TENANT, 'a', name: 'strong'));
 
-        $entities = iterator_to_array($this->reader()->get(new GetInput([
-            RecordEntity::class => [new Index(self::TENANT, 'a')],
-        ], true)), false);
+        $entities = iterator_to_array($this->reader()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, 'a')], true)), false);
 
         static::assertCount(1, $entities);
         static::assertSame('strong', $entities[0]->name);
@@ -113,7 +102,8 @@ class ReaderClientTest extends DynamoDbTestCase
 
     public function testSearchReturnsNothingWhenNoMatch(): void
     {
-        $entities = iterator_to_array($this->reader()->search(RecordEntity::class, new ScanInput(
+        $entities = iterator_to_array($this->reader()->search(new ScanInput(
+            RecordEntity::class,
             Filter::equals('name', 'absent'),
         )), false);
 
@@ -122,7 +112,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
     public function testCountReturnsZeroWhenNoMatch(): void
     {
-        static::assertSame(0, $this->reader()->count(RecordEntity::class, new ScanInput(Filter::equals('name', 'absent'))));
+        static::assertSame(0, $this->reader()->count(new ScanInput(RecordEntity::class, Filter::equals('name', 'absent'))));
     }
 
     public function testSearchScansWithAFilter(): void
@@ -131,7 +121,8 @@ class ReaderClientTest extends DynamoDbTestCase
         $this->seed(RecordEntity::create(self::TENANT, 'b', name: 'other'));
         $this->seed(RecordEntity::create('tenant-2', 'c', name: 'match'));
 
-        $entities = iterator_to_array($this->reader()->search(RecordEntity::class, new ScanInput(
+        $entities = iterator_to_array($this->reader()->search(new ScanInput(
+            RecordEntity::class,
             Filter::equals('name', 'match'),
         )), false);
 
@@ -144,7 +135,8 @@ class ReaderClientTest extends DynamoDbTestCase
         $this->seed(RecordEntity::create(self::TENANT, 'b'));
         $this->seed(RecordEntity::create(self::TENANT, 'c'));
 
-        $entities = iterator_to_array($this->reader()->search(RecordEntity::class, new QueryInput(
+        $entities = iterator_to_array($this->reader()->search(new QueryInput(
+            RecordEntity::class,
             Filter::equals('tenantId', self::TENANT),
             forward: false,
         )), false);
@@ -165,7 +157,8 @@ class ReaderClientTest extends DynamoDbTestCase
             $this->seed($entity);
         }
 
-        $entities = iterator_to_array($this->reader()->search(RecordEntity::class, new QueryInput(
+        $entities = iterator_to_array($this->reader()->search(new QueryInput(
+            RecordEntity::class,
             Filter::equals('tenantId', self::TENANT),
         )), false);
 
@@ -179,8 +172,8 @@ class ReaderClientTest extends DynamoDbTestCase
         }
         $this->seed(RecordEntity::create('tenant-2', 'd'));
 
-        static::assertSame(4, $this->reader()->count(RecordEntity::class, new ScanInput()));
-        static::assertSame(3, $this->reader()->count(RecordEntity::class, new QueryInput(Filter::equals('tenantId', self::TENANT))));
+        static::assertSame(4, $this->reader()->count(new ScanInput(RecordEntity::class)));
+        static::assertSame(3, $this->reader()->count(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT))));
     }
 
     private function reader(): ReaderClient
@@ -193,7 +186,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
     private function seed(AbstractEntity $entity): void
     {
-        $this->client()->put($entity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
     }
 
     /**

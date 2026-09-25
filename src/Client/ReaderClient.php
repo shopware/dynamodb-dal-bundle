@@ -23,7 +23,7 @@ use AsyncAws\DynamoDb\Input\ScanInput as DynamoDbScanInput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * The read side behind {@see Client}: generators that read entities from DynamoDB tables.
+ * The read side behind {@see Client}: key reads, searches and counts.
  *
  * @internal
  */
@@ -59,12 +59,10 @@ class ReaderClient
     public function get(GetInput $input): \Generator
     {
         $requests = [];
-        foreach ($input->keysByClass as $class => $keys) {
-            $definition = $this->definitionRegistry->getByEntityClass($class);
+        foreach ($input->keys as $key) {
+            $definition = $this->definitionRegistry->getByEntityClass($key->class);
 
-            foreach ($keys as $key) {
-                $requests[] = [$definition, $this->serializer->serializeKey($definition, $key), null];
-            }
+            $requests[] = [$definition, $this->serializer->serializeKey($definition, $key), null];
         }
 
         yield from $this->read($requests, $input->consistentRead);
@@ -104,7 +102,7 @@ class ReaderClient
      *
      * @template Entity of AbstractEntity
      *
-     * @param class-string<Entity> $class
+     * @param ScanInput<Entity>|QueryInput<Entity> $query
      *
      * @throws UnknownEntityDefinitionException
      * @throws InvalidCursorException
@@ -113,9 +111,9 @@ class ReaderClient
      *
      * @return \Generator<array<string, AttributeValue>, Entity>
      */
-    public function search(string $class, ScanInput|QueryInput $query): \Generator
+    public function search(ScanInput|QueryInput $query): \Generator
     {
-        $definition = $this->definitionRegistry->getByEntityClass($class);
+        $definition = $this->definitionRegistry->getByEntityClass($query->class);
 
         $keyFields = $definition->getKeySchema()->getFields();
         if ($query instanceof QueryInput && $query->index !== null) {
@@ -165,15 +163,15 @@ class ReaderClient
     /**
      * Counts matches via `Select=COUNT`, summing the per-page counts (async-aws does not accumulate them).
      *
-     * @param class-string<AbstractEntity> $class
+     * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $query
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if the query does not compile
      * @throws AsyncAwsException if a request to DynamoDB fails
      */
-    public function count(string $class, ScanInput|QueryInput $query): int
+    public function count(ScanInput|QueryInput $query): int
     {
-        $definition = $this->definitionRegistry->getByEntityClass($class);
+        $definition = $this->definitionRegistry->getByEntityClass($query->class);
 
         $count = 0;
         $startKey = null;
@@ -205,7 +203,7 @@ class ReaderClient
      *
      * @return \Generator<int, Entity>
      */
-    private function read(array $requests, ?bool $consistentRead): \Generator
+    private function read(array $requests, bool $consistentRead): \Generator
     {
         if (\count($requests) === 1) {
             $output = $this->client->getItem([
@@ -242,7 +240,7 @@ class ReaderClient
 
         $idx = 0;
         foreach (array_chunk($pairs, self::BATCH_GET_LIMIT) as $chunk) {
-            /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: ?bool}> $requestItems */
+            /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: bool}> $requestItems */
             $requestItems = [];
             foreach ($chunk as [$physicalTable, $keyFields]) {
                 $requestItems[$physicalTable] ??= ['Keys' => [], 'ConsistentRead' => $consistentRead];
@@ -276,6 +274,7 @@ class ReaderClient
      * Builds (but does not run) the async-aws `query`/`scan` input; only a {@see QueryInput} adds the key
      * condition, sort direction and index name.
      *
+     * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $search
      * @param Cursor|array<string, AttributeValue>|null $start - a resume position; a backward {@see Cursor} flips the sort direction
      *
      * @throws DALException if the filter or key condition does not compile
@@ -288,7 +287,7 @@ class ReaderClient
         $filterResult = $search->filter !== null ? $this->expressionCompiler->compileFilter($definition, $search->filter) : new ExpressionCompiledResult();
 
         if ($search instanceof QueryInput) {
-            $keyResult = $this->expressionCompiler->compileFilter($definition, $search->keyCondition);
+            $keyResult = $this->expressionCompiler->compileCondition($definition, $search->keyCondition);
             $filterResult = $filterResult->merge($keyResult);
 
             $input = new DynamoDbQueryInput();

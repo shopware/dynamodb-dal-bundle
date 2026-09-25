@@ -111,4 +111,17 @@ class FilterTest extends TestCase
         static::assertNotNull($reflection->getConstructor());
         static::assertTrue($reflection->getConstructor()->isPrivate());
     }
+
+    public function testWithAddsChildrenToANewFilterAndLeavesTheOriginalAsItIs(): void
+    {
+        $a = Filter::equals('name', 'a');
+        $b = Filter::equals('name', 'b');
+        $and = Filter::and($a);
+        $or = Filter::or($a);
+
+        static::assertSame([$a, $b], $and->with($b)->filters);
+        static::assertSame([$a], $and->filters);
+        static::assertSame([$a, $b], $or->with($b)->filters);
+        static::assertSame([$a], $or->filters);
+    }
 }

@@ -28,14 +28,20 @@ final readonly class Cursor
     /**
      * The URL-safe token form: base64url of `{"k": {attribute: {S|N|B: value}}, "b": true}`.
      *
-     * @throws \JsonException if a key attribute is not valid UTF-8
+     * @throws InvalidCursorException if a key attribute is not valid UTF-8, which none DynamoDB returns is
      */
     public function encode(): string
     {
         $key = array_map(static fn (AttributeValue $value): array => $value->requestBody(), $this->key);
         $payload = $this->backward ? ['k' => $key, 'b' => true] : ['k' => $key];
 
-        return rtrim(strtr(base64_encode(json_encode($payload, \JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        try {
+            $json = json_encode($payload, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new InvalidCursorException('a key attribute is not valid UTF-8', $e);
+        }
+
+        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
     }
 
     /**

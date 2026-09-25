@@ -3,27 +3,24 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 
 use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
+use Shopware\DynamodbDalBundle\Client\Output\ReadOutput;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(GetOutput::class)]
+#[CoversClass(ReadOutput::class)]
 class GetOutputTest extends TestCase
 {
-    public function testStreamsEveryEntityFromTheSourceGenerator(): void
+    public function testStreamsEveryEntityFromTheSource(): void
     {
         $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
         $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
 
-        $result = $this->keyOutput((static function () use ($a, $b): \Generator {
-            yield $a;
-            yield $b;
-        })());
-
-        static::assertSame([$a, $b], $result->toArray());
-        static::assertSame([$a, $b], iterator_to_array($result));
-        static::assertSame($a, $result->first());
+        static::assertSame([$a, $b], self::getOutput($a, $b)->toArray());
+        static::assertSame([$a, $b], iterator_to_array(self::getOutput($a, $b)));
+        static::assertSame($a, self::getOutput($a, $b)->first());
     }
 
     public function testStreamsEveryEntityFlatAcrossTables(): void
@@ -31,13 +28,7 @@ class GetOutputTest extends TestCase
         $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
         $o = new OtherEntity()->setOtherId('o');
 
-        $result = $this->keyOutput((static function () use ($a, $o): \Generator {
-            yield $a;
-            yield $o;
-        })());
-
-        static::assertSame([$a, $o], $result->toArray());
-        static::assertSame([$a, $o], iterator_to_array($result));
+        static::assertSame([$a, $o], self::getOutput($a, $o)->toArray());
     }
 
     public function testBucketsEntitiesByTheirClass(): void
@@ -46,74 +37,67 @@ class GetOutputTest extends TestCase
         $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
         $o = new OtherEntity()->setOtherId('o');
 
-        $result = $this->keyOutput((static function () use ($a, $b, $o): \Generator {
-            yield $a;
-            yield $o;
-            yield $b;
-        })());
-
-        static::assertSame([$a, $b], $result->forEntity(NormalEntity::class));
-        static::assertSame([$o], $result->forEntity(OtherEntity::class));
+        static::assertSame([$a, $b], self::getOutput($a, $o, $b)->forEntity(NormalEntity::class));
+        static::assertSame([$o], self::getOutput($a, $o, $b)->forEntity(OtherEntity::class));
         static::assertSame([
             NormalEntity::class => [$a, $b],
             OtherEntity::class => [$o],
-        ], $result->grouped());
-        // The flat terminals still iterate every table.
-        static::assertSame([$a, $o, $b], $result->toArray());
+        ], self::getOutput($a, $o, $b)->grouped());
     }
 
     public function testForEntityWithoutAMatchIsEmpty(): void
     {
-        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
-
-        $result = $this->keyOutput((static function () use ($a): \Generator {
-            yield $a;
-        })());
-
-        static::assertSame([], $result->forEntity(OtherEntity::class));
+        static::assertSame([], self::getOutput(new NormalEntity()->setAutofilledId('a')->setRequired('req'))->forEntity(OtherEntity::class));
     }
 
-    public function testReadsTheSourceOnceAndSharesItAcrossTerminals(): void
+    public function testReadsNothingUntilTheOutputIsRead(): void
     {
-        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
-        $b = new OtherEntity()->setOtherId('b');
+        /** @var \ArrayObject<int, string> $pulled */
+        $pulled = new \ArrayObject();
 
-        // A generator yields only once; identical results across terminals prove the cache is shared
-        // rather than the source being re-read (which would observe an exhausted generator).
-        $result = $this->keyOutput((static function () use ($a, $b): \Generator {
-            yield $a;
-            yield $b;
+        $output = new GetOutput((static function () use ($pulled): \Generator {
+            $pulled->append('read');
+
+            yield new NormalEntity()->setAutofilledId('a')->setRequired('req');
         })());
 
-        static::assertSame($a, $result->first());
-        static::assertSame([$a], $result->forEntity(NormalEntity::class));
-        static::assertSame([$a, $b], $result->toArray());
-        static::assertSame([$a, $b], $result->toArray());
-        static::assertSame([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [$b],
-        ], $result->grouped());
-    }
+        static::assertCount(0, $pulled);
 
-    public function testEmptyGeneratorYieldsNothing(): void
-    {
-        $result = $this->keyOutput((static function (): \Generator {
-            yield from [];
-        })());
+        $output->first();
 
-        static::assertSame([], $result->toArray());
-        static::assertNull($result->first());
-        static::assertSame([], $result->forEntity(NormalEntity::class));
-        static::assertSame([], $result->grouped());
+        static::assertCount(1, $pulled);
     }
 
     /**
-     * @param \Generator<int, NormalEntity|OtherEntity> $source
-     *
+     * Keys are read as the stream reaches them, so there is nothing kept to read a second time.
+     */
+    public function testThrowsWhenReadASecondTime(): void
+    {
+        $output = self::getOutput(new NormalEntity()->setAutofilledId('a')->setRequired('req'));
+
+        $output->grouped();
+
+        $this->expectException(\LogicException::class);
+        $output->forEntity(NormalEntity::class);
+    }
+
+    public function testAnEmptySourceYieldsNothing(): void
+    {
+        static::assertSame([], self::getOutput()->toArray());
+        static::assertNull(self::getOutput()->first());
+        static::assertSame([], self::getOutput()->forEntity(NormalEntity::class));
+        static::assertSame([], self::getOutput()->grouped());
+    }
+
+    /**
      * @return GetOutput<NormalEntity|OtherEntity>
      */
-    private function keyOutput(\Generator $source): GetOutput
+    private static function getOutput(NormalEntity|OtherEntity ...$entities): GetOutput
     {
-        return new GetOutput($source);
+        return new GetOutput((static function () use ($entities): \Generator {
+            foreach ($entities as $entity) {
+                yield $entity;
+            }
+        })());
     }
 }

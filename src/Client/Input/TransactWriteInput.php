@@ -5,31 +5,29 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 
 /**
- * @template Entity of AbstractEntity = never
+ * Puts, updates and deletes across entity classes, written as one all-or-nothing `TransactWriteItems`. The operations
+ * are sent in the order they are given, which is the order of the cancellation reasons a failed transaction reports.
  */
-final class TransactWriteInput
+final readonly class TransactWriteInput
 {
     /**
-     * @param array<class-string<Entity>, array<DeleteInput<AbstractEntity>|UpdateInput<Entity>|PutInput<Entity>>> $operations - Table mapped to operations
+     * @var list<PutInput<AbstractEntity>|UpdateInput<AbstractEntity>|DeleteInput<AbstractEntity>>
      */
-    public function __construct(
-        public readonly array $operations = [],
-    ) {
+    public array $operations;
+
+    /**
+     * @param PutInput<AbstractEntity>|UpdateInput<AbstractEntity>|DeleteInput<AbstractEntity> ...$operations
+     */
+    public function __construct(PutInput|UpdateInput|DeleteInput ...$operations)
+    {
+        $this->operations = array_values($operations);
     }
 
     /**
-     * @template AddedEntity of AbstractEntity
-     *
-     * @param class-string<AddedEntity> $class
-     * @param PutInput<AddedEntity>|DeleteInput<AbstractEntity>|UpdateInput<AddedEntity> $input
-     *
-     * @return self<Entity|AddedEntity>
+     * @param PutInput<AbstractEntity>|UpdateInput<AbstractEntity>|DeleteInput<AbstractEntity> ...$operations
      */
-    public function with(string $class, PutInput|DeleteInput|UpdateInput $input): self
+    public function with(PutInput|UpdateInput|DeleteInput ...$operations): self
     {
-        return new self([
-            ...$this->operations,
-            $class => [...($this->operations[$class] ?? []), $input],
-        ]);
+        return new self(...$this->operations, ...array_values($operations));
     }
 }

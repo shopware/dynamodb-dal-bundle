@@ -207,12 +207,12 @@ $entry->currency = 'EUR';
 $entry->amountCents = -1_250;
 $entry->source = 'checkout';
 
-$this->client->put(LedgerEntryEntity::class, new PutInput($entry));
+$this->client->put(new PutInput($entry));
 
 $entry->pk; // "acc-7#EUR"
 $entry->id; // the generated Uuid
 
-$this->client->update(LedgerEntryEntity::class, new UpdateInput($entry, ['amountCents' => -1_300]));
+$this->client->update(new UpdateInput($entry, ['amountCents' => -1_300]));
 
 $entry->updatedAt; // stamped without the caller naming it
 ```
@@ -296,8 +296,8 @@ final readonly class SizeGreaterThanFilter implements FilterInterface
     {
         return \sprintf(
             'size(%s) > %s',
-            $context->attribute($this->fieldName),
-            $context->numberPlaceholder($this->count),
+            $context->path($this->fieldName),
+            $context->number($this->count),
         );
     }
 }
@@ -307,20 +307,24 @@ It works anywhere a `Filter` does, including inside `Filter::and()` and in write
 
 ```php
 new QueryInput(
+    OrderEntity::class,
     Filter::equals('customerId', 'c-42'),
     filter: Filter::and(Filter::equals('status', OrderStatus::Open), new SizeGreaterThanFilter('tags', 2)),
 );
 ```
 
-- `attribute($fieldName)` registers a field or a path such as `meta.carrier` and returns its placeholder. It
+- `path($fieldName)` registers a field or a path such as `meta.carrier` and returns its placeholder. It
   throws `UnknownFieldException` for a field the entity doesn't have.
-- `placeholder($fieldName, $value)` serializes a value with that field's serializer. Pass
+- `value($fieldName, $value)` serializes a value with that field's serializer. Pass
   `useValueFieldDefinition: true` to serialize a single element of a list or map field instead.
-- `numberPlaceholder($number)` registers a plain number, for operands that are numbers whatever the field's type,
+- `number($number)` registers a plain number, for operands that are numbers whatever the field's type,
   such as the result of `size()`.
 - Return `null` to add nothing, for example for an optional criterion. Register no names or values in that case.
-- If the fragment joins several clauses with `AND` or `OR`, set `$context->isCompound = true`. An enclosing
-  `and()` or `or()` then wraps it in parentheses.
+- If the fragment joins several clauses with `AND` or `OR`, wrap it in parentheses, as `(#a = :a OR #b = :b)`, so
+  an enclosing `and()` or `not()` keeps its meaning. Leave them out of a filter meant as a whole key condition, which
+  DynamoDB may refuse in parentheses.
+- To test it on its own, compile it with `Test\CompiledExpression`, see
+  [A filter or update action of your own](testing.md#a-filter-or-update-action-of-your-own).
 
 ## An update action of your own
 
@@ -353,7 +357,7 @@ final readonly class CopyAction implements UpdateActionInterface
 
     public function compile(ExpressionCompileContext $context): ?string
     {
-        return "{$context->attribute($this->to)} = {$context->attribute($this->from)}";
+        return "{$context->path($this->to)} = {$context->path($this->from)}";
     }
 }
 ```
@@ -362,7 +366,7 @@ final readonly class CopyAction implements UpdateActionInterface
 
 ```php
 // DynamoDB evaluates every operand against the stored item, so the copy keeps the status before the change
-$this->client->update(OrderEntity::class, new UpdateInput(
+$this->client->update(new UpdateInput(
     $order,
     Update::with(
         Update::set('status', OrderStatus::Cancelled),
@@ -424,19 +428,21 @@ $this->client->update(OrderEntity::class, new UpdateInput(
 
           return \sprintf(
               '%s = if_not_exists(%s, %s)',
-              $context->attribute($this->to),
-              $context->attribute($this->from),
-              $context->placeholder($this->to, $this->fallback),
+              $context->path($this->to),
+              $context->path($this->from),
+              $context->value($this->to, $this->fallback),
           );
       }
   }
   ```
 
   `withValue()` only rebuilds the action. It gets `null` where the normalizer removed the value, and `compile()`
-  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `placeholder()`, whose
+  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `value()`, whose
   field serializer refuses it with a `WrongTypeException`. Where the normalizer leaves the path out, the action is
   dropped from the update.
 - A path may carry one value per update. Another action or a field giving the same path a value throws
   `UpdateDuplicatePathException`.
 - An operand that is no value of the field, such as a step, elements added to a set, or another path as
   `CopyAction` copies, stays as given, and the action implements `UpdateActionInterface` alone.
+- To test an action on its own, compile it with `Test\CompiledExpression::ofUpdate()`, see
+  [A filter or update action of your own](testing.md#a-filter-or-update-action-of-your-own).

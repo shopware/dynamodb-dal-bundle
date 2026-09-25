@@ -3,11 +3,14 @@
 namespace Shopware\DynamodbDalBundle\Client;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
@@ -29,9 +32,7 @@ use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
 use AsyncAws\DynamoDb\ValueObject\WriteRequest;
 
 /**
- * The write side behind {@see Client}. A lone input takes the single-item API, which is cheaper than a batch
- * of one. Several inputs are batched, falling back to `TransactWriteItem` where `BatchWriteItem` cannot serve
- * them.
+ * The write side behind {@see Client}: single-item writes, batches and transactions.
  *
  * @internal
  */
@@ -63,168 +64,166 @@ class WriterClient
     }
 
     /**
-     * Writes the given entities, applying the serialized result back onto each once the request succeeds so
-     * normalization-generated values (e.g. a `Uuid::v7()` key or `createdAt`) are reflected on the entity.
-     *
-     * This operation is not atomic, for that use {@see self::transactWrite} instead.
-     * If any input contains a condition expression, {@see self::transactWrite} is used instead of a batch
-     * write, since `BatchWriteItem` does not support condition expressions.
-     * Batch writes are limited to 25 operations per batch.
+     * Writes the entity with `PutItem`, then applies the serialized result back onto it so normalization-generated
+     * values (e.g. a `Uuid::v7()` key or `createdAt`) are reflected on the entity.
      *
      * @template Entity of AbstractEntity
      *
-     * @param class-string<Entity> $class
-     * @param PutInput<Entity> ...$inputs
+     * @param PutInput<Entity> $input
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if an entity or a condition does not serialize
-     * @throws ConditionalCheckFailedException for a lone input
-     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
+     * @throws ConditionEmptyException
+     * @throws DALException if the entity or the condition does not serialize
+     * @throws ConditionalCheckFailedException
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
-    public function put(string $class, PutInput ...$inputs): void
+    public function put(PutInput $input): void
     {
-        $definition = $this->definitionRegistry->getByEntityClass($class);
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        if (\count($inputs) === 1) {
-            $result = $this->serializer->serialize($definition, $inputs[0]->entity, NormalizerOperation::Put);
-            $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
+        $result = $this->serializer->serialize($definition, $input->entity, NormalizerOperation::Put);
+        $condition = $this->compileCondition($definition, $input->condition);
 
-            $this->client->putItem([
-                'TableName' => $definition->getTable(),
-                ...$result->getPutExpression(),
-                ...$expression->getExpression('condition'),
-                ...$expression->getExpressionAttributes(),
-            ])->resolve();
+        $this->client->putItem([
+            'TableName' => $definition->getTable(),
+            ...$result->getPutExpression(),
+            ...$condition->getExpression('condition'),
+            ...$condition->getExpressionAttributes(),
+        ])->resolve();
 
-            $this->applyFields($inputs[0]->entity, $definition, $result->getNormalizedFields(), $result->getOperation());
-
-            return;
-        }
-
-        if ($this->hasConditionExpressions(...$inputs)) {
-            $this->transactWrite(new TransactWriteInput([$class => $inputs]));
-
-            return;
-        }
-
-        $this->batchWriteItem($definition, ...$inputs);
+        $this->applyFields($input->entity, $definition, $result->getNormalizedFields(), $result->getOperation());
     }
 
     /**
-     * Updates the given items. Unlike {@see self::put()}, an update writes only the fields it names.
+     * Updates the item with `UpdateItem`. Unlike {@see self::put()}, an update writes only the fields it names.
      * Every update is conditioned on its item existing, so a missing key fails instead of creating a partial item.
-     *
-     * {@see UpdateInput::$refresh} decides how updates are applied to the existing entity:
-     * 1. `null` = best effort of keeping the entity up-to-date. Nested paths and actions will not be applied.
-     * 2. `true` = entity changes are applied, if necessary a readback is performed.
-     * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
-     * Readbacks are only necessary if an update writes a nested path or has an action.
-     *
-     * This operation is atomic and uses {@see self::transactWrite} for batch writes, since
-     * `BatchWriteItem` cannot update items.
-     * Transactional writes are limited to 100 operations per batch.
+     * An entity given as key takes the stored item back, unless {@see UpdateInput::$refresh} is {@see Refresh::None}.
      *
      * @template Entity of AbstractEntity
      *
-     * @param class-string<Entity> $class
-     * @param UpdateInput<Entity> ...$inputs
+     * @param UpdateInput<Entity> $input
      *
      * @throws UnknownEntityDefinitionException
-     * @throws DALException if an update, a key or a condition does not serialize, an update has nothing to write, gives a path two values or removes a field that is not nullable, or a stored item does not deserialize
-     * @throws ConditionalCheckFailedException for a lone input, when the item does not exist or the condition fails
-     * @throws TransactionCanceledException for several inputs, e.g. when an item does not exist or a condition fails
+     * @throws ConditionEmptyException
+     * @throws DALException if the update, the key or the condition does not serialize, the update has nothing to write, gives a path two values or removes a field that is not nullable, or the stored item does not deserialize
+     * @throws ConditionalCheckFailedException when the item does not exist or the condition fails
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
-    public function update(string $class, UpdateInput ...$inputs): void
+    public function update(UpdateInput $input): void
     {
-        $definition = $this->definitionRegistry->getByEntityClass($class);
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        if (\count($inputs) === 1) {
-            [, $update] = $this->expressionCompiler->compileUpdate($definition, $inputs[0]->update);
-            $condition = $this->compileUpdateCondition($definition, $inputs[0]);
-            // update entity if the caller did not explicitly disallowed it
-            $entity = $inputs[0]->refresh !== false && $inputs[0]->key instanceof AbstractEntity ? $inputs[0]->key : null;
+        [, $update] = $this->expressionCompiler->compileUpdate($definition, $input->update);
+        $condition = $this->compileUpdateCondition($definition, $input);
+        $entity = $input->refresh !== Refresh::None && $input->key instanceof AbstractEntity ? $input->key : null;
 
-            $output = $this->client->updateItem([
-                'TableName' => $definition->getTable(),
-                'Key' => $this->serializer->serializeKey($definition, $inputs[0]->key),
-                ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
-                ...$update->getExpression('update'),
-                ...$condition->getExpression('condition'),
-                ...$update->getExpressionAttributes($condition),
-            ]);
+        $output = $this->client->updateItem([
+            'TableName' => $definition->getTable(),
+            'Key' => $this->serializer->serializeKey($definition, $input->key),
+            ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
+            ...$update->getExpression('update'),
+            ...$condition->getExpression('condition'),
+            ...$update->getExpressionAttributes($condition),
+        ]);
 
-            $output->resolve();
+        $output->resolve();
 
-            if ($entity) {
-                $this->serializer->deserialize($definition, $output->getAttributes(), $entity);
+        if ($entity) {
+            $this->serializer->deserialize($definition, $output->getAttributes(), $entity);
+        }
+    }
+
+    /**
+     * Deletes the item with `DeleteItem`. Deleting an item that does not exist is not an error.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param DeleteInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
+     * @throws DALException if the key or the condition does not serialize
+     * @throws ConditionalCheckFailedException
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     */
+    public function delete(DeleteInput $input): void
+    {
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
+
+        $condition = $this->compileCondition($definition, $input->condition);
+
+        $this->client->deleteItem([
+            'TableName' => $definition->getTable(),
+            'Key' => $this->serializer->serializeKey($definition, $input->key),
+            ...$condition->getExpression('condition'),
+            ...$condition->getExpressionAttributes(),
+        ])->resolve();
+    }
+
+    /**
+     * Writes puts and deletes across tables with `BatchWriteItem`, 25 per request, and resubmits whatever DynamoDB
+     * leaves unprocessed. Not atomic: a failed request leaves the requests before it written. Once every request
+     * succeeded, each put is applied back onto its entity, as for {@see self::put()}.
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if an entity or a key does not serialize
+     * @throws AsyncAwsException if a request to DynamoDB fails
+     */
+    public function batchWrite(BatchWriteInput $input): void
+    {
+        /** @var list<array{string, WriteRequest}> $writeRequests - physical table and request */
+        $writeRequests = [];
+        /** @var list<array{AbstractEntity, EntityDefinition, SerializedResult}> $puts */
+        $puts = [];
+
+        foreach ($input->puts as $entity) {
+            $definition = $this->definitionRegistry->getByEntityClass($entity::class);
+
+            $result = $this->serializer->serialize($definition, $entity, NormalizerOperation::Put);
+            $writeRequests[] = [$definition->getTable(), new WriteRequest(['PutRequest' => $result->getPutExpression()])];
+            $puts[] = [$entity, $definition, $result];
+        }
+
+        foreach ($input->deletes as $key) {
+            $definition = $this->definitionRegistry->getByEntityClass($key instanceof Key ? $key->class : $key::class);
+
+            $writeRequests[] = [$definition->getTable(), new WriteRequest([
+                'DeleteRequest' => ['Key' => $this->serializer->serializeKey($definition, $key)],
+            ])];
+        }
+
+        // The limit of 25 counts requests across all tables of one call.
+        foreach (array_chunk($writeRequests, self::BATCH_WRITE_LIMIT) as $chunk) {
+            $requestItems = [];
+            foreach ($chunk as [$table, $request]) {
+                $requestItems[$table][] = $request;
             }
 
-            return;
+            do {
+                $output = $this->client->batchWriteItem(['RequestItems' => $requestItems]);
+
+                // Keyed by table like the request, so the leftovers can be sent again as they are; empty is done
+                $requestItems = $output->getUnprocessedItems();
+            } while ($requestItems !== []);
         }
 
-        $this->transactWrite(new TransactWriteInput([$class => $inputs]));
-    }
-
-    /**
-     * This operation is generally not atomic, for that use {@see self::transactWrite} instead.
-     * If any input contains a condition expression, {@see self::transactWrite} is used instead of a batch
-     * write, since `BatchWriteItem` does not support condition expressions.
-     * Transactional writes are limited to 100 operations per batch.
-     *
-     * @template Entity of AbstractEntity
-     *
-     * @param class-string<Entity> $class
-     * @param DeleteInput<Entity> ...$inputs
-     *
-     * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key or a condition does not serialize
-     * @throws ConditionalCheckFailedException for a lone input
-     * @throws TransactionCanceledException for several conditional inputs, e.g. when a condition fails
-     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
-     */
-    public function delete(string $class, DeleteInput ...$inputs): void
-    {
-        $definition = $this->definitionRegistry->getByEntityClass($class);
-
-        if (\count($inputs) === 1) {
-            $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
-
-            $this->client->deleteItem([
-                'TableName' => $definition->getTable(),
-                'Key' => $this->serializer->serializeKey($definition, $inputs[0]->key),
-                ...$expression->getExpression('condition'),
-                ...$expression->getExpressionAttributes(),
-            ])->resolve();
-
-            return;
-        }
-
-        if ($this->hasConditionExpressions(...$inputs)) {
-            $this->transactWrite(new TransactWriteInput([$class => $inputs]));
-        } else {
-            $this->batchWriteItem($definition, ...$inputs);
+        foreach ($puts as [$entity, $definition, $result]) {
+            $this->applyFields($entity, $definition, $result->getNormalizedFields(), $result->getOperation());
         }
     }
 
     /**
-     * Write entities to different tables as one transaction.
+     * Write entities to different tables as one transaction, in the order the operations were added.
      * Once the transaction succeeds the serialized result of every put is applied back onto its entity (see {@see self::put()}).
-     * Every update keyed by an entity is backfilled based on {@see UpdateInput::$refresh}:
-     * 1. `null` = best effort of keeping the entity up-to-date. Nested paths and actions will not be applied.
-     * 2. `true` = entity changes are applied, if necessary a readback is performed.
-     * 3. `false` = entity is not updated at all, even if it is an entity and the update could be applied.
-     * Readbacks are only necessary if an update writes a nested path or has an action.
+     * Every update keyed by an entity is brought up to date as its {@see UpdateInput::$refresh} says:
+     * {@see Refresh::Full} applies the written fields and reads the item back where an update writes a nested path or has an action,
+     * {@see Refresh::WithoutReadBack} applies only the fields written as a whole, {@see Refresh::None} leaves the entity as it is.
      *
      * Transactional writes are limited to 100 operations per batch.
      * A `TransactionConflict` cancellation is retried with backoff; any other cancellation reason is rethrown.
      *
-     * @template Entity of AbstractEntity
-     *
-     * @param TransactWriteInput<Entity> $input
-     *
      * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
      * @throws DALException if an entity, an update, a key or a condition does not serialize, an update has nothing to write, gives a path two values or removes a field that is not nullable, or a stored item does not deserialize
      * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
@@ -237,55 +236,53 @@ class WriterClient
         $refreshes = [];
         $writeRequests = [];
 
-        foreach ($input->operations as $entityClass => $operations) {
-            $definition = $this->definitionRegistry->getByEntityClass($entityClass);
+        foreach ($input->operations as $operation) {
+            $definition = $this->definitionRegistry->getByEntityClass($operation->class);
 
-            foreach ($operations as $operation) {
-                if ($operation instanceof DeleteInput) {
-                    $expression = $this->compileExpression($definition, $operation->conditionExpression);
+            if ($operation instanceof DeleteInput) {
+                $condition = $this->compileCondition($definition, $operation->condition);
 
-                    $writeRequests[] = new TransactWriteItem(['Delete' => [
-                        'TableName' => $definition->getTable(),
-                        'Key' => $this->serializer->serializeKey($definition, $operation->key),
-                        ...$expression->getExpression('condition'),
-                        ...$expression->getExpressionAttributes(),
-                    ]]);
-                }
+                $writeRequests[] = new TransactWriteItem(['Delete' => [
+                    'TableName' => $definition->getTable(),
+                    'Key' => $this->serializer->serializeKey($definition, $operation->key),
+                    ...$condition->getExpression('condition'),
+                    ...$condition->getExpressionAttributes(),
+                ]]);
+            }
 
-                if ($operation instanceof UpdateInput) {
-                    [$normalized, $update] = $this->expressionCompiler->compileUpdate($definition, $operation->update);
-                    $condition = $this->compileUpdateCondition($definition, $operation);
+            if ($operation instanceof UpdateInput) {
+                [$normalized, $update] = $this->expressionCompiler->compileUpdate($definition, $operation->update);
+                $condition = $this->compileUpdateCondition($definition, $operation);
 
-                    $writeRequests[] = new TransactWriteItem(['Update' => [
-                        'TableName' => $definition->getTable(),
-                        'Key' => $this->serializer->serializeKey($definition, $operation->key),
-                        ...$update->getExpression('update'),
-                        ...$condition->getExpression('condition'),
-                        ...$update->getExpressionAttributes($condition),
-                    ]]);
+                $writeRequests[] = new TransactWriteItem(['Update' => [
+                    'TableName' => $definition->getTable(),
+                    'Key' => $this->serializer->serializeKey($definition, $operation->key),
+                    ...$update->getExpression('update'),
+                    ...$condition->getExpression('condition'),
+                    ...$update->getExpressionAttributes($condition),
+                ]]);
 
-                    if ($operation->refresh !== false && $operation->key instanceof AbstractEntity) {
-                        if ($operation->refresh === true && !$normalized->onlySetsWholeFields($definition)) {
-                            $refreshes[] = $operation->key;
-                        } else {
-                            $applies[] = [$operation->key, $definition, $normalized->fields, NormalizerOperation::Update];
-                        }
+                if ($operation->refresh !== Refresh::None && $operation->key instanceof AbstractEntity) {
+                    if ($operation->refresh === Refresh::Full && !$normalized->onlySetsWholeFields($definition)) {
+                        $refreshes[] = $operation->key;
+                    } else {
+                        $applies[] = [$operation->key, $definition, $normalized->fields, NormalizerOperation::Update];
                     }
                 }
+            }
 
-                if ($operation instanceof PutInput) {
-                    $result = $this->serializer->serialize($definition, $operation->entity, NormalizerOperation::Put);
-                    $expression = $this->compileExpression($definition, $operation->conditionExpression);
+            if ($operation instanceof PutInput) {
+                $result = $this->serializer->serialize($definition, $operation->entity, NormalizerOperation::Put);
+                $condition = $this->compileCondition($definition, $operation->condition);
 
-                    $writeRequests[] = new TransactWriteItem(['Put' => [
-                        'TableName' => $definition->getTable(),
-                        ...$result->getPutExpression(),
-                        ...$expression->getExpression('condition'),
-                        ...$expression->getExpressionAttributes(),
-                    ]]);
+                $writeRequests[] = new TransactWriteItem(['Put' => [
+                    'TableName' => $definition->getTable(),
+                    ...$result->getPutExpression(),
+                    ...$condition->getExpression('condition'),
+                    ...$condition->getExpressionAttributes(),
+                ]]);
 
-                    $applies[] = [$operation->entity, $definition, $result->getNormalizedFields(), $result->getOperation()];
-                }
+                $applies[] = [$operation->entity, $definition, $result->getNormalizedFields(), $result->getOperation()];
             }
         }
 
@@ -352,70 +349,16 @@ class WriterClient
     }
 
     /**
-     * @template Entity of AbstractEntity
-     *
-     * @param EntityDefinition<Entity> $definition
-     * @param DeleteInput<Entity>|PutInput<Entity> ...$inputs
-     *
-     * @throws DALException if an entity or a key does not serialize
-     * @throws AsyncAwsException if a request to DynamoDB fails
-     */
-    private function batchWriteItem(EntityDefinition $definition, DeleteInput|PutInput ...$inputs): void
-    {
-        /** @var list<array{SerializedResult, AbstractEntity}> $puts */
-        $puts = [];
-        $writeRequests = [];
-
-        foreach ($inputs as $input) {
-            if ($input instanceof DeleteInput) {
-                $writeRequests[] = new WriteRequest([
-                    'DeleteRequest' => ['Key' => $this->serializer->serializeKey($definition, $input->key)],
-                ]);
-            }
-
-            if ($input instanceof PutInput) {
-                $result = $this->serializer->serialize($definition, $input->entity, NormalizerOperation::Put);
-
-                $writeRequests[] = new WriteRequest(['PutRequest' => $result->getPutExpression()]);
-
-                $puts[] = [$result, $input->entity];
-            }
-        }
-
-        foreach (array_chunk($writeRequests, self::BATCH_WRITE_LIMIT) as $chunk) {
-            $requests = $chunk;
-
-            do {
-                $result = $this->client->batchWriteItem(['RequestItems' => [$definition->getTable() => $requests]]);
-
-                // getUnprocessedItems() is keyed by table; resubmit just this table's leftovers (empty = done)
-                $requests = $result->getUnprocessedItems()[$definition->getTable()] ?? [];
-            } while ($requests);
-        }
-
-        foreach ($puts as [$result, $entity]) {
-            $this->applyFields($entity, $definition, $result->getNormalizedFields(), $result->getOperation());
-        }
-    }
-
-    /**
-     * @param DeleteInput<AbstractEntity>|PutInput<AbstractEntity>|UpdateInput<AbstractEntity> ...$inputs
-     */
-    private function hasConditionExpressions(DeleteInput|PutInput|UpdateInput ...$inputs): bool
-    {
-        return array_any($inputs, static fn ($input): bool => (bool) $input->conditionExpression);
-    }
-
-    /**
+     * @throws ConditionEmptyException
      * @throws DALException
      */
-    private function compileExpression(EntityDefinition $definition, ?FilterInterface $expression): ExpressionCompiledResult
+    private function compileCondition(EntityDefinition $definition, ?FilterInterface $condition): ExpressionCompiledResult
     {
-        if ($expression) {
-            return $this->expressionCompiler->compileFilter($definition, $expression);
+        if ($condition === null) {
+            return new ExpressionCompiledResult();
         }
 
-        return new ExpressionCompiledResult();
+        return $this->expressionCompiler->compileCondition($definition, $condition);
     }
 
     /**
@@ -424,15 +367,15 @@ class WriterClient
      *
      * @param UpdateInput<AbstractEntity> $input
      *
+     * @throws ConditionEmptyException
      * @throws DALException
      */
     private function compileUpdateCondition(EntityDefinition $definition, UpdateInput $input): ExpressionCompiledResult
     {
         $exists = Filter::exists($definition->getKeySchema()->hashKey);
 
-        return $this->compileExpression(
-            $definition,
-            $input->conditionExpression ? Filter::and($exists, $input->conditionExpression) : $exists,
-        );
+        return $input->condition !== null
+            ? $this->expressionCompiler->compileCondition($definition, $exists, $input->condition)
+            : $this->expressionCompiler->compileCondition($definition, $exists);
     }
 }

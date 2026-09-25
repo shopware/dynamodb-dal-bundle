@@ -90,8 +90,8 @@ class ExpressionCompileContextTest extends TestCase
 
     public function testEqualsAnyCompilesToInOperator(): void
     {
-        // EqualsAnyFilter calls placeholder() once per value (left of `IN`) before
-        // calling attribute() on the right side, so values get the lower indices.
+        // EqualsAnyFilter calls value() once per value (left of `IN`) before
+        // calling path() on the right side, so values get the lower indices.
         [$expression, $context] = $this->compile(Filter::equalsAny('name', ['a', 'b', 'c']));
 
         static::assertSame('#name IN (:h_0_name, :h_1_name, :h_2_name)', $expression);
@@ -500,6 +500,23 @@ class ExpressionCompileContextTest extends TestCase
             [':h_0_settings_2efoo_2dbar' => new AttributeValue(['S' => 'baz'])],
             $context->values,
         );
+    }
+
+    public function testAFilterOfYourOwnThatParenthesizesItsClausesIsNotWrappedAgain(): void
+    {
+        $custom = new class implements FilterInterface {
+            public function compile(ExpressionCompileContext $context): string
+            {
+                return "({$context->path('name')} = {$context->value('name', 'a')} OR attribute_exists({$context->path('required')}))";
+            }
+        };
+
+        [$expression] = $this->compile(Filter::and(Filter::equals('required', 'r'), $custom));
+        [$negated] = $this->compile(Filter::not($custom));
+
+        static::assertIsString($expression);
+        static::assertStringEndsWith(' AND (#name = :' . self::PREFIX . '_1_name OR attribute_exists(#required))', $expression);
+        static::assertSame('NOT (#name = :' . self::PREFIX . '_0_name OR attribute_exists(#required))', $negated);
     }
 
     /**

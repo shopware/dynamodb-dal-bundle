@@ -10,20 +10,18 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
  *
  * @template Entity of AbstractEntity = never
  */
-class RefreshInput
+final readonly class RefreshInput
 {
     /**
      * @param list<Entity> $entities
      */
     public function __construct(
-        public readonly array $entities,
-        public readonly ?bool $consistentRead = null,
+        public array $entities,
+        public bool $consistentRead = false,
     ) {
     }
 
     /**
-     * The same request with `$entities` added, as a new instance — widening the entity union.
-     *
      * @template AddedEntity of AbstractEntity
      *
      * @param AddedEntity ...$entities
@@ -38,7 +36,7 @@ class RefreshInput
     /**
      * @return self<Entity>
      */
-    public function withConsistentRead(?bool $consistentRead): self
+    public function withConsistentRead(bool $consistentRead = true): self
     {
         return new self($this->entities, $consistentRead);
     }

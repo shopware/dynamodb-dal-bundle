@@ -13,7 +13,7 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 class ExpressionCompileContext
 {
     /**
-     * Collected by {@see placeholder()} and {@see numberPlaceholder()}; read by the compiler.
+     * Collected by {@see value()} and {@see number()}; read by the compiler.
      *
      * @internal
      *
@@ -22,7 +22,7 @@ class ExpressionCompileContext
     public array $values = [];
 
     /**
-     * Collected by {@see attribute()}; read by the compiler.
+     * Collected by {@see path()}; read by the compiler.
      *
      * @internal
      *
@@ -33,8 +33,11 @@ class ExpressionCompileContext
     /**
      * Set by And/Or after `compile()` to mark whether their output is a multi-clause boolean
      * expression. A sibling And/Or reads this to decide whether to wrap the child in `(...)`
-     * for precedence (e.g. `a AND (b OR c)`). Top-level callers leave it untouched: DynamoDB's
-     * KeyConditionExpression rejects an outer `(...)`, so we never wrap unconditionally.
+     * for precedence (e.g. `a AND (b OR c)`), and the compiler to join a whole condition with another.
+     * Nothing wraps a whole expression, as a key condition in parentheses may be refused by DynamoDB.
+     * A filter of your own that joins clauses wraps them in parentheses itself instead.
+     *
+     * @internal
      */
     public bool $isCompound = false;
 
@@ -52,7 +55,7 @@ class ExpressionCompileContext
      *
      * @throws UnknownFieldException
      */
-    public function attribute(string $fieldName): string
+    public function path(string $fieldName): string
     {
         $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
 
@@ -70,7 +73,7 @@ class ExpressionCompileContext
      * @throws NullOperandException
      * @throws DALException if the value does not serialize for the field
      */
-    public function placeholder(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
+    public function value(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
     {
         $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
         $field = $path->definition;
@@ -105,7 +108,7 @@ class ExpressionCompileContext
      * DynamoDB functions like `size()` evaluate to a number regardless of the compared attribute's
      * own type (a map, list, string, …), so their operand cannot be serialized via that field.
      */
-    public function numberPlaceholder(int|float $value): string
+    public function number(int|float $value): string
     {
         $placeholder = ":{$this->prefix}_" . \count($this->values);
         $this->values[$placeholder] = AttributeValue::create(['N' => (string) $value]);

@@ -13,7 +13,7 @@ use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
  * A position is a {@see Page} token, or several named ones {@see combine()}d for a page merged from several
  * searches. A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
  */
-final readonly class CursorHistory implements \Stringable
+final readonly class CursorHistory
 {
     /**
      * The non-empty {@see toString()} form, for validating a history where it enters, e.g. as a URL parameter.
@@ -43,11 +43,6 @@ final readonly class CursorHistory implements \Stringable
         $this->positions = array_values($positions);
     }
 
-    public function __toString(): string
-    {
-        return $this->toString();
-    }
-
     /**
      * Restores a history from its {@see toString()} form; `null` or `''` is page 1.
      *
@@ -64,11 +59,17 @@ final readonly class CursorHistory implements \Stringable
      *
      * @param array<string, string> $positions - name => token
      *
-     * @throws \JsonException if a name or a token is not valid UTF-8
+     * @throws InvalidCursorException if a name or a token is not valid UTF-8
      */
     public static function combine(array $positions): string
     {
-        return rtrim(strtr(base64_encode(json_encode($positions, \JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        try {
+            $json = json_encode($positions, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new InvalidCursorException('a name or a token is not valid UTF-8', $e);
+        }
+
+        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
     }
 
     /**
@@ -137,27 +138,15 @@ final readonly class CursorHistory implements \Stringable
     }
 
     /**
-     * The history one page further, resuming from `$position`.
+     * The history one page further, resuming from `$position`, or `null` for no position: {@see Page::$next} on
+     * the last page, as it is taken as is.
      *
      * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
-     */
-    public function append(string $position): self
-    {
-        return new self([...$this->positions, $position]);
-    }
-
-    /**
-     * The history one page further, or `null` if there is no further page — takes {@see Page::$next} as is.
      *
-     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
+     * @return ($position is null ? null : self)
      */
     public function advance(?string $position): ?self
     {
-        return $position !== null ? $this->append($position) : null;
-    }
-
-    public function isEmpty(): bool
-    {
-        return $this->positions === [];
+        return $position !== null ? new self([...$this->positions, $position]) : null;
     }
 }

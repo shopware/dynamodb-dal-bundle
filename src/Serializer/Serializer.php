@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Serializer;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
@@ -180,18 +180,19 @@ class Serializer
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
-     * @param Entity|Index $key
+     * @param Entity|Key<Entity> $key
      *
      * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
      * @return array<string, AttributeValue>
      */
-    public function serializeKey(EntityDefinition $definition, AbstractEntity|Index $key): array
+    public function serializeKey(EntityDefinition $definition, AbstractEntity|Key $key): array
     {
         if ($key instanceof AbstractEntity) {
             $keySchema = $definition->getKeySchema();
             $vars = $key->getVars();
-            $key = new Index(
+            $key = new Key(
+                $definition->getClass(),
                 $vars[$keySchema->hashKey] ?? null,
                 $keySchema->rangeKey !== null ? ($vars[$keySchema->rangeKey] ?? null) : null,
             );
@@ -221,11 +222,11 @@ class Serializer
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
-     * @param Entity|Index|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
+     * @param Entity|Key<Entity>|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
      *
      * @throws DALException if a key field does not exist in the definition or a value is missing
      */
-    public function hashKey(EntityDefinition $definition, AbstractEntity|Index|array $key): string
+    public function hashKey(EntityDefinition $definition, AbstractEntity|Key|array $key): string
     {
         if (!\is_array($key)) {
             $key = $this->serializeKey($definition, $key);
@@ -257,9 +258,9 @@ class Serializer
      *
      * @throws DALException
      *
-     * @return Index|null - Returns null if the key cannot be build from the provided fields, e.g. empty or key schema not matching
+     * @return Key<Entity>|null - Returns null if the key cannot be build from the provided fields, e.g. empty or key schema not matching
      */
-    public function deserializeKey(EntityDefinition $definition, array $output): ?Index
+    public function deserializeKey(EntityDefinition $definition, array $output): ?Key
     {
         $keySchema = $definition->getKeySchema();
 
@@ -276,7 +277,7 @@ class Serializer
 
         $rangeValue = $keySchema->rangeKey !== null ? ($deserialized[$keySchema->rangeKey] ?? null) : null;
 
-        return new Index($deserialized[$keySchema->hashKey] ?? null, $rangeValue);
+        return new Key($definition->getClass(), $deserialized[$keySchema->hashKey] ?? null, $rangeValue);
     }
 
     /**

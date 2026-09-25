@@ -5,20 +5,20 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class BeginsWithFilter implements FilterInterface
+final readonly class BeginsWithFilter implements FilterInterface
 {
     public function __construct(
-        public readonly string $fieldName,
-        public readonly mixed $value,
+        public string $fieldName,
+        public mixed $value,
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(ExpressionCompileContext $context): string
     {
         return \sprintf(
             'begins_with(%s, %s)',
-            $context->attribute($this->fieldName),
-            $context->placeholder($this->fieldName, $this->value),
+            $context->path($this->fieldName),
+            $context->value($this->fieldName, $this->value),
         );
     }
 }

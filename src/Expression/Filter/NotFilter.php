@@ -5,10 +5,10 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class NotFilter implements FilterInterface
+final readonly class NotFilter implements FilterInterface
 {
     public function __construct(
-        public readonly FilterInterface $filter,
+        public FilterInterface $filter,
     ) {
     }
 

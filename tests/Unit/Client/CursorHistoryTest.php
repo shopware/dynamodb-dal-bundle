@@ -17,7 +17,6 @@ class CursorHistoryTest extends TestCase
     {
         $history = new CursorHistory();
 
-        static::assertTrue($history->isEmpty());
         static::assertSame(1, $history->page());
         static::assertNull($history->current());
         static::assertNull($history->previous());
@@ -28,7 +27,7 @@ class CursorHistoryTest extends TestCase
     {
         [$first, $second] = [self::token('a'), self::token('b')];
 
-        $history = new CursorHistory()->append($first)->append($second);
+        $history = new CursorHistory()->advance($first)->advance($second);
 
         static::assertSame(3, $history->page());
         static::assertSame($second, $history->current());
@@ -48,7 +47,7 @@ class CursorHistoryTest extends TestCase
     {
         $history = new CursorHistory([self::token('a'), CursorHistory::combine(['open' => self::token('b')])]);
 
-        $string = (string) $history;
+        $string = $history->toString();
 
         static::assertMatchesRegularExpression('/^[A-Za-z0-9_.-]+$/', $string);
         static::assertEquals($history, CursorHistory::fromString($string));
@@ -67,8 +66,8 @@ class CursorHistoryTest extends TestCase
 
     public function testAMissingParameterIsPageOne(): void
     {
-        static::assertTrue(CursorHistory::fromString(null)->isEmpty());
-        static::assertTrue(CursorHistory::fromString('')->isEmpty());
+        static::assertSame(1, CursorHistory::fromString(null)->page());
+        static::assertSame([], CursorHistory::fromString('')->positions);
     }
 
     /**
@@ -110,6 +109,13 @@ class CursorHistoryTest extends TestCase
         yield 'scalar' => [$encode('"open"')];
         yield 'list of tokens' => [$encode('["a","b"]')];
         yield 'non-string token' => [$encode('{"open":1}')];
+    }
+
+    public function testCombineRefusesANameThatIsNotValidUtf8(): void
+    {
+        $this->expectException(InvalidCursorException::class);
+
+        CursorHistory::combine(["\xff" => self::token('a')]);
     }
 
     #[DataProvider('uncombinedPositions')]

@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
@@ -54,6 +55,36 @@ class ExpressionCompiler implements ResetInterface
     }
 
     /**
+     * Compiles conditions that have to check something, a write's condition or a query's key condition, into one that
+     * holds where all of them hold, joined as `Filter::and()` joins its children. Without a condition, a write would go
+     * through unconditionally and a query would be refused, so each of them has to compile to something, and none can
+     * hide behind another, such as a caller's condition behind an update's check that its item exists.
+     *
+     * @throws ConditionEmptyException if a condition compiles to nothing
+     * @throws DALException if a condition names a field the entity does not have, or a value that does not serialize for it
+     */
+    public function compileCondition(EntityDefinition $definition, FilterInterface $condition, FilterInterface ...$conditions): ExpressionCompiledResult
+    {
+        $conditions = [$condition, ...array_values($conditions)];
+        $context = $this->createContext($definition);
+
+        $fragments = [];
+        foreach ($conditions as $filter) {
+            $context->isCompound = false;
+            $fragment = $filter->compile($context);
+            if ($fragment === null || trim($fragment) === '') {
+                throw new ConditionEmptyException($definition);
+            }
+
+            // A lone condition is never wrapped, as a key condition in parentheses may be refused
+            /** @phpstan-ignore-next-line booleanAnd.rightAlwaysFalse -- the flag can change in `->compile` calls */
+            $fragments[] = \count($conditions) > 1 && $context->isCompound ? "({$fragment})" : $fragment;
+        }
+
+        return new ExpressionCompiledResult(implode(' AND ', $fragments), $context->names, $context->values);
+    }
+
+    /**
      * Normalizes the update, then compiles it.
      *
      * @throws UpdateEmptyException if the update has nothing to write
@@ -84,7 +115,7 @@ class ExpressionCompiler implements ResetInterface
      */
     private function compile(EntityDefinition $definition, FilterInterface|UpdateExpression $expression): ExpressionCompiledResult
     {
-        $context = new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
+        $context = $this->createContext($definition);
 
         $compiled = $expression->compile($context);
         if ($compiled === null || trim($compiled) === '') {
@@ -92,6 +123,11 @@ class ExpressionCompiler implements ResetInterface
         }
 
         return new ExpressionCompiledResult($compiled, $context->names, $context->values);
+    }
+
+    private function createContext(EntityDefinition $definition): ExpressionCompileContext
+    {
+        return new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
     }
 
     /**

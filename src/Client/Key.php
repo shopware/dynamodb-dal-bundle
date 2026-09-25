@@ -6,24 +6,27 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 
 /**
- * A key address: the partition (hash) value and, for a table that declares one, the sort (range) value.
- * `$index` selects which key it addresses — `null` is the base-table primary key, a name is that GSI's
- * key.
+ * An item's primary key. The values are PHP values, serialized by the key fields' serializers like any other field.
+ * The sort (range) value is ignored for a table without a sort key.
+ *
+ * @template-covariant Entity of AbstractEntity
  */
-final class Index
+final readonly class Key
 {
+    /**
+     * @param class-string<Entity> $class
+     */
     public function __construct(
-        public readonly mixed $hashValue,
-        public readonly mixed $rangeValue = null,
-        public readonly ?string $index = null,
+        public string $class,
+        public mixed $hashValue,
+        public mixed $rangeValue = null,
     ) {
     }
 
     /**
      * @internal - the serializer maps a key onto its fields; callers address entities by class
      *
-     * The key as a `[fieldName => value]` map, using the base key schema (or the named GSI's). `[]` if the
-     * named index is not declared.
+     * The key as a `[fieldName => value]` map of the table's key schema.
      *
      * @param EntityDefinition<AbstractEntity> $definition
      *
@@ -31,13 +34,7 @@ final class Index
      */
     public function getFields(EntityDefinition $definition): array
     {
-        $keySchema = $this->index === null
-            ? $definition->getKeySchema()
-            : $definition->getIndex($this->index)?->keySchema;
-
-        if ($keySchema === null) {
-            return [];
-        }
+        $keySchema = $definition->getKeySchema();
 
         $fields = [$keySchema->hashKey => $this->hashValue];
         if ($keySchema->rangeKey !== null) {
