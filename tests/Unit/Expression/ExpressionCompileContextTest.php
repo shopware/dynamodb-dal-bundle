@@ -90,8 +90,6 @@ class ExpressionCompileContextTest extends TestCase
 
     public function testEqualsAnyCompilesToInOperator(): void
     {
-        // EqualsAnyFilter calls value() once per value (left of `IN`) before
-        // calling path() on the right side, so values get the lower indices.
         [$expression, $context] = $this->compile(Filter::equalsAny('name', ['a', 'b', 'c']));
 
         static::assertSame('#name IN (:h_0_name, :h_1_name, :h_2_name)', $expression);
@@ -200,9 +198,7 @@ class ExpressionCompileContextTest extends TestCase
 
         [$expression] = $this->compile($filter);
 
-        // For the IN clause, EqualsAnyFilter registers value placeholders BEFORE its
-        // attribute placeholder — that's why the values are :h_2/:h_3 but the attribute
-        // is #h_3.
+        // Value placeholders are numbered across the whole expression, so the IN values go on from :h_2.
         static::assertSame(
             'NOT #name = :h_0_name AND NOT contains(#name, :h_1_name) AND NOT attribute_exists(#required) AND NOT #name IN (:h_2_name, :h_3_name)',
             $expression,
@@ -379,8 +375,7 @@ class ExpressionCompileContextTest extends TestCase
     public function testDottedPathOnNonMapRootThrows(): void
     {
         // `name` is a plain string field — it has no `valueFieldDefinition`, so any path
-        // beyond the root is rejected. Subsequent segments aren't otherwise validated, but
-        // the root must opt into being traversable.
+        // beyond the root is rejected.
         $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('name.foo');
 

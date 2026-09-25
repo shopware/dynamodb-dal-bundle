@@ -11,6 +11,10 @@ use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * Turns the value of an entity property into a DynamoDB attribute and back. A registered subclass is picked up
+ * without a tag, and a property takes the first serializer whose {@see supports()} claims its type, by tag priority:
+ * the application's own at the default 0, the bundle's at -100, and the JSON one last at -500.
+ *
  * @template ValueType = mixed
  * @template TargetType of string = string
  */
@@ -18,7 +22,7 @@ abstract class AbstractFieldSerializer
 {
     /**
      * Called during container build time when compiling item definitions.
-     * May add additional exceptions if a type is supported but not in the correct shape.
+     * May throw a \LogicException for a supported type in a shape it cannot serialize, such as an enum without cases.
      *
      * @param string $type Type name from `\ReflectionNamedType::getName()`
      * @param string|null $docblockType Optional @var type for array fields (e.g. "list<string>", "array<string, int>") to distinguish Map vs List

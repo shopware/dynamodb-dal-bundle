@@ -28,7 +28,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
             type, nullability, default value and serializer it was compiled with.
 
             The entity can be given as a fully qualified class name, as its short class name, or as the
-            logical table name from <info>#[Table(name: ..)]</info>. Run without an argument to select from
+            logical name from <info>#[Table(name: ..)]</info>. Run without an argument to select from
             every registered entity; that prompt needs an interactive terminal, so a non-interactive run
             has to pass one.
 
@@ -56,7 +56,7 @@ readonly class DALDefinitionCommand
     public function __invoke(
         SymfonyStyle $io,
         #[Argument(
-            description: 'Entity class (fully qualified or short), or the logical table name; omit to select one interactively',
+            description: 'Entity class (fully qualified or short), or the logical name; omit to select one interactively',
             suggestedValues: [self::class, 'suggestEntities'],
         )]
         ?string $entity = null,

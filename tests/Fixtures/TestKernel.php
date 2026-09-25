@@ -30,8 +30,8 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * Minimal application the integration tests compile the bundle in: the framework bundle, this
- * bundle, a stubbed DynamoDB client and the fixture entity plus repository, registered the way an
- * application registers its own `App\` services.
+ * bundle, a stubbed DynamoDB client and the fixture entity, loaded the way an application loads
+ * its own `App\` services.
  *
  * In `dev` it also brings the web profiler and the `aws.base-client` scope the DAL profiler
  * integration hooks into, which the AsyncAws bundle provides in a real application.

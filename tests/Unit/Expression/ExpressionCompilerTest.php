@@ -74,11 +74,8 @@ class ExpressionCompilerTest extends TestCase
 
     public function testTopLevelAndDoesNotWrapInOuterParentheses(): void
     {
-        // Regression: an outer `(...)` around a top-level AND breaks DynamoDB
-        // KeyConditionExpression, which only accepts `hashKey = :v [AND rangeKey <op> :v]`
-        // and rejects the parenthesised form with a ValidationException at runtime.
-        // A repository that feeds the compile output straight into a KeyConditionExpression on an
-        // index depends on this.
+        // A key condition compiles the same way, and DynamoDB only accepts one as
+        // `hashKey = :v [AND rangeKey <op> :v]`: an outer `(...)` fails with a ValidationException.
         $result = $this->compiler->compileFilter(
             NormalEntity::createDefinition(),
             Filter::and(

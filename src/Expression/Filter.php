@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
@@ -23,6 +24,7 @@ use Shopware\DynamodbDalBundle\Expression\Filter\SizeEqualsFilter;
  *
  * ```
  * $input = new ScanInput(
+ *     OrderEntity::class,
  *     filter: Filter::and(
  *         Filter::equals('name', 'something'),
  *         Filter::or(
@@ -45,6 +47,9 @@ final class Filter
     }
 
     /**
+     * Without values it checks nothing and drops out: a search filter then matches every item, and a condition of
+     * nothing else throws a {@see ConditionEmptyException}.
+     *
      * @param list<mixed> $values
      */
     public static function equalsAny(string $fieldName, array $values): EqualsAnyFilter
@@ -97,11 +102,19 @@ final class Filter
         return new SizeEqualsFilter($fieldName, $value);
     }
 
+    /**
+     * Filters that check nothing drop out. With none left, this checks nothing either, like {@see self::equalsAny()}
+     * without values.
+     */
     public static function and(FilterInterface ...$filters): AndFilter
     {
         return new AndFilter(...$filters);
     }
 
+    /**
+     * Filters that check nothing drop out. With none left, this checks nothing either, like {@see self::equalsAny()}
+     * without values.
+     */
     public static function or(FilterInterface ...$filters): OrFilter
     {
         return new OrFilter(...$filters);

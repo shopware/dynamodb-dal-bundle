@@ -666,9 +666,9 @@ class WriterClientTest extends TestCase
     }
 
     /**
-     * Keyed by an index there is no entity to fill, so the transaction is not followed by a read.
+     * Keyed by a {@see Key} there is no entity to fill, so the transaction is not followed by a read.
      */
-    public function testUpdateOfSeveralByIndexReadsNothingBack(): void
+    public function testUpdateOfSeveralByKeyReadsNothingBack(): void
     {
         $this->client->expects(static::once())
             ->method('transactWriteItems')

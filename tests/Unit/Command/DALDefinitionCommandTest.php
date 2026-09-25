@@ -44,7 +44,7 @@ class DALDefinitionCommandTest extends TestCase
      */
     public static function entityIdentifierProvider(): iterable
     {
-        yield 'logical table name' => ['order'];
+        yield 'logical name' => ['order'];
         yield 'fully qualified class name' => [OrderEntity::class];
         yield 'fully qualified class name with leading backslash' => ['\\' . OrderEntity::class];
         yield 'short class name' => ['OrderEntity'];
@@ -75,7 +75,7 @@ class DALDefinitionCommandTest extends TestCase
     }
 
     /**
-     * The compiled value definitions of a `array<string, list<string>>` field, so both nesting levels
+     * The compiled value definitions of an `array<string, list<string>>` field, so both nesting levels
      * have to be named after their own serializer.
      */
     public function testRendersNestedMapAndListValueDefinitions(): void

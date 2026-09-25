@@ -146,7 +146,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
     /**
      * DynamoDB caps a Query response at 1 MB, so a large partition comes back in several service pages.
-     * The reader is handed an async-aws result that follows them, and the caller sees one stream.
+     * The reader requests one after the other, and the caller sees one stream.
      */
     public function testSearchAutoPaginatesAcrossDynamoDbServicePages(): void
     {

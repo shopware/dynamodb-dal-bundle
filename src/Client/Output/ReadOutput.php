@@ -31,9 +31,7 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
-     * Streams the result exactly once, keyed by position. Throws if this output has already been consumed
-     * by an earlier `getIterator()`/`toArray()`/`first()`/`page()` — build a new result from the same query
-     * to read it again.
+     * Streams the result, keyed by position.
      *
      * @throws \LogicException if this output has already been read
      * @throws DALException if the read fails in the DAL, e.g. on an item that does not deserialize

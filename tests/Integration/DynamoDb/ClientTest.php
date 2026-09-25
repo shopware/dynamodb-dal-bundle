@@ -17,8 +17,8 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 
 /**
- * Drives the {@see Client} facade against real tables: key reads by entity class through a
- * {@see GetInput}, searches and writes by their {@see \Shopware\DynamodbDalBundle\Definition\EntityDefinition}.
+ * Drives the {@see Client} facade against real tables: key reads through a {@see GetInput}, searches and
+ * writes, each input naming its entity class.
  */
 #[CoversClass(Client::class)]
 class ClientTest extends DynamoDbTestCase
@@ -199,7 +199,7 @@ class ClientTest extends DynamoDbTestCase
         static::assertSame(['a', 'b', 'c'], $this->sortedIds([...$first->items, ...$second->items]));
     }
 
-    public function testDeleteByIndexIsIdempotent(): void
+    public function testDeleteByKeyIsIdempotent(): void
     {
         $this->client()->put(new PutInput(RecordEntity::create(self::TENANT, 'a')));
 

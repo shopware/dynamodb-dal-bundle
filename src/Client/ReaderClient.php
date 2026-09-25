@@ -134,8 +134,9 @@ class ReaderClient
 
         if ($query->filter === null && $query->limit !== null) {
             // One past the limit, so page() can tell whether another page follows. DynamoDB filters after
-            // applying `Limit`, so a filtered search reads full pages instead.
-            $input->setLimit($query->limit + 1);
+            // applying `Limit`, so a filtered search reads full pages instead. A limit below 1 counts as 1,
+            // as in SearchOutput.
+            $input->setLimit(max(1, $query->limit) + 1);
         }
 
         // Page by page rather than via async-aws' getItems(), which requests the next page before handing out
@@ -221,11 +222,11 @@ class ReaderClient
             return;
         }
 
-        // Resolve each definition by the physical table a response comes back under, and flatten to
-        // [physicalTable, key map] pairs so the 100-item cap is honoured across all tables. BatchGetItem answers
-        // in no order and does not echo the request, so targets are indexed by their key to match a row back.
+        // Keyed by physical table, as BatchGetItem answers under it
         $definitions = [];
+        // [physicalTable, key map] pairs, flat, as the 100-key cap counts the keys of every table in a request
         $pairs = [];
+        // BatchGetItem answers in no order and does not echo the request, so a row finds its target by its key
         /** @var array<string, array<string, Entity>> $targets - physical table, then key */
         $targets = [];
         foreach ($requests as [$definition, $key, $target]) {
@@ -252,8 +253,8 @@ class ReaderClient
                 $output = $this->client->batchGetItem(['RequestItems' => $requestItems]);
                 $responses = $output->getResponses();
 
-                // Responses come back keyed by physical table; walking the requested definitions instead of
-                // the raw response deserializes every item with the definition its keys were built from.
+                // Walking the requested definitions instead of the raw response deserializes every item with the
+                // definition its keys were built from.
                 foreach ($definitions as $physicalTable => $definition) {
                     foreach ($responses[$physicalTable] ?? [] as $item) {
                         $target = $targets !== [] ? $targets[$physicalTable][$this->serializer->hashKey($definition, $item)] ?? null : null;

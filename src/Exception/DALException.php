@@ -4,8 +4,8 @@ namespace Shopware\DynamodbDalBundle\Exception;
 
 /**
  * Marks every DAL failure — catching this catches anything the DAL throws, whatever it was doing at
- * the time. What went wrong is the class itself; where it went wrong is on the class, as the
- * definition the failure happened on.
+ * the time. The class says what failed; its `$entityDefinition` or `$fieldDefinition`, where it has
+ * one, says where.
  */
 interface DALException extends \Throwable
 {

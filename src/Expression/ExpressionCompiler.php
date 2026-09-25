@@ -18,8 +18,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * Compiles a whole expression, a {@see FilterInterface} or an {@see UpdateExpression}, into an
  * {@see ExpressionCompiledResult}. An update passes through the entity's normalizer first, as the fields of a put do.
  *
- * Each call results a result containing expression attributes that are unique
- * and can be merged with other results into one list without colliding keys.
+ * Each call namespaces its value placeholders apart, so results merge into one request without colliding. A name
+ * placeholder is derived from the attribute it stands for, so every result agrees on it.
  *
  * @internal
  */
@@ -31,8 +31,7 @@ class ExpressionCompiler implements ResetInterface
     private const string PREFIX = 'ex_';
 
     /**
-     * Names in compiled results should be unique to allow merging
-     * multiple results into one list without colliding keys
+     * The number of the last compile, which its prefix carries.
      */
     private int $sequence = 0;
 

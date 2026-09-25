@@ -226,7 +226,8 @@ $entry->updatedAt; // stamped without the caller naming it
 | `Key` | A lookup, delete or update by key | Only the key fields |
 | `Read` | An item DynamoDB returns | Every field, `null` where the row has none, or the default of a field that is not nullable |
 
-- `#[Table(normalizer: ...)]` takes a service ID. In a standard Symfony application, that is the class name.
+- `#[Table(normalizer: ...)]` takes the normalizer's class name, which also has to be its service ID, as it is in a
+  standard Symfony application.
 - Override only the side you need. The other one leaves the fields as they are.
 - Never assume a field is present. `has()` tells whether it is, even as `null`, and `get()` returns `null` for
   one that is absent or not present.

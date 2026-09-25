@@ -61,8 +61,7 @@ class Serializer
     }
 
     /**
-     * Deserializes the provided fields. This is useful for partial DynamoDB
-     * structures like LastEvaluatedKey where required entity fields are not present.
+     * Deserializes the provided fields, a whole item or only some of them, such as a key.
      *
      * @template Entity of AbstractEntity
      *
@@ -96,6 +95,7 @@ class Serializer
                     continue;
                 }
 
+                // Left for the normalizer to fill in; deserialize() fails on it if it stays null
                 $fields[$name] = null;
 
                 continue;
@@ -236,13 +236,12 @@ class Serializer
         foreach ($definition->getKeySchema()->getFields() as $field) {
             $value = $key[$field] ?? null;
 
-            // A key attribute is only ever a string, number or binary.
+            // A key attribute is only ever a string, number or binary, so the default arm is only defensive.
             $parts[] = match (true) {
                 $value === null => '',
                 $value->getS() !== null => 'S:' . $value->getS(),
                 $value->getN() !== null => 'N:' . $value->getN(),
                 $value->getB() !== null => 'B:' . base64_encode($value->getB()),
-                // partition and sort keys are always one of the above, so this is only defensive.
                 default => '',
             };
         }
@@ -258,7 +257,7 @@ class Serializer
      *
      * @throws DALException
      *
-     * @return Key<Entity>|null - Returns null if the key cannot be build from the provided fields, e.g. empty or key schema not matching
+     * @return Key<Entity>|null - Returns null if the key cannot be built from the provided fields, e.g. empty or key schema not matching
      */
     public function deserializeKey(EntityDefinition $definition, array $output): ?Key
     {

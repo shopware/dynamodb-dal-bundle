@@ -28,7 +28,7 @@ final readonly class Cursor
     /**
      * The URL-safe token form: base64url of `{"k": {attribute: {S|N|B: value}}, "b": true}`.
      *
-     * @throws InvalidCursorException if a key attribute is not valid UTF-8, which none DynamoDB returns is
+     * @throws InvalidCursorException if a key attribute is not valid UTF-8; one DynamoDB returned always is
      */
     public function encode(): string
     {

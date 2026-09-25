@@ -272,6 +272,20 @@ class ReaderClientTest extends TestCase
         iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, limit: 2)), false);
     }
 
+    public function testSearchCountsALimitBelowOneAsOne(): void
+    {
+        $this->dynamo->expects(static::once())
+            ->method('scan')
+            ->with(static::callback(static function (DynamoDbScanInput $input): bool {
+                static::assertSame(2, $input->getLimit());
+
+                return true;
+            }))
+            ->willReturn(self::scanOutput());
+
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, limit: -1)), false);
+    }
+
     public function testSearchWithAFilterReadsFullPages(): void
     {
         $this->dynamo->expects(static::once())
@@ -588,7 +602,7 @@ class ReaderClientTest extends TestCase
     }
 
     /**
-     * Stubs the serializer's key serialization used by {@see ReaderClient} to turn an {@see Key} into
+     * Stubs the serializer's key serialization used by {@see ReaderClient} to turn a {@see Key} into
      * the DynamoDB key map for `GetItem`/`BatchGetItem` requests.
      */
     private function stubKeySerialization(): void

@@ -16,8 +16,11 @@ use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
 use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
+use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
@@ -141,7 +144,7 @@ class Client
     }
 
     /**
-     * Counts matches via `Select=COUNT`, summed across all pages. The input's `limit` does not apply.
+     * Counts matches via `Select=COUNT`, summed across all pages. The input's `limit` and `cursor` do not apply.
      *
      * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $query
      *
@@ -182,7 +185,10 @@ class Client
      *
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
-     * @throws DALException if the update, the key or the condition does not serialize, the update has nothing to write, gives a path two values or removes a field that is not nullable, or the stored item does not deserialize
+     * @throws UpdateEmptyException if the update has nothing to write
+     * @throws UpdateDuplicatePathException if the update gives a path two values
+     * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable
+     * @throws DALException if the update, the key or the condition does not serialize, or the stored item does not deserialize
      * @throws ConditionalCheckFailedException when the item does not exist or the condition fails
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
@@ -212,6 +218,7 @@ class Client
     /**
      * Writes puts and deletes spanning one or multiple tables with `BatchWriteItem`, 25 per request, resubmitting
      * whatever DynamoDB leaves unprocessed. Not atomic, and without conditions; for either, use {@see transactWrite()}.
+     * Once every request succeeded, values the normalizer generated are applied back onto each put entity.
      *
      * @throws UnknownEntityDefinitionException
      * @throws DALException if an entity or a key does not serialize
@@ -223,12 +230,17 @@ class Client
     }
 
     /**
-     * Writes puts, updates and deletes spanning one or multiple tables as one `TransactWriteItems`, in the order
+     * Writes puts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order
      * they are given. Past 100 operations, the input is split into several transactions, each atomic on its own.
+     * Once they succeeded, values the normalizer generated are applied back onto each put entity, and an update keyed
+     * by an entity brings it up to date as its {@see UpdateInput::$refresh} says.
      *
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
-     * @throws DALException if an entity, an update, a key or a condition does not serialize, an update has nothing to write, gives a path two values or removes a field that is not nullable, or a stored item does not deserialize
+     * @throws UpdateEmptyException if an update has nothing to write
+     * @throws UpdateDuplicatePathException if an update gives a path two values
+     * @throws FieldMissingSerializedValueException if an update removes a field that is not nullable
+     * @throws DALException if an entity, an update, a key or a condition does not serialize, or a stored item does not deserialize
      * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */

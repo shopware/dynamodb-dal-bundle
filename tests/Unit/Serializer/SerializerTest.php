@@ -580,7 +580,7 @@ class SerializerTest extends TestCase
 
     public function testDeserializeKeyThrowsWhenAKeyValueCannotBeDeserialized(): void
     {
-        // The createdAt range key is an N-typed field; an S value cannot be deserialized into it.
+        // The createdAt range key reads a number or a date string, and `not-a-timestamp` is neither.
         $definition = $this->keyedDefinition();
 
         static::expectException(FieldDeserializationException::class);

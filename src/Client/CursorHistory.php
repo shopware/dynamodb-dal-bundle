@@ -30,7 +30,7 @@ final readonly class CursorHistory
     /**
      * @param list<string> $positions - position `i` produced page `i + 2`
      *
-     * @throws InvalidCursorException if a position is not URL-safe, which no token or combined position is
+     * @throws InvalidCursorException if a position is not URL-safe; a token or combined position always is
      */
     public function __construct(array $positions = [])
     {
@@ -55,7 +55,7 @@ final readonly class CursorHistory
 
     /**
      * Folds the positions of a page merged from several searches — one token per search, e.g. one per status
-     * — into a single position. A search still on its first page has no token and is left out.
+     * — into a single position. Leave out a search still on its first page; it has no token.
      *
      * @param array<string, string> $positions - name => token
      *
@@ -138,10 +138,10 @@ final readonly class CursorHistory
     }
 
     /**
-     * The history one page further, resuming from `$position`, or `null` for no position: {@see Page::$next} on
-     * the last page, as it is taken as is.
+     * The history one page further, resuming from `$position`. `null` for a `null` position, so {@see Page::$next}
+     * can be passed as it is: it is `null` on the last page.
      *
-     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
+     * @throws InvalidCursorException if the position is not URL-safe; a token or combined position always is
      *
      * @return ($position is null ? null : self)
      */

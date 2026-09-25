@@ -22,7 +22,9 @@ final readonly class NotFilter implements FilterInterface
 
         /** @phpstan-ignore-next-line ternary.alwaysFalse -- the flag can change in `->compile` calls */
         $expression = $context->isCompound ? "NOT ({$inner})" : "NOT {$inner}";
-        $context->isCompound = false; // compile could have changed it
+
+        // `NOT ...` is one operand, whatever the inner filter was
+        $context->isCompound = false;
 
         return $expression;
     }

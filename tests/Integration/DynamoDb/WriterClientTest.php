@@ -194,7 +194,7 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertSame('credit', $entity->kind);
     }
 
-    public function testUpdateByIndexWritesTheRowAndHasNoEntityToRefresh(): void
+    public function testUpdateByKeyWritesTheRowAndHasNoEntityToRefresh(): void
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
         $this->writer()->put(new PutInput($entity));

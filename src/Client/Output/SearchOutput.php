@@ -14,6 +14,9 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * The matches of a {@see ScanInput} or {@see QueryInput}, streamed once. Iterating stops after the input's `limit`
+ * items, and reads every match without one. {@see page()} reads one page, with tokens for its neighbours.
+ *
  * Not `final`, so a test can double it.
  *
  * @template Entity of AbstractEntity
@@ -27,15 +30,19 @@ class SearchOutput extends ReadOutput
     private readonly ?int $limit;
 
     /**
+     * `$source` keys each entity by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed
+     * by position, as a test double's is, streams all the same, but its tokens are refused when used.
+     *
      * @internal
      *
-     * @param \Generator<array<string, AttributeValue>|int, Entity> $source - each entity keyed by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed by position (a test double) streams all the same, but its tokens are refused when used
+     * @param \Generator<array<string, AttributeValue>|int, Entity> $source
      * @param ScanInput<Entity>|QueryInput<Entity> $search
      */
     public function __construct(
         \Generator $source,
         private readonly ScanInput|QueryInput $search,
     ) {
+        // A limit below 1 counts as 1: a page without items has no item to cut a token from
         $this->limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
         parent::__construct($source);
     }
@@ -61,7 +68,7 @@ class SearchOutput extends ReadOutput
     }
 
     /**
-     * Returns all items requested until $limit is reached, with tokens for the neighbouring pages.
+     * Reads up to the input's `limit` items, or every match without one, with tokens for the neighbouring pages.
      *
      * Going back is the same query read in reverse from the first item, so it needs no history of the pages visited before.
      *

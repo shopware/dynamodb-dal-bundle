@@ -71,6 +71,24 @@ final class FieldPath
         return new self($field, $path, $segments);
     }
 
+    /**
+     * Where in the item a failure on `$field` happened, from the path the failing code named, if any.
+     */
+    public static function locate(FieldDefinition $field, ?string $path): string
+    {
+        $name = $field->getName();
+
+        return match (true) {
+            $path === null || $path === '' => $name,
+            // A collection serializer names the element it was on, opening on its separator
+            str_starts_with($path, '[') || str_starts_with($path, '.') => $name . $path,
+            // A whole path already opens on the property; a value definition is named `property.value`
+            str_starts_with($path, strstr($name, '.', true) ?: $name) => $path,
+            // Anything else names a place below the field
+            default => $name . '.' . $path,
+        };
+    }
+
     public function isNested(): bool
     {
         return \count($this->segments) > 1;

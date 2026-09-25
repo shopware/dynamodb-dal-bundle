@@ -117,6 +117,16 @@ class SearchOutputTest extends TestCase
         static::assertCount(0, $reached, 'page() must not pull past the over-fetched boundary item');
     }
 
+    public function testPageCountsALimitBelowOneAsOne(): void
+    {
+        [$a, $b] = self::entities('a', 'b');
+
+        $page = $this->searchOutput(self::stream($a, $b), new ScanInput(NormalEntity::class, limit: 0))->page();
+
+        static::assertSame([$a], $page->items);
+        static::assertEquals(new Cursor(self::key('a')), self::decode($page->next));
+    }
+
     public function testPageReturnsAllWithoutTokensWhenTheyFitTheLimit(): void
     {
         [$a, $b] = self::entities('a', 'b');

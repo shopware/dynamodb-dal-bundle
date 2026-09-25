@@ -24,9 +24,9 @@ final readonly class Key
     }
 
     /**
-     * @internal - the serializer maps a key onto its fields; callers address entities by class
-     *
      * The key as a `[fieldName => value]` map of the table's key schema.
+     *
+     * @internal - for the serializer, which maps a key onto its fields
      *
      * @param EntityDefinition<AbstractEntity> $definition
      *
