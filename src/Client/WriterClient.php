@@ -16,6 +16,7 @@ use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
@@ -87,7 +88,7 @@ class WriterClient
         $definition = $this->definitionRegistry->getByEntityClass($class);
 
         if (\count($inputs) === 1) {
-            $result = $this->serializer->serialize($definition, $inputs[0]->entity);
+            $result = $this->serializer->serialize($definition, $inputs[0]->entity, NormalizerOperation::Put);
             $expression = $this->compileExpression($definition, $inputs[0]->conditionExpression);
 
             $this->client->putItem([
@@ -141,7 +142,7 @@ class WriterClient
         $definition = $this->definitionRegistry->getByEntityClass($class);
 
         if (\count($inputs) === 1) {
-            $result = $this->serializer->serialize($definition, $inputs[0]->fields);
+            $result = $this->serializer->serialize($definition, $inputs[0]->fields, NormalizerOperation::Update);
             $expression = $this->compileUpdateCondition($definition, $inputs[0]);
             // update entity if the caller did not explicitly disallowed it
             $entity = $inputs[0]->refresh !== false && $inputs[0]->key instanceof AbstractEntity ? $inputs[0]->key : null;
@@ -252,7 +253,7 @@ class WriterClient
                 }
 
                 if ($operation instanceof UpdateInput) {
-                    $result = $this->serializer->serialize($definition, $operation->fields);
+                    $result = $this->serializer->serialize($definition, $operation->fields, NormalizerOperation::Update);
                     $expression = $this->compileUpdateCondition($definition, $operation);
 
                     $writeRequests[] = new TransactWriteItem(['Update' => [
@@ -272,7 +273,7 @@ class WriterClient
                 }
 
                 if ($operation instanceof PutInput) {
-                    $result = $this->serializer->serialize($definition, $operation->entity);
+                    $result = $this->serializer->serialize($definition, $operation->entity, NormalizerOperation::Put);
                     $expression = $this->compileExpression($definition, $operation->conditionExpression);
 
                     $writeRequests[] = new TransactWriteItem(['Put' => [
@@ -312,7 +313,7 @@ class WriterClient
             \ARRAY_FILTER_USE_KEY,
         );
 
-        $entity->setVars($this->serializer->denormalize($definition, $fields));
+        $entity->setVars($this->serializer->denormalize($definition, $fields, $result->getOperation()));
     }
 
     /**
@@ -373,7 +374,7 @@ class WriterClient
             }
 
             if ($input instanceof PutInput) {
-                $result = $this->serializer->serialize($definition, $input->entity);
+                $result = $this->serializer->serialize($definition, $input->entity, NormalizerOperation::Put);
 
                 $writeRequests[] = new WriteRequest(['PutRequest' => $result->getPutExpression()]);
 

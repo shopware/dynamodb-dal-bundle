@@ -3,26 +3,20 @@
 namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity;
 
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 
 /**
- * @extends AbstractNormalizer<array<string, mixed>, array<string, mixed>>
+ * Only reads: writing needs nothing, so `normalize()` is left as it is.
  */
 class ContactEntityNormalizer extends AbstractNormalizer
 {
-    public function normalize(array $fields, array $keys): array
-    {
-        return $fields;
-    }
-
-    public function denormalize(array $fields, array $keys): array
+    public function denormalize(NormalizerContext $context): void
     {
         // The JSON serializer reads the address back as the array it wrote.
-        if (isset($keys['address']) && \is_array($fields['address'] ?? null)) {
+        $address = $context->get('address');
+        if (\is_array($address)) {
             /** @var array{street: string, city: string} $address */
-            $address = $fields['address'];
-            $fields['address'] = Address::fromArray($address);
+            $context->set('address', Address::fromArray($address));
         }
-
-        return $fields;
     }
 }

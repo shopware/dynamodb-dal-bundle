@@ -45,7 +45,7 @@ class Serializer
         $fields = $this->deserializeFields($definition, [
             ...array_fill_keys($definition->getFieldNames(), null),
             ...$output,
-        ]);
+        ], NormalizerOperation::Read);
 
         foreach ($definition->getFieldDefinitions() as $name => $fieldDefinition) {
             if (
@@ -68,12 +68,13 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      * @param array<string, AttributeValue|null> $output
+     * @param NormalizerOperation $operation - what the fields are, as the normalizer is told
      *
      * @throws DALException
      *
      * @return array<string, mixed>
      */
-    public function deserializeFields(EntityDefinition $definition, array $output): array
+    public function deserializeFields(EntityDefinition $definition, array $output, NormalizerOperation $operation): array
     {
         $fields = [];
         foreach ($output as $name => $attributeValue) {
@@ -111,7 +112,7 @@ class Serializer
             }
         }
 
-        return $this->denormalize($definition, $fields);
+        return $this->denormalize($definition, $fields, $operation);
     }
 
     /**
@@ -121,12 +122,13 @@ class Serializer
      *
      * @param EntityDefinition<Entity> $definition
      * @param array<string, mixed> $fields
+     * @param NormalizerOperation $operation - what the fields are for, as the normalizer is told
      *
      * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
      * @return SerializedResult<EntityDefinition<Entity>>
      */
-    public function serialize(EntityDefinition $definition, AbstractEntity|array $fields): SerializedResult
+    public function serialize(EntityDefinition $definition, AbstractEntity|array $fields, NormalizerOperation $operation): SerializedResult
     {
         if ($fields instanceof AbstractEntity) {
             $defaultFields = array_fill_keys($definition->getFieldNames(), null);
@@ -137,7 +139,7 @@ class Serializer
             );
         }
 
-        $fields = $this->normalize($definition, $fields);
+        $fields = $this->normalize($definition, $fields, $operation);
 
         $result = [];
         foreach ($fields as $name => $value) {
@@ -173,7 +175,7 @@ class Serializer
             $result[$name] = new SerializedFieldResult($path, $serialized);
         }
 
-        return new SerializedResult($definition, $result, $fields);
+        return new SerializedResult($definition, $result, $fields, $operation);
     }
 
     /**
@@ -198,7 +200,7 @@ class Serializer
         }
 
         $fields = $key->getFields($definition);
-        $result = $this->serialize($definition, $fields)->getFields();
+        $result = $this->serialize($definition, $fields, NormalizerOperation::Key)->getFields();
 
         // A DynamoDB key must carry every key attribute; a key field that serialized to nothing is a bug.
         foreach (array_keys($fields) as $name) {
@@ -272,7 +274,7 @@ class Serializer
             $fields[$keySchema->rangeKey] = $output[$keySchema->rangeKey];
         }
 
-        $deserialized = $this->deserializeFields($definition, $fields);
+        $deserialized = $this->deserializeFields($definition, $fields, NormalizerOperation::Key);
 
         $rangeValue = $keySchema->rangeKey !== null ? ($deserialized[$keySchema->rangeKey] ?? null) : null;
 
@@ -286,16 +288,17 @@ class Serializer
      *
      * @return array<string, mixed>
      */
-    public function normalize(EntityDefinition $definition, array $fields): mixed
+    public function normalize(EntityDefinition $definition, array $fields, NormalizerOperation $operation): array
     {
-        if (!$definition->getNormalizer()) {
+        $normalizer = $definition->getNormalizer();
+        if (!$normalizer) {
             return $fields;
         }
 
-        $keys = array_keys($fields);
-        $keys = array_combine($keys, $keys);
+        $context = NormalizerContext::fromFields($operation, $fields);
+        $normalizer->normalize($context);
 
-        return $definition->getNormalizer()->normalize($fields, $keys);
+        return $context->getFields();
     }
 
     /**
@@ -305,15 +308,16 @@ class Serializer
      *
      * @return array<string, mixed>
      */
-    public function denormalize(EntityDefinition $definition, array $fields): mixed
+    public function denormalize(EntityDefinition $definition, array $fields, NormalizerOperation $operation): array
     {
-        if (!$definition->getNormalizer()) {
+        $normalizer = $definition->getNormalizer();
+        if (!$normalizer) {
             return $fields;
         }
 
-        $keys = array_keys($fields);
-        $keys = array_combine($keys, $keys);
+        $context = NormalizerContext::fromFields($operation, $fields);
+        $normalizer->denormalize($context);
 
-        return $definition->getNormalizer()->denormalize($fields, $keys);
+        return $context->getFields();
     }
 }

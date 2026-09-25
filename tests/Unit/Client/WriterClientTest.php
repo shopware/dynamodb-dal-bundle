@@ -14,6 +14,8 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -21,6 +23,7 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\PrefixingNormalizer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\RecordingNormalizer;
 use AsyncAws\Core\Test\ResultMockFactory;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\ReturnValue;
@@ -69,7 +72,9 @@ class WriterClientTest extends TestCase
         $this->serializer = $this->createMock(Serializer::class);
         $this->definition = NormalEntity::createDefinition();
 
-        $this->serializer->method('serialize')->willReturn($this->serializedResult());
+        $this->serializer->method('serialize')->willReturnCallback(
+            fn (EntityDefinition $definition, mixed $fields, NormalizerOperation $operation): SerializedResult => $this->serializedResult($operation),
+        );
         $this->serializer->method('serializeKey')
             ->willReturn(['autofilledId' => new AttributeValue(['S' => self::SERIALIZED_ID])]);
         // The definitions here carry no shape-changing normalizer, so denormalizing is the identity —
@@ -143,17 +148,7 @@ class WriterClientTest extends TestCase
      */
     public function testPutWritesTheEntitysShapeRatherThanTheStoredOne(): void
     {
-        $definition = NormalEntity::createDefinition(new PrefixingNormalizer());
-        $serializer = new Serializer();
-        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
-
-        $writer = new WriterClient(
-            $this->client,
-            $serializer,
-            new ExpressionCompiler(),
-            $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
-        );
+        $writer = $this->normalizingWriter(new PrefixingNormalizer());
 
         $this->client->expects(static::once())
             ->method('putItem')
@@ -164,6 +159,109 @@ class WriterClientTest extends TestCase
         $writer->put(NormalEntity::class, new PutInput($entity));
 
         static::assertSame('test', $entity->getName());
+    }
+
+    /**
+     * A transaction returns no item, so the fields an update wrote are turned back into entity values instead,
+     * and the normalizer is told which write they come from rather than taking them for a row it read.
+     */
+    public function testATransactionalUpdateIsDenormalizedAsTheUpdateThatWroteIt(): void
+    {
+        $normalizer = new RecordingNormalizer();
+        $writer = $this->normalizingWriter($normalizer);
+
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $writer->update(
+            NormalEntity::class,
+            new UpdateInput($this->entity('a'), ['name' => 'one']),
+            new UpdateInput($this->entity('b'), ['name' => 'two']),
+        );
+
+        static::assertSame([
+            ['normalize', NormalizerOperation::Update, ['name' => 'one']],
+            ['normalize', NormalizerOperation::Key, ['autofilledId' => 'a']],
+            ['normalize', NormalizerOperation::Update, ['name' => 'two']],
+            ['normalize', NormalizerOperation::Key, ['autofilledId' => 'b']],
+            ['denormalize', NormalizerOperation::Update, ['name' => 'one']],
+            ['denormalize', NormalizerOperation::Update, ['name' => 'two']],
+        ], $normalizer->calls);
+    }
+
+    /**
+     * A put returns no item either, so the fields it sent go back onto the entity as the put's, whichever
+     * request carries them.
+     */
+    public function testALonePutIsDenormalizedAsThePutThatWroteIt(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        $this->normalizingWriter($normalizer)->put(NormalEntity::class, new PutInput($this->entity('a')));
+
+        static::assertSame([NormalizerOperation::Put], $this->denormalizedAs($normalizer));
+    }
+
+    public function testABatchOfPutsIsDenormalizedAsThePutsThatWroteThem(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('batchWriteItem')
+            ->willReturn(ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]));
+
+        $this->normalizingWriter($normalizer)->put(
+            NormalEntity::class,
+            new PutInput($this->entity('a')),
+            new PutInput($this->entity('b')),
+        );
+
+        static::assertSame([NormalizerOperation::Put, NormalizerOperation::Put], $this->denormalizedAs($normalizer));
+    }
+
+    public function testATransactionOfPutsIsDenormalizedAsThePutsThatWroteThem(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('transactWriteItems')
+            ->willReturn(ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $this->normalizingWriter($normalizer)->put(
+            NormalEntity::class,
+            new PutInput($this->entity('a'), Filter::notExists('autofilledId')),
+            new PutInput($this->entity('b')),
+        );
+
+        static::assertSame([NormalizerOperation::Put, NormalizerOperation::Put], $this->denormalizedAs($normalizer));
+    }
+
+    /**
+     * A lone update keyed by an entity asks for the whole new item, so what goes back onto the entity is a row
+     * DynamoDB returned, every field present, rather than the fields the update sent.
+     */
+    public function testALoneUpdateKeyedByAnEntityIsDenormalizedAsTheItemItReturns(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'req']),
+                'name' => new AttributeValue(['S' => 'after']),
+            ]]));
+
+        $entity = $this->entity('a');
+        $this->normalizingWriter($normalizer)->update(NormalEntity::class, new UpdateInput($entity, ['name' => 'after']));
+
+        static::assertSame([NormalizerOperation::Read], $this->denormalizedAs($normalizer));
+        static::assertSame('after', $entity->getName());
     }
 
     public function testPutWithAConditionOnSeveralInputsFallsBackToTransactWriteItems(): void
@@ -492,6 +590,7 @@ class WriterClientTest extends TestCase
             $definition,
             ['settings.colour' => new SerializedFieldResult($path, new AttributeValue(['S' => 'red']))],
             ['settings.colour' => 'red'],
+            NormalizerOperation::Update,
         ));
         $serializer->method('serializeKey')
             ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): array => [
@@ -510,12 +609,45 @@ class WriterClientTest extends TestCase
         );
     }
 
+    /**
+     * A writer on a real serializer, so the normalizer runs as it does outside the test.
+     */
+    private function normalizingWriter(AbstractNormalizer $normalizer): WriterClient
+    {
+        $definition = NormalEntity::createDefinition($normalizer);
+        $serializer = new Serializer();
+        $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
+
+        return new WriterClient(
+            $this->client,
+            $serializer,
+            new ExpressionCompiler(),
+            $registry,
+            new ReaderClient($this->client, $serializer, new ExpressionCompiler(), $registry),
+        );
+    }
+
+    /**
+     * @return list<NormalizerOperation>
+     */
+    private function denormalizedAs(RecordingNormalizer $normalizer): array
+    {
+        $operations = [];
+        foreach ($normalizer->calls as [$side, $operation]) {
+            if ($side === 'denormalize') {
+                $operations[] = $operation;
+            }
+        }
+
+        return $operations;
+    }
+
     private function entity(string $id): NormalEntity
     {
         return new NormalEntity()->setAutofilledId($id)->setRequired('req');
     }
 
-    private function serializedResult(): SerializedResult
+    private function serializedResult(NormalizerOperation $operation): SerializedResult
     {
         $idPath = FieldPath::tryParse($this->definition, 'autofilledId');
         static::assertNotNull($idPath);
@@ -524,6 +656,7 @@ class WriterClientTest extends TestCase
             $this->definition,
             ['autofilledId' => new SerializedFieldResult($idPath, new AttributeValue(['S' => self::SERIALIZED_ID]))],
             ['autofilledId' => self::SERIALIZED_ID],
+            $operation,
         );
     }
 

@@ -12,13 +12,15 @@ use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
-use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalNormalizer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\RecordingNormalizer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -144,7 +146,7 @@ class SerializerTest extends TestCase
         $result = $this->serializer->deserializeFields($this->definition, [
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
             'required' => new AttributeValue(['S' => 'test-required']),
-        ]);
+        ], NormalizerOperation::Read);
 
         static::assertSame([
             'autofilledId' => 'test-id',
@@ -156,7 +158,7 @@ class SerializerTest extends TestCase
     {
         $result = $this->serializer->deserializeFields($this->definition, [
             'unknown' => new AttributeValue(['S' => 'test-required']),
-        ]);
+        ], NormalizerOperation::Read);
 
         static::assertSame([], $result);
     }
@@ -169,7 +171,7 @@ class SerializerTest extends TestCase
             ->setRequiredNullableName('test-required-nullable-name')
             ->setRequired('test-required');
 
-        $result = $this->serializer->serialize($this->definition, $entity);
+        $result = $this->serializer->serialize($this->definition, $entity, NormalizerOperation::Put);
 
         static::assertEquals([
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
@@ -186,7 +188,7 @@ class SerializerTest extends TestCase
             ->setName('test-name')
             ->setRequired('test-required');
 
-        $result = $this->serializer->serialize($this->definition, $entity);
+        $result = $this->serializer->serialize($this->definition, $entity, NormalizerOperation::Put);
 
         static::assertEquals([
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
@@ -203,7 +205,7 @@ class SerializerTest extends TestCase
             ->setRequiredNullableName(null)
             ->setRequired('test-required');
 
-        $result = $this->serializer->serialize($this->definition, $entity);
+        $result = $this->serializer->serialize($this->definition, $entity, NormalizerOperation::Put);
 
         static::assertEquals([
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
@@ -220,7 +222,7 @@ class SerializerTest extends TestCase
             'required' => 'test-required',
         ];
 
-        $result = $this->serializer->serialize($this->definition, $fields);
+        $result = $this->serializer->serialize($this->definition, $fields, NormalizerOperation::Put);
 
         static::assertEquals([
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
@@ -238,7 +240,7 @@ class SerializerTest extends TestCase
             'requiredNullableName' => 'test-required-nullable-name',
         ];
 
-        $result = $this->serializer->serialize($this->definition, $fields);
+        $result = $this->serializer->serialize($this->definition, $fields, NormalizerOperation::Put);
 
         static::assertEquals([
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
@@ -260,65 +262,124 @@ class SerializerTest extends TestCase
         static::expectException(UnknownFieldException::class);
         static::expectExceptionMessage('Unknown field "unknownField" in item "normal"');
 
-        $this->serializer->serialize($this->definition, $fields);
+        $this->serializer->serialize($this->definition, $fields, NormalizerOperation::Put);
     }
 
-    public function testCallNormalizerNormalizeWithRightKeys(): void
+    /**
+     * A put names every field, an unset one as `null`, so the normalizer can fill in what the entity lacks.
+     */
+    public function testAPutTellsTheNormalizerAndHandsItEveryField(): void
     {
-        $normalizer = $this->createMock(AbstractNormalizer::class);
-        $normalizer->expects(static::once())->method('normalize')->with(
-            static::callback(static function (array $vars) {
-                return \array_key_exists('autofilledId', $vars)
-                    && \array_key_exists('name', $vars)
-                    && \array_key_exists('requiredNullableName', $vars)
-                    && \array_key_exists('required', $vars);
-            }),
-            [
-                'autofilledId' => 'autofilledId',
-                'name' => 'name',
-                'requiredNullableName' => 'requiredNullableName',
-                'required' => 'required',
-            ]
-        )->willReturnArgument(0);
+        $normalizer = new RecordingNormalizer();
 
-        $definition = NormalEntity::createDefinition($normalizer);
+        $this->serializer->serialize(
+            NormalEntity::createDefinition($normalizer),
+            new NormalEntity()->setAutofilledId('test-id')->setRequired('test-required'),
+            NormalizerOperation::Put,
+        );
 
-        $serializer = new Serializer();
-        $serializer->serialize($definition, [
-            'autofilledId' => 'test-id',
-            'name' => 'test-name',
-            'requiredNullableName' => 'test-required-nullable-name',
-            'required' => 'test-required',
-        ]);
+        static::assertSame([
+            ['normalize', NormalizerOperation::Put, ['autofilledId' => 'test-id', 'name' => null, 'requiredNullableName' => null, 'required' => 'test-required']],
+        ], $normalizer->calls);
     }
 
-    public function testCallNormalizerDenormalizeWithRightKeys(): void
+    public function testAnUpdateTellsTheNormalizerAndHandsItOnlyWhatItWrites(): void
     {
-        $normalizer = $this->createMock(AbstractNormalizer::class);
-        $normalizer->expects(static::once())->method('denormalize')->with(
-            static::callback(static function (array $vars) {
-                return \array_key_exists('autofilledId', $vars)
-                    && \array_key_exists('name', $vars)
-                    && \array_key_exists('requiredNullableName', $vars)
-                    && \array_key_exists('required', $vars);
-            }),
-            [
-                'autofilledId' => 'autofilledId',
-                'name' => 'name',
-                'requiredNullableName' => 'requiredNullableName',
-                'required' => 'required',
-            ]
-        )->willReturnArgument(0);
+        $normalizer = new RecordingNormalizer();
 
+        $this->serializer->serialize(NormalEntity::createDefinition($normalizer), ['name' => 'test-name'], NormalizerOperation::Update);
+
+        static::assertSame([['normalize', NormalizerOperation::Update, ['name' => 'test-name']]], $normalizer->calls);
+    }
+
+    /**
+     * Both directions of a key are a key: a lookup serializes one, a cursor deserializes one.
+     */
+    public function testAKeyTellsTheNormalizerBothWays(): void
+    {
+        $normalizer = new RecordingNormalizer();
         $definition = NormalEntity::createDefinition($normalizer);
 
-        $serializer = new Serializer();
-        $serializer->deserialize($definition, [
+        $this->serializer->serializeKey($definition, new Index('test-id'));
+        $this->serializer->deserializeKey($definition, ['autofilledId' => new AttributeValue(['S' => 'test-id'])]);
+
+        static::assertSame([
+            ['normalize', NormalizerOperation::Key, ['autofilledId' => 'test-id']],
+            ['denormalize', NormalizerOperation::Key, ['autofilledId' => 'test-id']],
+        ], $normalizer->calls);
+    }
+
+    public function testAReadTellsTheNormalizerAndHandsItEveryField(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->serializer->deserialize(NormalEntity::createDefinition($normalizer), [
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
-            'name' => new AttributeValue(['S' => 'test-name']),
-            'requiredNullableName' => new AttributeValue(['S' => 'test-required-nullable-name']),
             'required' => new AttributeValue(['S' => 'test-required']),
         ]);
+
+        static::assertSame([
+            ['denormalize', NormalizerOperation::Read, ['autofilledId' => 'test-id', 'name' => null, 'requiredNullableName' => null, 'required' => 'test-required']],
+        ], $normalizer->calls);
+    }
+
+    /**
+     * A field the normalizer leaves out of a read is not set, so the entity keeps what it has.
+     */
+    public function testAReadDoesNotSetWhatTheNormalizerOmits(): void
+    {
+        $normalizer = new RecordingNormalizer(denormalize: static function (NormalizerContext $context): void {
+            $context->omit('name');
+        });
+        $entity = new NormalEntity()->setName('kept');
+
+        $this->serializer->deserialize(NormalEntity::createDefinition($normalizer), [
+            'autofilledId' => new AttributeValue(['S' => 'test-id']),
+            'required' => new AttributeValue(['S' => 'test-required']),
+            'name' => new AttributeValue(['S' => 'stored']),
+        ], $entity);
+
+        static::assertSame('kept', $entity->getName());
+        static::assertSame('test-required', $entity->getRequired());
+    }
+
+    /**
+     * Omitting is no way around a required field: the entity could be left without a value for it.
+     */
+    public function testAReadStillNeedsARequiredFieldTheNormalizerOmits(): void
+    {
+        $normalizer = new RecordingNormalizer(denormalize: static function (NormalizerContext $context): void {
+            $context->omit('required');
+        });
+
+        static::expectException(FieldMissingDeserializedValueException::class);
+        $this->serializer->deserialize(NormalEntity::createDefinition($normalizer), [
+            'autofilledId' => new AttributeValue(['S' => 'test-id']),
+            'required' => new AttributeValue(['S' => 'test-required']),
+        ]);
+    }
+
+    /**
+     * Removing a path writes its absence, leaving it out does not touch it at all.
+     */
+    public function testAnUpdateWritesWhatTheNormalizerLeaves(): void
+    {
+        $normalizer = new RecordingNormalizer(static function (NormalizerContext $context): void {
+            $context->set('requiredNullableName', 'added');
+            $context->remove('name');
+            $context->omit('required');
+        });
+
+        $result = $this->serializer->serialize(
+            NormalEntity::createDefinition($normalizer),
+            ['name' => 'test-name', 'required' => 'test-required'],
+            NormalizerOperation::Update,
+        );
+
+        static::assertSame(['requiredNullableName' => '#requiredNullableName = :sv_requiredNullableName'], $result->getExpressions());
+        static::assertSame(['name' => '#name'], $result->getRemoveExpressions());
+        static::assertSame(['name' => null, 'requiredNullableName' => 'added'], $result->getNormalizedFields());
+        static::assertSame(NormalizerOperation::Update, $result->getOperation());
     }
 
     public function testDeserializeUsesDefaultValueWhenFieldMissingAndNotNullable(): void
@@ -362,7 +423,7 @@ class SerializerTest extends TestCase
         $this->expectException(FieldMissingSerializedValueException::class);
         $this->expectExceptionMessage('Missing required value for field');
 
-        $this->serializer->serialize($definition, ['required' => null]);
+        $this->serializer->serialize($definition, ['required' => null], NormalizerOperation::Put);
     }
 
     public function testSerializeWithNullNormalizerReturnsFieldsUnchanged(): void
@@ -379,7 +440,7 @@ class SerializerTest extends TestCase
             new KeySchema('id'),
         );
 
-        $result = $this->serializer->serialize($definition, ['id' => 'x']);
+        $result = $this->serializer->serialize($definition, ['id' => 'x'], NormalizerOperation::Put);
 
         static::assertEquals(['id' => new AttributeValue(['S' => 'x'])], $result->getFields());
     }

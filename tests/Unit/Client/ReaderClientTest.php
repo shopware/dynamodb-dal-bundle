@@ -17,6 +17,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -612,7 +613,7 @@ class ReaderClientTest extends TestCase
             $serialized[$name] = new SerializedFieldResult($path, new AttributeValue(['S' => $value]));
         }
 
-        return new SerializedResult($definition, $serialized, $fields);
+        return new SerializedResult($definition, $serialized, $fields, NormalizerOperation::Key);
     }
 
     /**

@@ -239,6 +239,9 @@
                             <td>{{ loop.index }}</td>
                             <td>
                                 {{ op.operation }}
+                                {% if op.normalizer_operation is defined %}
+                                    <span style="opacity: 0.6;">({{ op.normalizer_operation }})</span>
+                                {% endif %}
                                 {% if op.operation == 'deserialize' %}
                                     <span title="Includes AsyncAws response decoding (json_decode + AttributeValue object construction)" style="cursor: help; opacity: 0.6;">ⓘ</span>
                                 {% endif %}

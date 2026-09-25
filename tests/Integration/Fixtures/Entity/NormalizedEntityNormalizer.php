@@ -3,48 +3,50 @@
 namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity;
 
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Symfony\Component\Uid\Uuid;
 
-/**
- * @extends AbstractNormalizer<array<string, mixed>, array<string, mixed>>
- */
 class NormalizedEntityNormalizer extends AbstractNormalizer
 {
     public const string DEFAULT_LABEL = 'unlabelled';
 
-    public function normalize(array $fields, array $keys): array
+    /**
+     * Fixed, like the generated `createdAt`, so a test can tell the stamp from any other time.
+     */
+    public const int UPDATED_AT = 1_700_000_500;
+
+    public function normalize(NormalizerContext $context): void
     {
-        if (isset($keys['id'])) {
-            $fields['id'] ??= Uuid::v7();
+        // Only an update is known to change a stored row; a put may be its first write.
+        if ($context->operation === NormalizerOperation::Update) {
+            $context->set('updatedAt', new \DateTimeImmutable('@' . self::UPDATED_AT));
+
+            return;
         }
 
-        if (isset($keys['createdAt'])) {
-            $fields['createdAt'] ??= new \DateTimeImmutable('@1700000000');
+        if ($context->operation !== NormalizerOperation::Put) {
+            return;
         }
+
+        $context->setIfUnset('id', Uuid::v7());
+        $context->setIfUnset('createdAt', new \DateTimeImmutable('@1700000000'));
 
         // The partition key exists only in the stored row; it is composed from the two fields the
         // call site does set.
-        $tenantId = $fields['tenantId'] ?? '';
-        $kind = $fields['kind'] ?? '';
-        if (isset($keys['pk']) && ($fields['pk'] ?? null) === null && \is_string($tenantId) && \is_string($kind)) {
-            $fields['pk'] = \sprintf('%s#%s', $tenantId, $kind);
+        $tenantId = $context->get('tenantId') ?? '';
+        $kind = $context->get('kind') ?? '';
+        if ($context->get('pk') === null && \is_string($tenantId) && \is_string($kind)) {
+            $context->set('pk', \sprintf('%s#%s', $tenantId, $kind));
         }
 
-        if (isset($keys['label'])) {
-            $fields['label'] ??= self::DEFAULT_LABEL;
-        }
-
-        return $fields;
+        $context->setIfUnset('label', self::DEFAULT_LABEL);
     }
 
-    public function denormalize(array $fields, array $keys): array
+    public function denormalize(NormalizerContext $context): void
     {
         // A row written before `label` existed carries no value for it; fill it in rather than
         // failing the read on a missing required field.
-        if (isset($keys['label'])) {
-            $fields['label'] ??= self::DEFAULT_LABEL;
-        }
-
-        return $fields;
+        $context->setIfUnset('label', self::DEFAULT_LABEL);
     }
 }

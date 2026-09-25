@@ -19,6 +19,7 @@ use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\UidFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Fixtures\Entity\TestEntity;
 use Shopware\DynamodbDalBundle\Tests\Fixtures\Entity\TestStatus;
@@ -147,7 +148,7 @@ class BundleIntegrationTest extends TestCase
         $entity->nested = ['a' => ['x']];
         $entity->payload = ['key' => 'value'];
 
-        $item = $serializer->serialize($definition, $entity)->getFields();
+        $item = $serializer->serialize($definition, $entity, NormalizerOperation::Put)->getFields();
 
         static::assertSame($entity->id->toString(), $item['id']->getS());
         static::assertSame('1700000000', $item['createdAt']->getN());
