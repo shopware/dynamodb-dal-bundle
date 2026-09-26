@@ -155,8 +155,10 @@ class Serializer
                 continue;
             }
 
-            // The normalizer ran before this and did not fill it, so the value is genuinely unset.
-            if ($value === null && !$path->definition->hasDefaultValue()) {
+            // The normalizer ran before this and did not fill it, so the value is genuinely unset. A default is no
+            // fallback: an entity holds it already unless it was unset() or its normalizer removed it, and a key
+            // missing a part of it must not address another item.
+            if ($value === null) {
                 throw new FieldMissingSerializedValueException($path->definition);
             }
 
