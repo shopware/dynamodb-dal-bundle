@@ -26,12 +26,11 @@ use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 
 /**
- * The entry point for reading and writing entities. Callers pass and receive entities and plain PHP values only; how
- * each field is stored follows from the entity class an input names.
+ * The entry point for reading and writing entities.
+ * Callers pass and receive entities and plain PHP values only;
+ * how each field is stored follows from the entity class an input names.
  *
- * Not `final`, so a test can double it.
- *
- * @final
+ * @final - considered final, but not marked as such so a test can double it
  */
 class Client
 {
@@ -67,8 +66,8 @@ class Client
     }
 
     /**
-     * Opens a {@see GetOutput} over the items stored under `$keys`, which may span entity classes. Shorthand for
-     * {@see get()} with a {@see GetInput} of these keys.
+     * Opens a {@see GetOutput} over the items stored under `$keys`, which may span entity classes.
+     * Shorthand for {@see get()} with a {@see GetInput} of these keys.
      *
      * @template Entity of AbstractEntity
      *
@@ -158,8 +157,8 @@ class Client
     }
 
     /**
-     * Writes the whole item with `PutItem`, replacing a stored one with the same key. Values the normalizer
-     * generates are applied back onto the entity.
+     * Writes the whole item with `PutItem`, replacing a stored one with the same key.
+     * Values the normalizer generates are applied back onto the entity.
      *
      * @template Entity of AbstractEntity
      *
@@ -177,7 +176,8 @@ class Client
     }
 
     /**
-     * Updates an existing item with `UpdateItem`. An update never creates an item: a key without one fails like a failed condition.
+     * Updates an existing item with `UpdateItem`.
+     * An update never creates an item: a key without one fails like a failed condition.
      *
      * @template Entity of AbstractEntity
      *
@@ -198,7 +198,8 @@ class Client
     }
 
     /**
-     * Deletes the item by {@see Key} or entity with `DeleteItem`. Deleting an item that does not exist is not an error.
+     * Deletes the item by {@see Key} or entity with `DeleteItem`.
+     * Deleting an item that does not exist is not an error.
      *
      * @template Entity of AbstractEntity
      *
@@ -216,8 +217,8 @@ class Client
     }
 
     /**
-     * Writes puts and deletes spanning one or multiple tables with `BatchWriteItem`, 25 per request, resubmitting
-     * whatever DynamoDB leaves unprocessed. Not atomic, and without conditions; for either, use {@see transactWrite()}.
+     * Writes puts and deletes spanning one or multiple tables with `BatchWriteItem`, 25 per request, resubmitting whatever DynamoDB leaves unprocessed.
+     * Not atomic, and without conditions; for either, use {@see transactWrite()}.
      * Once every request succeeded, values the normalizer generated are applied back onto each put entity.
      *
      * @throws UnknownEntityDefinitionException
@@ -230,8 +231,8 @@ class Client
     }
 
     /**
-     * Writes puts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order
-     * they are given. Past 100 operations, the input is split into several transactions, each atomic on its own.
+     * Writes puts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order they are given.
+     * Past 100 operations, the input is split into several transactions, each atomic on its own.
      * Once they succeeded, values the normalizer generated are applied back onto each put entity, and an update keyed
      * by an entity brings it up to date as its {@see UpdateInput::$refresh} says.
      *

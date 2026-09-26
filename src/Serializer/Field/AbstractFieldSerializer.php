@@ -11,8 +11,9 @@ use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Turns the value of an entity property into a DynamoDB attribute and back. A registered subclass is picked up
- * without a tag, and a property takes the first serializer whose {@see supports()} claims its type, by tag priority:
+ * Turns the value of an entity property into a DynamoDB attribute and back.
+ * A registered subclass is picked up without a tag, and a property takes the first serializer
+ * whose {@see supports()} claims its type, by tag priority:
  * the application's own at the default 0, the bundle's at -100, and the JSON one last at -500.
  *
  * @template ValueType = mixed
@@ -53,9 +54,8 @@ abstract class AbstractFieldSerializer
     abstract public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed;
 
     /**
-     * Where inside a collection a failure happened, as a document path DynamoDB addresses an element
-     * by: this element's own segment (`[2]`, `.colour`), plus whatever the failure from inside it
-     * named below that.
+     * Where inside a collection a failure happened, as a document path DynamoDB addresses an element by:
+     * this element's own segment (`[2]`, `.colour`), plus whatever the failure from inside it named below that.
      *
      * @param string $segment This element's segment, opening on its separator
      * @param FieldDefinition<AbstractEntity> $valueDefinition The definition the failure came out of

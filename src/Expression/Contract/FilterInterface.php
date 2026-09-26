@@ -21,6 +21,8 @@ interface FilterInterface
      * it, and a write's condition or a query's key condition refuses it with a {@see ConditionEmptyException}.
      * Implementations MUST NOT register attribute names or values on the context when they return `null`, so empty
      * children don't pollute the final request.
+     * 
+     * @phpstan-impure - the context is mutated
      *
      * @throws DALException if the filter names a field the entity does not have, or a value that does not serialize for it
      */

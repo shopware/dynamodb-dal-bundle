@@ -4,8 +4,8 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 
 /**
  * How an {@see UpdateInput} keyed by an entity brings that entity up to date with what it wrote.
- * A lone update gets the stored item back from DynamoDB for any case but {@see self::None}. An update in a
- * transaction gets no item back, which is where the cases differ.
+ * A lone update gets the stored item back from DynamoDB for any case but {@see self::None}.
+ * An update in a transaction gets no item back, which is where the cases differ.
  */
 enum Refresh
 {
@@ -17,7 +17,7 @@ enum Refresh
 
     /**
      * Like {@see self::Full}, but a transaction never reads the item back: it applies the fields written as a whole,
-     * and leaves the entity as it was for nested paths and actions.
+     * and leaves the entity as it was for nested paths and computed values.
      */
     case WithoutReadBack;
 

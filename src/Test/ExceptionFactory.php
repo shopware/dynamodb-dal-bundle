@@ -8,8 +8,8 @@ use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 
 /**
- * Builds the DynamoDB exceptions a write passes through unwrapped, for a test double of the client to throw. The
- * exceptions of the bundle itself take the definition they name, which {@see EntityDefinitionFactory} builds:
+ * Builds the DynamoDB exceptions a write passes through unwrapped.
+ * The exceptions of the bundle itself take the definition they name, which {@see EntityDefinitionFactory} builds:
  * `new ConditionEmptyException(EntityDefinitionFactory::create(OrderEntity::class))`.
  */
 final class ExceptionFactory

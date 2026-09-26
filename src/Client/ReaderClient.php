@@ -134,8 +134,7 @@ class ReaderClient
 
         if ($query->filter === null && $query->limit !== null) {
             // One past the limit, so page() can tell whether another page follows. DynamoDB filters after
-            // applying `Limit`, so a filtered search reads full pages instead. A limit below 1 counts as 1,
-            // as in SearchOutput.
+            // applying `Limit`, so a filtered search reads full pages instead.
             $input->setLimit(max(1, $query->limit) + 1);
         }
 

@@ -6,8 +6,8 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 
 /**
  * A field that may not be null has no serialized value to write, because it was
- * - handed in as null with no default to fall back on; an update, which removes a field given as null,
- *   never falls back on one;
+ * - handed in as null with no default to fall back on; an update, which removes a field
+ *   given as null, never falls back on one;
  * - or serialized to nothing where a value is required, as it is for every key attribute.
  *
  * The normalizer runs before this, so it did not fill the field in either.

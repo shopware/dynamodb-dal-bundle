@@ -22,25 +22,4 @@ final readonly class Key
         public mixed $rangeValue = null,
     ) {
     }
-
-    /**
-     * The key as a `[fieldName => value]` map of the table's key schema.
-     *
-     * @internal - for the serializer, which maps a key onto its fields
-     *
-     * @param EntityDefinition<AbstractEntity> $definition
-     *
-     * @return array<string, mixed>
-     */
-    public function getFields(EntityDefinition $definition): array
-    {
-        $keySchema = $definition->getKeySchema();
-
-        $fields = [$keySchema->hashKey => $this->hashValue];
-        if ($keySchema->rangeKey !== null) {
-            $fields[$keySchema->rangeKey] = $this->rangeValue;
-        }
-
-        return $fields;
-    }
 }

@@ -6,8 +6,8 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 
 /**
  * Puts, updates and deletes across entity classes, written with `TransactWriteItems`: all-or-nothing up to 100
- * operations, and past that split into several transactions, each atomic on its own. The operations are sent in the
- * order they are given, which is the order of the cancellation reasons a failed transaction reports.
+ * operations, and past that split into several transactions, each atomic on its own.
+ * The operations are sent in the order they are given, which is the order of the cancellation reasons a failed transaction reports.
  */
 final readonly class TransactWriteInput
 {

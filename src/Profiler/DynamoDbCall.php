@@ -3,8 +3,8 @@
 namespace Shopware\DynamodbDalBundle\Profiler;
 
 /**
- * What the profiler reads off a call to DynamoDB: the application frame that entered the DAL, and the operation a
- * request names.
+ * What the profiler reads off a call to DynamoDB: the application frame that entered the DAL,
+ * and the operation a request names.
  *
  * @internal
  *

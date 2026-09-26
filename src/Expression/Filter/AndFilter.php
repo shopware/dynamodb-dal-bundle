@@ -32,7 +32,6 @@ final readonly class AndFilter implements FilterInterface
                 continue;
             }
 
-            /** @phpstan-ignore-next-line if.alwaysFalse -- the flag can change in `->compile` calls */
             if ($context->isCompound) {
                 $fragment = "({$fragment})";
             }

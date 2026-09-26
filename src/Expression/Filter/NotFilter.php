@@ -20,7 +20,6 @@ final readonly class NotFilter implements FilterInterface
             return null;
         }
 
-        /** @phpstan-ignore-next-line ternary.alwaysFalse -- the flag can change in `->compile` calls */
         $expression = $context->isCompound ? "NOT ({$inner})" : "NOT {$inner}";
 
         // `NOT ...` is one operand, whatever the inner filter was

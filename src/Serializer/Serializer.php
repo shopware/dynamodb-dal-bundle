@@ -198,7 +198,12 @@ class Serializer
             );
         }
 
-        $fields = $key->getFields($definition);
+        $keySchema = $definition->getKeySchema();
+        $fields = [$keySchema->hashKey => $key->hashValue];
+        if ($keySchema->rangeKey !== null) {
+            $fields[$keySchema->rangeKey] = $key->rangeValue;
+        }
+
         $result = $this->serialize($definition, $fields, NormalizerOperation::Key)->getFields();
 
         // A DynamoDB key must carry every key attribute; a key field that serialized to nothing is a bug.

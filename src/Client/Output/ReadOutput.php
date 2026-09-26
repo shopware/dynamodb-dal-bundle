@@ -7,9 +7,9 @@ use Shopware\DynamodbDalBundle\Exception\DALException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
- * A DynamoDB read result that streams its source generator **once**, whether a search or a key read produced it. It
- * is single-use: the first read of it consumes the stream, and any further read throws. There is no buffering, so a
- * large scan or key read never accumulates its rows in memory.
+ * A DynamoDB read result that streams its source generator **once**, whether a search or a key read produced it.
+ * It is single-use: the first read of it consumes the stream, and any further read throws.
+ * There is no buffering, so a large scan or key read never accumulates its rows in memory.
  *
  * @template Entity of AbstractEntity
  * @template Key - what the source keys each entity by; consumers only ever see positions

@@ -10,16 +10,14 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
  * The entities a single- or multi-table {@see GetInput} finds, in no particular order, streamed once like the
- * matches of a search: each `BatchGetItem` of 100 keys is read as the stream reaches it. {@see forEntity()} and
- * {@see grouped()} read it as the other terminals do, so use one of them, and only once.
- *
- * Not `final`, so a test can double it.
+ * matches of a search: each `BatchGetItem` of 100 keys is read as the stream reaches it.
+ * {@see forEntity()} and {@see grouped()} read it as the other terminals do, so use one of them, and only once.
  *
  * @template Entity of AbstractEntity = never
  *
  * @extends ReadOutput<Entity, int>
  *
- * @final
+ * @final - considered final, but not marked as such so a test can double it
  */
 class GetOutput extends ReadOutput
 {

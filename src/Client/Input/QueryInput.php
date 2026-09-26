@@ -19,7 +19,7 @@ final readonly class QueryInput
      * @param ?string $index - query's `IndexName`: the global secondary index to query, as declared on `#[Table]`; `null` queries the table
      * @param ?FilterInterface $filter - query's `FilterExpression`: drops items after they are read, so they still cost read capacity
      * @param bool $forward - query's `ScanIndexForward`: `false` returns the items in descending sort key order
-     * @param bool $consistentRead - query's `ConsistentRead`. Strongly consistent read; off by default. DynamoDB rejects it on a GSI — only request it for a base-table query
+     * @param bool $consistentRead - query's `ConsistentRead`. Strongly consistent read; off by default. DynamoDB rejects it on a GSI, but LSI and PK queries accept it
      * @param ?string $cursor - a {@see Page::$next} or {@see Page::$previous} token of this same query; `null` starts from the beginning
      * @param ?int $limit - the most items to return; one below 1 counts as 1. With a filter, whole pages are read and cut to size here, as DynamoDB applies its `Limit` before filtering
      */

@@ -101,8 +101,8 @@ final class Update
     }
 
     /**
-     * Adds elements to a set with DynamoDB's `ADD`, creating a missing set. `$elements` is a value of the set field,
-     * serialized by its serializer.
+     * Adds elements to a set with DynamoDB's `ADD`, creating a missing set.
+     * `$elements` is a value of the set field, serialized by its serializer.
      */
     public static function addToSet(string $fieldName, mixed $elements): UpdateExpression
     {
@@ -110,8 +110,9 @@ final class Update
     }
 
     /**
-     * Removes elements from a set with DynamoDB's `DELETE`. `$elements` is a value of the set field, serialized by its
-     * serializer. To remove the attribute itself, use {@see self::remove()}.
+     * Removes elements from a set with DynamoDB's `DELETE`.
+     * `$elements` is a value of the set field, serialized by its serializer.
+     * To remove the attribute itself, use {@see self::remove()}.
      */
     public static function removeFromSet(string $fieldName, mixed $elements): UpdateExpression
     {
@@ -119,8 +120,8 @@ final class Update
     }
 
     /**
-     * Combines expressions, and actions of your own, into one, as `Filter::and()` combines filters. See
-     * {@see UpdateExpression::with()}.
+     * Combines expressions, and actions of your own, into one, as `Filter::and()` combines filters.
+     * See {@see UpdateExpression::with()}.
      */
     public static function with(UpdateExpression|UpdateActionInterface ...$updates): UpdateExpression
     {

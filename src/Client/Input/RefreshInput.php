@@ -5,8 +5,8 @@ namespace Shopware\DynamodbDalBundle\Client\Input;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 
 /**
- * A read-back request for entities spanning one or multiple tables: each entity is re-read by its own key and
- * the stored row is deserialized back into that same instance.
+ * A read-back request for entities spanning one or multiple tables: each entity is re-read
+ * by its own key and the stored row is deserialized back into that same instance.
  *
  * @template Entity of AbstractEntity = never
  */

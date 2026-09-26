@@ -11,8 +11,8 @@ use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Builds the outputs a test double of {@see Client} returns, so code that reads through the
- * client can be unit-tested without DynamoDB. The outputs behave as the real ones do: they stream once, and a search
+ * Builds the outputs a test double of {@see Client} returns.
+ * The outputs behave as the real ones do: they stream once, and a search
  * output is limited, paged and read backward as its input says.
  */
 final class OutputFactory

@@ -5,9 +5,9 @@ namespace Shopware\DynamodbDalBundle\Definition;
 /**
  * A document path into an item — `name`, `settings.currency`, `entries[0].id`.
  *
- * DynamoDB addresses a map entry or list element by path, which is what lets a filter test one entry
- * and an update write one entry without reading or rewriting the attribute around it. Both sides parse
- * a path the same way, so the grammar lives here rather than in either of them.
+ * DynamoDB addresses a map entry or list element by path, which is what lets a filter test one
+ * entry and an update write one entry without reading or rewriting the attribute around it.
+ * Both sides parse a path the same way, so the grammar lives here rather than in either of them.
  *
  * @internal
  */

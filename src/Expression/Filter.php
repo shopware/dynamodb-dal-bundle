@@ -103,8 +103,8 @@ final class Filter
     }
 
     /**
-     * Filters that check nothing drop out. With none left, this checks nothing either, like {@see self::equalsAny()}
-     * without values.
+     * Filters that check nothing drop out.
+     * With none left, this checks nothing either, like {@see self::equalsAny()} without values.
      */
     public static function and(FilterInterface ...$filters): AndFilter
     {
@@ -112,8 +112,8 @@ final class Filter
     }
 
     /**
-     * Filters that check nothing drop out. With none left, this checks nothing either, like {@see self::equalsAny()}
-     * without values.
+     * Filters that check nothing drop out.
+     * With none left, this checks nothing either, like {@see self::equalsAny()} without values.
      */
     public static function or(FilterInterface ...$filters): OrFilter
     {

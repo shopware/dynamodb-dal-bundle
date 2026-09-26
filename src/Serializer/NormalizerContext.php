@@ -57,8 +57,8 @@ final class NormalizerContext
     }
 
     /**
-     * The path and every path nested under it that is present, keyed by path: `['meta.kind' => 'invoice']` for
-     * `meta`. A path only nests at a `.` or `[`, so `metadata` is not under `meta`. Only paths into maps and lists nest.
+     * The path and every path nested under it that is present, keyed by path: `['meta.kind' => 'invoice']` for `meta`.
+     * A path only nests at a `.` or `[`, so `metadata` is not under `meta`. Only paths into maps and lists nest.
      *
      * @return array<string, mixed>
      */

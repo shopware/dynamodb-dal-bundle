@@ -10,8 +10,8 @@ use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
  * cannot answer by itself: going back through a scan, which has no order to reverse, and the page number.
  * Position `i` is the one that produced page `i + 2`; the empty history is page 1.
  *
- * A position is a {@see Page} token, or several named ones {@see combine()}d for a page merged from several
- * searches. A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
+ * A position is a {@see Page} token, or several named ones {@see combine()} for a page merged from several searches.
+ * A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
  */
 final readonly class CursorHistory
 {

@@ -43,8 +43,6 @@ class ExpressionCompileContext
      * compiler to join a whole condition with another.
      *
      * Nothing wraps a whole expression, as DynamoDB may refuse a key condition in parentheses.
-     *
-     * @internal
      */
     public bool $isCompound = false;
 

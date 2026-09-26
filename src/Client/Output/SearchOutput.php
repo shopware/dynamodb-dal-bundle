@@ -14,24 +14,23 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * The matches of a {@see ScanInput} or {@see QueryInput}, streamed once. Iterating stops after the input's `limit`
- * items, and reads every match without one. {@see page()} reads one page, with tokens for its neighbours.
- *
- * Not `final`, so a test can double it.
+ * The matches of a {@see ScanInput} or {@see QueryInput}, streamed once.
+ * Iterating stops after the input's `limit` items, and reads every match without one.
+ * {@see page()} reads one page, with tokens for its neighbors.
  *
  * @template Entity of AbstractEntity
  *
  * @extends ReadOutput<Entity, array<string, AttributeValue>|int>
  *
- * @final
+ * @final - considered final, but not marked as such so a test can double it
  */
 class SearchOutput extends ReadOutput
 {
     private readonly ?int $limit;
 
     /**
-     * `$source` keys each entity by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed
-     * by position, as a test double's is, streams all the same, but its tokens are refused when used.
+     * `$source` keys each entity by its raw start key, as {@see ReaderClient::search()} yields them.
+     * A source keyed by position, streams all the same, but its tokens are refused when used.
      *
      * @internal
      *
@@ -68,7 +67,7 @@ class SearchOutput extends ReadOutput
     }
 
     /**
-     * Reads up to the input's `limit` items, or every match without one, with tokens for the neighbouring pages.
+     * Reads up to the input's `limit` items, or every match without one, with tokens for the neighboring pages.
      *
      * Going back is the same query read in reverse from the first item, so it needs no history of the pages visited before.
      *

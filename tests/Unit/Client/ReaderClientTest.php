@@ -631,7 +631,11 @@ class ReaderClientTest extends TestCase
      */
     private static function serializedKey(EntityDefinition $definition, Key $key): SerializedResult
     {
-        $fields = $key->getFields($definition);
+        $keySchema = $definition->getKeySchema();
+        $fields = [$keySchema->hashKey => $key->hashValue];
+        if ($keySchema->rangeKey !== null) {
+            $fields[$keySchema->rangeKey] = $key->rangeValue;
+        }
 
         $serialized = [];
         foreach ($fields as $name => $value) {
