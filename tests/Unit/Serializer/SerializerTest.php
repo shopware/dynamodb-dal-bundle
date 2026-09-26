@@ -657,7 +657,7 @@ class SerializerTest extends TestCase
 
         static::expectException(FieldMissingSerializedValueException::class);
 
-        $this->serializer->serializeKey($definition, new Index('user-1'));
+        $this->serializer->serializeKey($definition, new Key(NormalEntity::class, 'user-1'));
     }
 
     /**
