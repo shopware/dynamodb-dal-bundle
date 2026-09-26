@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -73,11 +74,8 @@ class ExpressionCompilerTest extends TestCase
 
     public function testTopLevelAndDoesNotWrapInOuterParentheses(): void
     {
-        // Regression: an outer `(...)` around a top-level AND breaks DynamoDB
-        // KeyConditionExpression, which only accepts `hashKey = :v [AND rangeKey <op> :v]`
-        // and rejects the parenthesised form with a ValidationException at runtime.
-        // A repository that feeds the compile output straight into a KeyConditionExpression on an
-        // index depends on this.
+        // A key condition compiles the same way, and DynamoDB only accepts one as
+        // `hashKey = :v [AND rangeKey <op> :v]`: an outer `(...)` fails with a ValidationException.
         $result = $this->compiler->compileFilter(
             NormalEntity::createDefinition(),
             Filter::and(
@@ -246,5 +244,48 @@ class ExpressionCompilerTest extends TestCase
         $this->expectException(UpdateEmptyException::class);
 
         $this->compiler->compileUpdate(CounterDefinition::create(), Update::setFields([]));
+    }
+
+    public function testAConditionThatCompilesToNothingIsRefused(): void
+    {
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->compiler->compileCondition(NormalEntity::createDefinition(), Filter::and(Filter::equalsAny('name', [])));
+    }
+
+    public function testSeveralConditionsAreJoinedAsFilterAndJoinsItsChildren(): void
+    {
+        $result = $this->compiler->compileCondition(
+            NormalEntity::createDefinition(),
+            Filter::exists('autofilledId'),
+            Filter::or(Filter::equals('name', 'a'), Filter::equals('name', 'b')),
+        );
+
+        static::assertSame('attribute_exists(#autofilledId) AND (#name = :ex_1_0_name OR #name = :ex_1_1_name)', $result->expression);
+        static::assertSame(['#autofilledId' => 'autofilledId', '#name' => 'name'], $result->names);
+        static::assertSame([':ex_1_0_name', ':ex_1_1_name'], array_keys($result->values));
+    }
+
+    /**
+     * A key condition may be refused in parentheses, so a lone condition is sent as it compiles.
+     */
+    public function testALoneConditionIsNeverWrapped(): void
+    {
+        $result = $this->compiler->compileCondition(
+            NormalEntity::createDefinition(),
+            Filter::and(Filter::equals('autofilledId', 'a'), Filter::equals('name', 'b')),
+        );
+
+        static::assertSame('#autofilledId = :ex_1_0_autofilledId AND #name = :ex_1_1_name', $result->expression);
+    }
+
+    /**
+     * Beside another condition, such as an update's check that its item exists, it would otherwise go unnoticed.
+     */
+    public function testAConditionThatCompilesToNothingIsRefusedBesideAnother(): void
+    {
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->compiler->compileCondition(NormalEntity::createDefinition(), Filter::exists('autofilledId'), Filter::and());
     }
 }

@@ -74,6 +74,7 @@ class ListFieldSerializer extends AbstractFieldSerializer
         }
 
         $list = $attributeValue->getL();
+        // getL() is `[]` for an empty list and for an attribute that is no list at all
         if ($list === [] && !isset($attributeValue->requestBody()['L'])) {
             throw new MissingAttributeValueException($definition, 'L');
         }

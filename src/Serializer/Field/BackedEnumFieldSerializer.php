@@ -54,6 +54,7 @@ class BackedEnumFieldSerializer extends AbstractFieldSerializer
         try {
             return $type::from($value);
         } catch (\TypeError) {
+            // An int-backed enum refuses the stored string under strict types
             $int = filter_var($value, \FILTER_VALIDATE_INT);
             if ($int === false) {
                 // Like PHP's `BackedEnum::from()`

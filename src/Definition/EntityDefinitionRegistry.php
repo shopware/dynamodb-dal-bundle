@@ -6,7 +6,7 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 
 /**
- * Lookup of every {@see EntityDefinition}, by its logical table name (the `#[Table(name: ..)]` value,
+ * Lookup of every {@see EntityDefinition}, by its logical name (the `#[Table(name: ..)]` value,
  * e.g. `order`) via {@see get()} or by its physical DynamoDB table name via {@see getByTableName()}.
  * Populated from the `dal.definition` tagged services the
  * {@see \Shopware\DynamodbDalBundle\DefinitionCompilerPass} registers.
@@ -14,24 +14,24 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 class EntityDefinitionRegistry
 {
     /**
-     * @var array<string, EntityDefinition<AbstractEntity>> - keyed by logical table name
+     * @var array<string, EntityDefinition<AbstractEntity>> - keyed by logical name
      */
     private readonly array $definitions;
 
     /**
-     * @var array<string, string> - physical DynamoDB table name => logical table name
+     * @var array<string, string> - physical DynamoDB table name => logical name
      */
     private array $logicalByPhysical = [];
 
     /**
-     * @var array<class-string<AbstractEntity>, string> - entity class => logical table name
+     * @var array<class-string<AbstractEntity>, string> - entity class => logical name
      */
     private array $logicalByEntityClass = [];
 
     /**
      * @internal
      *
-     * @param iterable<string, EntityDefinition<AbstractEntity>> $definitions - keyed by logical table name
+     * @param iterable<string, EntityDefinition<AbstractEntity>> $definitions - keyed by logical name
      *
      * @throws \LogicException if two definitions are stored in the same table
      */
@@ -52,7 +52,7 @@ class EntityDefinitionRegistry
     }
 
     /**
-     * Resolves a definition by its logical table name (the `#[Table(name: ..)]` value).
+     * Resolves a definition by its logical name (the `#[Table(name: ..)]` value).
      *
      * @throws UnknownEntityDefinitionException
      *

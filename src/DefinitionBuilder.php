@@ -33,7 +33,7 @@ final readonly class DefinitionBuilder
      * @param class-string $entityClass
      * @param string $physicalTable The table its items live in, as configured
      *
-     * @return array{string, Definition} The entity's item name and the definition to register for it
+     * @return array{string, Definition} The entity's logical name and the definition to register for it
      */
     public function build(string $entityClass, string $physicalTable): array
     {
@@ -127,6 +127,7 @@ final readonly class DefinitionBuilder
                 throw new \LogicException("Entity {$entityClass} declares {$label} \"{$field}\" which is not a #[Field] property");
             }
 
+            // A normalizer may fill the key in, e.g. generate an ID on a put, so the property may start out null
             if ($fieldTypes[$field]?->allowsNull() && $table->normalizer === null) {
                 throw new \LogicException("Entity {$entityClass} declares {$label} \"{$field}\" which must not be nullable");
             }
@@ -222,7 +223,6 @@ final readonly class DefinitionBuilder
             throw new \LogicException("Entity property {$entityClass}::\${$property->name} has to be protected or public");
         }
 
-        // Every read and every write-back assigns the field again, through AbstractEntity::setVars()
         if ($property->isReadOnly()) {
             throw new \LogicException("Entity property {$entityClass}::\${$property->name} must not be readonly, as every read and write-back assigns it again");
         }

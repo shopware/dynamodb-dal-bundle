@@ -2,7 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer;
 
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
@@ -300,7 +300,7 @@ class SerializerTest extends TestCase
         $normalizer = new RecordingNormalizer();
         $definition = NormalEntity::createDefinition($normalizer);
 
-        $this->serializer->serializeKey($definition, new Index('test-id'));
+        $this->serializer->serializeKey($definition, new Key(NormalEntity::class, 'test-id'));
         $this->serializer->deserializeKey($definition, ['autofilledId' => new AttributeValue(['S' => 'test-id'])]);
 
         static::assertSame([
@@ -479,26 +479,26 @@ class SerializerTest extends TestCase
      * The point of the hash: what a read sends and what it gets back have to land on the same string, or a
      * batched response cannot be paired with the request it answers.
      */
-    public function testHashKeyDerivesTheSameStringFromAnEntityAnIndexAndTheRowItself(): void
+    public function testHashKeyDerivesTheSameStringFromAnEntityAKeyAndTheRowItself(): void
     {
         $entity = new NormalEntity()->setAutofilledId('id-1')->setRequired('req');
 
         $fromEntity = $this->serializer->hashKey($this->definition, $entity);
-        $fromIndex = $this->serializer->hashKey($this->definition, new Index('id-1'));
+        $fromKey = $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-1'));
         $fromRow = $this->serializer->hashKey($this->definition, [
             'autofilledId' => new AttributeValue(['S' => 'id-1']),
             'name' => new AttributeValue(['S' => 'not part of the key']),
         ]);
 
-        static::assertSame($fromEntity, $fromIndex);
+        static::assertSame($fromEntity, $fromKey);
         static::assertSame($fromEntity, $fromRow);
     }
 
     public function testHashKeyTellsDifferentKeysApart(): void
     {
         static::assertNotSame(
-            $this->serializer->hashKey($this->definition, new Index('id-1')),
-            $this->serializer->hashKey($this->definition, new Index('id-2')),
+            $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-1')),
+            $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-2')),
         );
     }
 
@@ -528,10 +528,9 @@ class SerializerTest extends TestCase
             'autofilledId' => new AttributeValue(['S' => 'id-1']),
         ]);
 
-        static::assertInstanceOf(Index::class, $key);
+        static::assertInstanceOf(Key::class, $key);
         static::assertSame('id-1', $key->hashValue);
         static::assertNull($key->rangeValue);
-        static::assertNull($key->index);
     }
 
     public function testDeserializeKeyIgnoresNonKeyFields(): void
@@ -541,7 +540,7 @@ class SerializerTest extends TestCase
             'name' => new AttributeValue(['S' => 'ignored']),
         ]);
 
-        static::assertInstanceOf(Index::class, $key);
+        static::assertInstanceOf(Key::class, $key);
         static::assertSame('id-1', $key->hashValue);
         static::assertNull($key->rangeValue);
     }
@@ -564,7 +563,7 @@ class SerializerTest extends TestCase
             'createdAt' => new AttributeValue(['N' => (string) $createdAt->getTimestamp()]),
         ]);
 
-        static::assertInstanceOf(Index::class, $key);
+        static::assertInstanceOf(Key::class, $key);
         static::assertSame('tenant-1', $key->hashValue);
         static::assertInstanceOf(\DateTimeImmutable::class, $key->rangeValue);
         static::assertEquals($createdAt, $key->rangeValue);
@@ -581,7 +580,7 @@ class SerializerTest extends TestCase
 
     public function testDeserializeKeyThrowsWhenAKeyValueCannotBeDeserialized(): void
     {
-        // The createdAt range key is an N-typed field; an S value cannot be deserialized into it.
+        // The createdAt range key reads a number or a date string, and `not-a-timestamp` is neither.
         $definition = $this->keyedDefinition();
 
         static::expectException(FieldDeserializationException::class);
@@ -601,9 +600,9 @@ class SerializerTest extends TestCase
         static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'id-1'])], $fields);
     }
 
-    public function testSerializeKeyWithIndex(): void
+    public function testSerializeKeyWithAKeyReadsTheTableKeyFields(): void
     {
-        $fields = $this->serializer->serializeKey($this->definition, new Index('id-1'));
+        $fields = $this->serializer->serializeKey($this->definition, new Key(NormalEntity::class, 'id-1'));
 
         static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'id-1'])], $fields);
     }
@@ -616,7 +615,7 @@ class SerializerTest extends TestCase
 
         static::expectException(FieldMissingSerializedValueException::class);
 
-        $this->serializer->serializeKey($definition, new Index(null, null));
+        $this->serializer->serializeKey($definition, new Key(NormalEntity::class, null, null));
     }
 
     /**

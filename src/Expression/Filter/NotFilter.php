@@ -5,10 +5,10 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class NotFilter implements FilterInterface
+final readonly class NotFilter implements FilterInterface
 {
     public function __construct(
-        public readonly FilterInterface $filter,
+        public FilterInterface $filter,
     ) {
     }
 
@@ -20,9 +20,10 @@ class NotFilter implements FilterInterface
             return null;
         }
 
-        /** @phpstan-ignore-next-line ternary.alwaysFalse -- the flag can change in `->compile` calls */
         $expression = $context->isCompound ? "NOT ({$inner})" : "NOT {$inner}";
-        $context->isCompound = false; // compile could have changed it
+
+        // `NOT ...` is one operand, whatever the inner filter was
+        $context->isCompound = false;
 
         return $expression;
     }

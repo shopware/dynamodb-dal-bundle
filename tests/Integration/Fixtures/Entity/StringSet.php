@@ -4,7 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity;
 
 /**
  * Distinct strings, stored as a DynamoDB string set (`SS`) by {@see StringSetFieldSerializer}. The bundle has
- * no set type of its own, so this is how `Update::add()` and `Update::delete()` reach a set at all.
+ * no set type of its own, so this is how `Update::addToSet()` and `Update::removeFromSet()` reach a set at all.
  */
 final readonly class StringSet
 {

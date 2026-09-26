@@ -10,10 +10,10 @@ use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
  * cannot answer by itself: going back through a scan, which has no order to reverse, and the page number.
  * Position `i` is the one that produced page `i + 2`; the empty history is page 1.
  *
- * A position is a {@see Page} token, or several named ones {@see combine()}d for a page merged from several
- * searches. A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
+ * A position is a {@see Page} token, or several named ones {@see combine()} for a page merged from several searches.
+ * A view over a single query needs no history to go back — {@see Page::$previous} reads it backward.
  */
-final readonly class CursorHistory implements \Stringable
+final readonly class CursorHistory
 {
     /**
      * The non-empty {@see toString()} form, for validating a history where it enters, e.g. as a URL parameter.
@@ -30,7 +30,7 @@ final readonly class CursorHistory implements \Stringable
     /**
      * @param list<string> $positions - position `i` produced page `i + 2`
      *
-     * @throws InvalidCursorException if a position is not URL-safe, which no token or combined position is
+     * @throws InvalidCursorException if a position is not URL-safe; a token or combined position always is
      */
     public function __construct(array $positions = [])
     {
@@ -41,11 +41,6 @@ final readonly class CursorHistory implements \Stringable
         }
 
         $this->positions = array_values($positions);
-    }
-
-    public function __toString(): string
-    {
-        return $this->toString();
     }
 
     /**
@@ -60,15 +55,21 @@ final readonly class CursorHistory implements \Stringable
 
     /**
      * Folds the positions of a page merged from several searches — one token per search, e.g. one per status
-     * — into a single position. A search still on its first page has no token and is left out.
+     * — into a single position. Leave out a search still on its first page; it has no token.
      *
      * @param array<string, string> $positions - name => token
      *
-     * @throws \JsonException if a name or a token is not valid UTF-8
+     * @throws InvalidCursorException if a name or a token is not valid UTF-8
      */
     public static function combine(array $positions): string
     {
-        return rtrim(strtr(base64_encode(json_encode($positions, \JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        try {
+            $json = json_encode($positions, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new InvalidCursorException('a name or a token is not valid UTF-8', $e);
+        }
+
+        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
     }
 
     /**
@@ -137,27 +138,15 @@ final readonly class CursorHistory implements \Stringable
     }
 
     /**
-     * The history one page further, resuming from `$position`.
+     * The history one page further, resuming from `$position`. `null` for a `null` position, so {@see Page::$next}
+     * can be passed as it is: it is `null` on the last page.
      *
-     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
-     */
-    public function append(string $position): self
-    {
-        return new self([...$this->positions, $position]);
-    }
-
-    /**
-     * The history one page further, or `null` if there is no further page — takes {@see Page::$next} as is.
+     * @throws InvalidCursorException if the position is not URL-safe; a token or combined position always is
      *
-     * @throws InvalidCursorException if the position is not URL-safe, which no token or combined position is
+     * @return ($position is null ? null : self)
      */
     public function advance(?string $position): ?self
     {
-        return $position !== null ? $this->append($position) : null;
-    }
-
-    public function isEmpty(): bool
-    {
-        return $this->positions === [];
+        return $position !== null ? new self([...$this->positions, $position]) : null;
     }
 }

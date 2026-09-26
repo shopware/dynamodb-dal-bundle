@@ -3,25 +3,27 @@
 namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 
 /**
- * @template-covariant Entity of AbstractEntity = never
+ * @template-covariant Entity of AbstractEntity
  */
-final class DeleteInput
+final readonly class DeleteInput
 {
     /**
-     * @param Entity|Index $key
+     * @var class-string<Entity>
+     */
+    public string $class;
+
+    /**
+     * @param Entity|Key<Entity> $key
+     * @param ?FilterInterface $condition - checked against the stored item; the delete is refused if it does not hold
      */
     public function __construct(
-        public readonly AbstractEntity|Index $key,
-        public readonly ?FilterInterface $conditionExpression = null,
+        public AbstractEntity|Key $key,
+        public ?FilterInterface $condition = null,
     ) {
-    }
-
-    public static function fromIndex(mixed $hashValue, mixed $rangeValue = null): self
-    {
-        return new self(new Index($hashValue, $rangeValue));
+        $this->class = $key instanceof Key ? $key->class : $key::class;
     }
 }

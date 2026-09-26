@@ -4,7 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Cursor;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
@@ -15,6 +15,7 @@ use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
@@ -78,7 +79,7 @@ class ReaderClientTest extends TestCase
             static fn (EntityDefinition $definition, array $item): NormalEntity => $item === $itemA ? $a : $b,
         );
 
-        static::assertSame([$a, $b], iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput()), false));
+        static::assertSame([$a, $b], iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class)), false));
     }
 
     public function testSearchScanThreadsConsistentReadAndTableIntoTheScanInput(): void
@@ -95,7 +96,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn($output);
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(consistentRead: true)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, consistentRead: true)), false);
     }
 
     public function testSearchScanDefaultsToEventuallyConsistentRead(): void
@@ -104,13 +105,13 @@ class ReaderClientTest extends TestCase
         $this->dynamo->expects(static::once())
             ->method('scan')
             ->with(static::callback(static function (DynamoDbScanInput $input): bool {
-                static::assertNull($input->getConsistentRead());
+                static::assertFalse($input->getConsistentRead());
 
                 return true;
             }))
             ->willReturn($output);
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput()), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class)), false);
     }
 
     public function testSearchQueryThreadsKeyConditionForwardIndexAndConsistentRead(): void
@@ -139,12 +140,13 @@ class ReaderClientTest extends TestCase
         $this->serializer->method('deserialize')->willReturn($a);
 
         $query = new QueryInput(
+            NormalEntity::class,
             Filter::equals('autofilledId', 'a'),
             filter: Filter::equals('name', 'foo'),
             consistentRead: true,
         );
 
-        static::assertSame([$a], iterator_to_array($this->reader->search(NormalEntity::class, $query), false));
+        static::assertSame([$a], iterator_to_array($this->reader->search($query), false));
     }
 
     public function testSearchQueryThreadsReverseOrderIndexNameAndDefaultConsistentRead(): void
@@ -155,15 +157,15 @@ class ReaderClientTest extends TestCase
             ->with(static::callback(static function (DynamoDbQueryInput $input): bool {
                 static::assertSame('someIndex', $input->getIndexName());
                 static::assertFalse($input->getScanIndexForward());
-                static::assertNull($input->getConsistentRead());
+                static::assertFalse($input->getConsistentRead());
 
                 return true;
             }))
             ->willReturn($output);
 
-        $query = new QueryInput(Filter::equals('name', 'x'), index: 'someIndex', forward: false);
+        $query = new QueryInput(NormalEntity::class, Filter::equals('name', 'x'), index: 'someIndex', forward: false);
 
-        iterator_to_array($this->reader->search(NormalEntity::class, $query), false);
+        iterator_to_array($this->reader->search($query), false);
     }
 
     public function testSearchKeysEachEntityByItsRawStartKey(): void
@@ -175,7 +177,7 @@ class ReaderClientTest extends TestCase
         $this->serializer->method('deserialize')->willReturn($a);
 
         // Only the key attributes survive: they are the ExclusiveStartKey to resume after this item.
-        foreach ($this->reader->search(NormalEntity::class, new ScanInput()) as $key => $entity) {
+        foreach ($this->reader->search(new ScanInput(NormalEntity::class)) as $key => $entity) {
             static::assertEquals($this->item('a'), $key);
             static::assertSame($a, $entity);
         }
@@ -195,7 +197,7 @@ class ReaderClientTest extends TestCase
 
         $cursor = new Cursor($this->item('cursor-id'))->encode();
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(cursor: $cursor)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, cursor: $cursor)), false);
     }
 
     public function testSearchReadsABackwardCursorInReverse(): void
@@ -213,7 +215,7 @@ class ReaderClientTest extends TestCase
 
         $cursor = new Cursor($this->item('cursor-id'), backward: true)->encode();
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor)), false);
+        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $cursor)), false);
     }
 
     public function testSearchRequestsTheNextPageOnlyOnceTheStreamReachesIt(): void
@@ -240,7 +242,7 @@ class ReaderClientTest extends TestCase
         );
 
         $cursor = new Cursor($this->item('z'), backward: true)->encode();
-        $search = $this->reader->search(NormalEntity::class, new QueryInput(Filter::equals('autofilledId', 'x'), cursor: $cursor));
+        $search = $this->reader->search(new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $cursor));
 
         static::assertSame($a, $search->current());
         static::assertCount(1, $inputs, 'the next page must not be requested while the current one is read');
@@ -267,7 +269,21 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput());
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(limit: 2)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, limit: 2)), false);
+    }
+
+    public function testSearchCountsALimitBelowOneAsOne(): void
+    {
+        $this->dynamo->expects(static::once())
+            ->method('scan')
+            ->with(static::callback(static function (DynamoDbScanInput $input): bool {
+                static::assertSame(2, $input->getLimit());
+
+                return true;
+            }))
+            ->willReturn(self::scanOutput());
+
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, limit: -1)), false);
     }
 
     public function testSearchWithAFilterReadsFullPages(): void
@@ -282,7 +298,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput());
 
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(filter: Filter::equals('name', 'foo'), limit: 2)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, filter: Filter::equals('name', 'foo'), limit: 2)), false);
     }
 
     public function testSearchRejectsACursorOfAnotherKeySchema(): void
@@ -292,7 +308,7 @@ class ReaderClientTest extends TestCase
         $cursor = new Cursor(['tenantId' => new AttributeValue(['S' => 'x'])])->encode();
 
         $this->expectException(InvalidCursorException::class);
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(cursor: $cursor)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, cursor: $cursor)), false);
     }
 
     public function testSearchRejectsABackwardCursorOnAScan(): void
@@ -302,7 +318,7 @@ class ReaderClientTest extends TestCase
         $cursor = new Cursor($this->item('cursor-id'), backward: true)->encode();
 
         $this->expectException(InvalidCursorException::class);
-        iterator_to_array($this->reader->search(NormalEntity::class, new ScanInput(cursor: $cursor)), false);
+        iterator_to_array($this->reader->search(new ScanInput(NormalEntity::class, cursor: $cursor)), false);
     }
 
     public function testSearchRejectsAnUnregisteredClass(): void
@@ -310,14 +326,14 @@ class ReaderClientTest extends TestCase
         $this->dynamo->expects(static::never())->method('scan');
 
         $this->expectException(UnknownEntityDefinitionException::class);
-        iterator_to_array($this->reader->search(OtherEntity::class, new ScanInput()), false);
+        iterator_to_array($this->reader->search(new ScanInput(OtherEntity::class)), false);
     }
 
     public function testSearchOnlyAsksDynamoDbOnceTheStreamIsRead(): void
     {
         $this->dynamo->expects(static::never())->method('scan');
 
-        $this->reader->search(NormalEntity::class, new ScanInput());
+        $this->reader->search(new ScanInput(NormalEntity::class));
     }
 
     public function testCountRejectsAnUnregisteredClass(): void
@@ -325,7 +341,7 @@ class ReaderClientTest extends TestCase
         $this->dynamo->expects(static::never())->method('scan');
 
         $this->expectException(UnknownEntityDefinitionException::class);
-        $this->reader->count(OtherEntity::class, new ScanInput());
+        $this->reader->count(new ScanInput(OtherEntity::class));
     }
 
     public function testCountSumsSelectCountAcrossPages(): void
@@ -344,7 +360,7 @@ class ReaderClientTest extends TestCase
 
         $this->serializer->expects(static::never())->method('deserialize');
 
-        static::assertSame(8, $this->reader->count(NormalEntity::class, new ScanInput()));
+        static::assertSame(8, $this->reader->count(new ScanInput(NormalEntity::class)));
     }
 
     public function testCountIgnoresTheLimitAndReadsFullPages(): void
@@ -359,7 +375,7 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn(self::scanOutput(count: 3));
 
-        static::assertSame(3, $this->reader->count(NormalEntity::class, new ScanInput(limit: 1)));
+        static::assertSame(3, $this->reader->count(new ScanInput(NormalEntity::class, limit: 1)));
     }
 
     public function testGetSingleKeyIssuesOneGetItemAndDeserializesTheFoundEntity(): void
@@ -385,7 +401,7 @@ class ReaderClientTest extends TestCase
 
         $this->serializer->expects(static::once())->method('deserialize')->with($this->definition, $item)->willReturn($entity);
 
-        $result = iterator_to_array($this->reader->get(new GetInput([NormalEntity::class => [new Index('a')]], true)), false);
+        $result = iterator_to_array($this->reader->get(new GetInput([new Key(NormalEntity::class, 'a')], true)), false);
 
         static::assertSame([$entity], $result);
     }
@@ -401,7 +417,7 @@ class ReaderClientTest extends TestCase
         // deserialize([]) returns null for an absent item; the reader must not yield it.
         $this->serializer->expects(static::once())->method('deserialize')->with($this->definition, [])->willReturn(null);
 
-        $result = iterator_to_array($this->reader->get(new GetInput([NormalEntity::class => [new Index('missing')]])), false);
+        $result = iterator_to_array($this->reader->get(new GetInput([new Key(NormalEntity::class, 'missing')])), false);
 
         static::assertSame([], $result);
     }
@@ -425,7 +441,7 @@ class ReaderClientTest extends TestCase
         );
 
         $result = iterator_to_array(
-            $this->reader->get(new GetInput([NormalEntity::class => [new Index('a'), new Index('b')]])),
+            $this->reader->get(new GetInput([new Key(NormalEntity::class, 'a'), new Key(NormalEntity::class, 'b')])),
             false,
         );
 
@@ -479,8 +495,8 @@ class ReaderClientTest extends TestCase
 
         $entities = iterator_to_array(
             $reader->get(new GetInput([])
-                ->withKey(NormalEntity::class, new Index('a'))
-                ->withKey(OtherEntity::class, new Index('o'))),
+                ->withKey(new Key(NormalEntity::class, 'a'))
+                ->withKey(new Key(OtherEntity::class, 'o'))),
             false,
         );
 
@@ -533,7 +549,7 @@ class ReaderClientTest extends TestCase
             ->method('getItem')
             ->with(static::callback(static function (array $request): bool {
                 // Eventually consistent unless asked otherwise, like get().
-                static::assertNull($request['ConsistentRead']);
+                static::assertFalse($request['ConsistentRead']);
 
                 return true;
             }))
@@ -568,19 +584,31 @@ class ReaderClientTest extends TestCase
         $this->reader->refresh(new RefreshInput([]));
     }
 
+    /**
+     * DynamoDB refuses a query without a key condition, so one that checks nothing fails before the request.
+     */
+    public function testSearchRefusesAKeyConditionThatChecksNothing(): void
+    {
+        $this->dynamo->expects(static::never())->method('query');
+
+        $this->expectException(ConditionEmptyException::class);
+
+        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::equalsAny('autofilledId', []))));
+    }
+
     private function registry(): EntityDefinitionRegistry
     {
         return new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
     }
 
     /**
-     * Stubs the serializer's key serialization used by {@see ReaderClient} to turn an {@see Index} into
+     * Stubs the serializer's key serialization used by {@see ReaderClient} to turn a {@see Key} into
      * the DynamoDB key map for `GetItem`/`BatchGetItem` requests.
      */
     private function stubKeySerialization(): void
     {
         $this->serializer->method('serializeKey')->willReturnCallback(
-            static fn (EntityDefinition $definition, Index $key): array => self::serializedKey($definition, $key)->getFields(),
+            static fn (EntityDefinition $definition, Key $key): array => self::serializedKey($definition, $key)->getFields(),
         );
     }
 
@@ -599,10 +627,15 @@ class ReaderClientTest extends TestCase
 
     /**
      * @param EntityDefinition<AbstractEntity> $definition
+     * @param Key<AbstractEntity> $key
      */
-    private static function serializedKey(EntityDefinition $definition, Index $key): SerializedResult
+    private static function serializedKey(EntityDefinition $definition, Key $key): SerializedResult
     {
-        $fields = $key->getFields($definition);
+        $keySchema = $definition->getKeySchema();
+        $fields = [$keySchema->hashKey => $key->hashValue];
+        if ($keySchema->rangeKey !== null) {
+            $fields[$keySchema->rangeKey] = $key->rangeValue;
+        }
 
         $serialized = [];
         foreach ($fields as $name => $value) {

@@ -11,9 +11,9 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RefreshInput::class)]
 class RefreshInputTest extends TestCase
 {
-    public function testConsistentReadIsNullByDefault(): void
+    public function testConsistentReadIsOffByDefault(): void
     {
-        static::assertNull(new RefreshInput([])->consistentRead);
+        static::assertFalse(new RefreshInput([])->consistentRead);
     }
 
     public function testWithEntityAppendsAcrossEntityClasses(): void
@@ -48,7 +48,7 @@ class RefreshInputTest extends TestCase
         $consistent = $input->withConsistentRead(true);
 
         static::assertNotSame($input, $consistent);
-        static::assertNull($input->consistentRead);
+        static::assertFalse($input->consistentRead);
         static::assertTrue($consistent->consistentRead);
         static::assertSame([$a], $consistent->entities);
     }

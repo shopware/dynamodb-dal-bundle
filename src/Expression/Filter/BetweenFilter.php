@@ -5,22 +5,22 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class BetweenFilter implements FilterInterface
+final readonly class BetweenFilter implements FilterInterface
 {
     public function __construct(
-        public readonly string $fieldName,
-        public readonly mixed $fromValue,
-        public readonly mixed $toValue,
+        public string $fieldName,
+        public mixed $fromValue,
+        public mixed $toValue,
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(ExpressionCompileContext $context): string
     {
         return \sprintf(
             '%s BETWEEN %s AND %s',
-            $context->attribute($this->fieldName),
-            $context->placeholder($this->fieldName, $this->fromValue),
-            $context->placeholder($this->fieldName, $this->toValue),
+            $context->path($this->fieldName),
+            $context->value($this->fieldName, $this->fromValue),
+            $context->value($this->fieldName, $this->toValue),
         );
     }
 }

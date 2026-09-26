@@ -29,8 +29,8 @@ class UpdateTest extends TestCase
         static::assertEquals(new UpdateExpression([], [new AddAction('a', -2)]), Update::decrement('a', 2));
         static::assertEquals(new UpdateExpression([], [new ListAppendAction('a', [1])]), Update::append('a', [1]));
         static::assertEquals(new UpdateExpression([], [new ListAppendAction('a', [1], prepend: true)]), Update::prepend('a', [1]));
-        static::assertEquals(new UpdateExpression([], [new AddAction('a', 1)]), Update::add('a', 1));
-        static::assertEquals(new UpdateExpression([], [new DeleteAction('a', [1])]), Update::delete('a', [1]));
+        static::assertEquals(new UpdateExpression([], [new AddAction('a', [1])]), Update::addToSet('a', [1]));
+        static::assertEquals(new UpdateExpression([], [new DeleteAction('a', [1])]), Update::removeFromSet('a', [1]));
     }
 
     public function testWithStartsFromActionsOfYourOwn(): void

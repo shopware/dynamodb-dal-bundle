@@ -5,34 +5,19 @@ namespace Shopware\DynamodbDalBundle\Expression;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Output of {@see ExpressionCompiler::compileFilter()} and {@see ExpressionCompiler::compileUpdate()}: the compiled expression string plus
- * the `ExpressionAttributeNames` / `ExpressionAttributeValues` placeholder maps it
- * references.
- *
- * Typical single-expression usage (scan/query with one filter):
+ * Output of {@see ExpressionCompiler}: the compiled expression string plus the `ExpressionAttributeNames` /
+ * `ExpressionAttributeValues` placeholder maps it references. The expressions of one request, such as a key
+ * condition and a filter, share one pair of maps:
  *
  * ```
- * $result = $compiler->compileFilter($definition, $criteria);
- *
- * $client->scan([
- *     'TableName' => $definition->getTable(),
- *     ...$result->getExpression('filter'),
- *     ...$result->getExpressionAttributes(),
- * ]);
- * ```
- *
- * Combining a `KeyConditionExpression` and a `FilterExpression` on the same request —
- * both expressions need to share one placeholder map at the request level:
- *
- * ```
- * $key    = $compiler->compileFilter($definition, $keyFilter);
- * $filter = $compiler->compileFilter($definition, $filterFilter);
+ * $keyResult = $compiler->compileCondition($definition, $keyCondition);
+ * $filterResult = $compiler->compileFilter($definition, $filter);
  *
  * $client->query([
  *     'TableName' => $definition->getTable(),
- *     ...$key->getExpression('key-condition'),
- *     ...$filter->getExpression('filter'),
- *     ...$key->getExpressionAttributes($filter),
+ *     ...$keyResult->getExpression('key-condition'),
+ *     ...$filterResult->getExpression('filter'),
+ *     ...$keyResult->getExpressionAttributes($filterResult),
  * ]);
  * ```
  *
@@ -42,7 +27,7 @@ class ExpressionCompiledResult
 {
     /**
      * @param array<string, string> $names `['#field' => 'field']`
-     * @param array<string, AttributeValue> $values `[':field_0' => AttributeValue]`
+     * @param array<string, AttributeValue> $values `[':ex_1_0_field' => AttributeValue]`
      */
     public function __construct(
         public readonly ?string $expression = null,
@@ -100,10 +85,9 @@ class ExpressionCompiledResult
     }
 
     /**
-     * Folds the placeholder maps of `$others` into this result, returning a new result that keeps
-     * this one's expression but combines all `ExpressionAttributeNames` / `ExpressionAttributeValues`
-     * — so several expressions built for the same request (e.g. a key condition and a filter) can
-     * share one map. The compiler hands out unique placeholder names per call, so they never collide.
+     * A new result with this one's expression, and the placeholder maps of this one and `$others` combined. Value
+     * placeholders are unique per compile and a name placeholder means the same in every result, so no entry
+     * contradicts another.
      */
     public function merge(self ...$others): self
     {

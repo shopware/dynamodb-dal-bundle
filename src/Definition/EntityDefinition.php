@@ -35,7 +35,6 @@ class EntityDefinition
     ) {
         $definitions = [];
         foreach ($fieldDefinitions as $key => $fieldDefinition) {
-            // backreference to the entity definition
             $fieldDefinition->setEntityDefinition($this);
             $definitions[$key] = $fieldDefinition;
         }
@@ -52,7 +51,7 @@ class EntityDefinition
     }
 
     /**
-     * Key schema of the named global secondary index, or null if it is not declared.
+     * The named global secondary index, or null if it is not declared.
      */
     public function getIndex(string $name): ?IndexSchema
     {
@@ -68,20 +67,23 @@ class EntityDefinition
     }
 
     /**
-     * Public name of the item, as defined in the `#[Table(name: ..)]` attribute
+     * The entity's logical name, as defined in the `#[Table(name: ..)]` attribute
      */
     public function getName(): string
     {
         return $this->name;
     }
 
+    /**
+     * The physical DynamoDB table name, as configured for the entity
+     */
     public function getTable(): string
     {
         return $this->table;
     }
 
     /**
-     * @return class-string<Entity> $class
+     * @return class-string<Entity>
      */
     public function getClass(): string
     {

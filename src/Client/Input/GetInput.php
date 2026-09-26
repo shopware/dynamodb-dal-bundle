@@ -3,59 +3,48 @@
 namespace Shopware\DynamodbDalBundle\Client\Input;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 
 /**
- * A read request for items spanning one or multiple tables by {@see Index}, keyed by the entity class each set of
- * keys addresses — the reader resolves the {@see \Shopware\DynamodbDalBundle\Definition\EntityDefinition} (and with
- * it the physical table) from that class.
+ * A read request for items by {@see Key}, spanning one or multiple tables.
  *
- * @template Entity of AbstractEntity = never
+ * @template-covariant Entity of AbstractEntity = never
  */
-class GetInput
+final readonly class GetInput
 {
     /**
-     * @var array<class-string<Entity>, list<Index>>
+     * @var list<Key<Entity>>
      */
-    public readonly array $keysByClass;
+    public array $keys;
 
     /**
-     * @param array<class-string<Entity>, list<Index>> $keysByClass
+     * @param list<Key<Entity>> $keys
+     * @param bool $consistentRead - `ConsistentRead` of the `GetItem`/`BatchGetItem`; off by default (eventually consistent reads are cheaper)
      */
     public function __construct(
-        array $keysByClass = [],
-        public readonly ?bool $consistentRead = null,
+        array $keys = [],
+        public bool $consistentRead = false,
     ) {
-        $this->keysByClass = array_filter($keysByClass, static fn (array $keys): bool => $keys !== []);
+        $this->keys = array_values($keys);
     }
 
     /**
-     * The same request with `$keys` added to `$class`'s bucket, as a new instance — widening the entity
-     * union so the resulting {@see \Shopware\DynamodbDalBundle\Client\Output\GetOutput} stays typed.
-     *
      * @template AddedEntity of AbstractEntity
      *
-     * @param class-string<AddedEntity> $class
+     * @param Key<AddedEntity> ...$keys
      *
      * @return self<Entity|AddedEntity>
      */
-    public function withKey(string $class, Index ...$keys): self
+    public function withKey(Key ...$keys): self
     {
-        $keysByClass = $this->keysByClass;
-        foreach ($keys as $key) {
-            $keysByClass[$class][] = $key;
-        }
-
-        return new self($keysByClass, $this->consistentRead);
+        return new self([...$this->keys, ...array_values($keys)], $this->consistentRead);
     }
 
     /**
-     * @param ?bool $consistentRead - `ConsistentRead` of the `GetItem`/`BatchGetItem`. Strongly consistent read; off by default (eventually consistent reads are cheaper)
-     *
      * @return self<Entity>
      */
-    public function withConsistentRead(?bool $consistentRead): self
+    public function withConsistentRead(bool $consistentRead = true): self
     {
-        return new self($this->keysByClass, $consistentRead);
+        return new self($this->keys, $consistentRead);
     }
 }

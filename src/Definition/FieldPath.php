@@ -5,9 +5,9 @@ namespace Shopware\DynamodbDalBundle\Definition;
 /**
  * A document path into an item — `name`, `settings.currency`, `entries[0].id`.
  *
- * DynamoDB addresses a map entry or list element by path, which is what lets a filter test one entry
- * and an update write one entry without reading or rewriting the attribute around it. Both sides parse
- * a path the same way, so the grammar lives here rather than in either of them.
+ * DynamoDB addresses a map entry or list element by path, which is what lets a filter test one
+ * entry and an update write one entry without reading or rewriting the attribute around it.
+ * Both sides parse a path the same way, so the grammar lives here rather than in either of them.
  *
  * @internal
  */
@@ -69,6 +69,24 @@ final class FieldPath
         }
 
         return new self($field, $path, $segments);
+    }
+
+    /**
+     * Where in the item a failure on `$field` happened, from the path the failing code named, if any.
+     */
+    public static function locate(FieldDefinition $field, ?string $path): string
+    {
+        $name = $field->getName();
+
+        return match (true) {
+            $path === null || $path === '' => $name,
+            // A collection serializer names the element it was on, opening on its separator
+            str_starts_with($path, '[') || str_starts_with($path, '.') => $name . $path,
+            // A whole path already opens on the property; a value definition is named `property.value`
+            str_starts_with($path, strstr($name, '.', true) ?: $name) => $path,
+            // Anything else names a place below the field
+            default => $name . '.' . $path,
+        };
     }
 
     public function isNested(): bool

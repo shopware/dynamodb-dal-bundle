@@ -8,9 +8,10 @@ use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
@@ -242,7 +243,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity->meta = ['first' => 'one', 'second' => 'two'];
         $this->put($entity);
 
-        $this->client()->update(RecordEntity::class, new UpdateInput($entity, ['meta.first' => 'one-renewed']));
+        $this->client()->update(new UpdateInput($entity, ['meta.first' => 'one-renewed']));
 
         static::assertSame(['first' => 'one-renewed', 'second' => 'two'], $entity->meta);
     }
@@ -252,7 +253,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity = RecordEntity::create(self::TENANT, 'a', tags: ['first', 'second']);
         $this->put($entity);
 
-        $this->client()->update(RecordEntity::class, new UpdateInput($entity, ['tags[1]' => 'replaced']));
+        $this->client()->update(new UpdateInput($entity, ['tags[1]' => 'replaced']));
 
         static::assertSame(['first', 'replaced'], $entity->tags);
     }
@@ -265,8 +266,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
     {
         $this->put(RecordEntity::create(self::TENANT, 'a', counter: 5));
 
-        $this->update('a', Update::add('counter', 2));
-        $this->update('a', Update::add('counter', -1));
+        $this->update('a', Update::increment('counter', 2));
+        $this->update('a', Update::increment('counter', -1));
 
         static::assertSame(6, $this->read('a')?->counter);
     }
@@ -276,7 +277,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a', counter: 5));
         $this->removeRaw('a', 'counter');
 
-        $this->update('a', Update::add('counter', 3));
+        $this->update('a', Update::increment('counter', 3));
 
         static::assertSame(3, $this->read('a')?->counter);
     }
@@ -353,7 +354,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
             Update::with(
                 Update::set('status', RecordStatus::Done),
                 Update::remove('name'),
-                Update::add('counter', 1),
+                Update::increment('counter', 1),
                 Update::append('tags', ['y']),
             ),
             Filter::and(Filter::equals('status', RecordStatus::Open), Filter::equals('counter', 1)),
@@ -371,7 +372,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a', counter: 1));
 
         try {
-            $this->update('a', Update::add('counter', 1), Filter::greaterThan('counter', 1));
+            $this->update('a', Update::increment('counter', 1), Filter::greaterThan('counter', 1));
             static::fail('The condition should have refused the update.');
         } catch (ConditionalCheckFailedException) {
             // Expected.
@@ -385,7 +386,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         // `ADD` would otherwise create the row from its key and the counter alone.
         static::expectException(ConditionalCheckFailedException::class);
 
-        $this->update('never-written', Update::add('counter', 1));
+        $this->update('never-written', Update::increment('counter', 1));
     }
 
     public function testASingleUpdateKeyedByTheEntityRefreshesWhatAnActionComputed(): void
@@ -393,7 +394,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity = RecordEntity::create(self::TENANT, 'a', counter: 5);
         $this->put($entity);
 
-        $this->client()->update(RecordEntity::class, new UpdateInput($entity, Update::add('counter', 2)));
+        $this->client()->update(new UpdateInput($entity, Update::increment('counter', 2)));
 
         static::assertSame(7, $entity->counter);
     }
@@ -409,8 +410,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->put($second);
 
         $this->client()->transactWrite(new TransactWriteInput()
-            ->with(RecordEntity::class, new UpdateInput($first, Update::with(Update::increment('counter'), Update::set('name', 'one'))))
-            ->with(RecordEntity::class, new UpdateInput($second, Update::increment('counter', 5))));
+            ->with(new UpdateInput($first, Update::with(Update::increment('counter'), Update::set('name', 'one'))))
+            ->with(new UpdateInput($second, Update::increment('counter', 5))));
 
         static::assertSame(2, $first->counter);
         static::assertSame('one', $first->name);
@@ -424,12 +425,12 @@ class UpdateExpressionTest extends DynamoDbTestCase
     public function testTheNormalizerSeesTheFieldsOfAnUpdate(): void
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->client()->put(NormalizedEntity::class, new PutInput($entity));
-        $this->client()->update(NormalizedEntity::class, new UpdateInput($entity, ['label' => 'renamed']));
+        $this->client()->put(new PutInput($entity));
+        $this->client()->update(new UpdateInput($entity, ['label' => 'renamed']));
 
-        $this->client()->update(NormalizedEntity::class, new UpdateInput(new Index($entity->pk, $entity->id), ['label' => null]));
+        $this->client()->update(new UpdateInput(new Key(NormalizedEntity::class, $entity->pk, $entity->id), ['label' => null]));
 
-        $found = $this->client()->get(new GetInput([NormalizedEntity::class => [new Index($entity->pk, $entity->id)]]))->first();
+        $found = $this->client()->get(new GetInput([new Key(NormalizedEntity::class, $entity->pk, $entity->id)]))->first();
         static::assertInstanceOf(NormalizedEntity::class, $found);
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $found->label);
     }
@@ -441,14 +442,14 @@ class UpdateExpressionTest extends DynamoDbTestCase
     public function testTheNormalizerSeesTheValueASetIfNotExistsStores(): void
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
-        $this->client()->put(NormalizedEntity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
 
-        $this->client()->update(NormalizedEntity::class, new UpdateInput(
-            new Index($entity->pk, $entity->id),
+        $this->client()->update(new UpdateInput(
+            new Key(NormalizedEntity::class, $entity->pk, $entity->id),
             Update::setIfNotExists('updatedAt', new \DateTimeImmutable('@1')),
         ));
 
-        $found = $this->client()->get(new GetInput([NormalizedEntity::class => [new Index($entity->pk, $entity->id)]]))->first();
+        $found = $this->client()->get(new GetInput([new Key(NormalizedEntity::class, $entity->pk, $entity->id)]))->first();
         static::assertInstanceOf(NormalizedEntity::class, $found);
         static::assertSame(NormalizedEntityNormalizer::UPDATED_AT, $found->updatedAt?->getTimestamp());
     }
@@ -599,9 +600,9 @@ class UpdateExpressionTest extends DynamoDbTestCase
      */
     public static function operandsAddAndDeleteRefuseProvider(): iterable
     {
-        yield 'ADD to a string' => [Update::add('name', 'more')];
-        yield 'ADD to a list' => [Update::add('tags', ['y'])];
-        yield 'DELETE from a list' => [Update::delete('tags', ['x'])];
+        yield 'ADD to a string' => [Update::addToSet('name', 'more')];
+        yield 'ADD to a list' => [Update::addToSet('tags', ['y'])];
+        yield 'DELETE from a list' => [Update::removeFromSet('tags', ['x'])];
     }
 
     /**
@@ -645,8 +646,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
         static::assertNotNull($first);
         static::assertNotNull($second);
 
-        $this->client()->update(RecordEntity::class, new UpdateInput($first, Update::increment('counter')));
-        $this->client()->update(RecordEntity::class, new UpdateInput($second, Update::increment('counter')));
+        $this->client()->update(new UpdateInput($first, Update::increment('counter')));
+        $this->client()->update(new UpdateInput($second, Update::increment('counter')));
 
         static::assertSame(7, $this->read('a')?->counter);
         // Refreshed from the row, so each entity holds what its own write left behind.
@@ -662,8 +663,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
         static::assertNotNull($first);
         static::assertNotNull($second);
 
-        $this->client()->update(RecordEntity::class, new UpdateInput($first, Update::setIfNotExists('name', 'first')));
-        $this->client()->update(RecordEntity::class, new UpdateInput($second, Update::setIfNotExists('name', 'second')));
+        $this->client()->update(new UpdateInput($first, Update::setIfNotExists('name', 'first')));
+        $this->client()->update(new UpdateInput($second, Update::setIfNotExists('name', 'second')));
 
         static::assertSame('first', $second->name);
     }
@@ -689,11 +690,10 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'b', counter: 10));
 
         try {
-            $this->client()->update(
-                RecordEntity::class,
-                new UpdateInput(new Index(self::TENANT, 'a'), Update::increment('counter')),
-                new UpdateInput(new Index(self::TENANT, 'b'), Update::increment('counter'), Filter::equals('counter', 0)),
-            );
+            $this->client()->transactWrite(new TransactWriteInput()->with(
+                new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), Update::increment('counter')),
+                new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'b'), Update::increment('counter'), Filter::equals('counter', 0)),
+            ));
             static::fail('The failed condition should have cancelled the transaction.');
         } catch (TransactionCanceledException) {
             // Expected.
@@ -704,7 +704,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
     }
 
     /**
-     * `refresh: null` saves the read-back, and the entity pays for it: what was sent is applied, what
+     * `refresh: Refresh::WithoutReadBack` saves the read-back, and the entity pays for it: what was sent is applied, what
      * DynamoDB computed is not.
      */
     public function testATransactionWithoutReadbackLeavesWhatAnActionComputedStale(): void
@@ -713,7 +713,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $this->put($entity);
 
         $this->client()->transactWrite(new TransactWriteInput()
-            ->with(RecordEntity::class, new UpdateInput($entity, Update::with(Update::increment('counter'), Update::set('name', 'one')), refresh: null)));
+            ->with(new UpdateInput($entity, Update::with(Update::increment('counter'), Update::set('name', 'one')), refresh: Refresh::WithoutReadBack)));
 
         static::assertSame('one', $entity->name);
         static::assertSame(1, $entity->counter);
@@ -742,7 +742,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
 
             public function compile(ExpressionCompileContext $context): string
             {
-                return "{$context->attribute($this->to)} = {$context->attribute($this->from)}";
+                return "{$context->path($this->to)} = {$context->path($this->from)}";
             }
         };
 
@@ -775,8 +775,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
 
         try {
             $this->client()->transactWrite(new TransactWriteInput()
-                ->with(RecordEntity::class, new PutInput(RecordEntity::create(self::TENANT, 'b')))
-                ->with(RecordEntity::class, new UpdateInput(new Index(self::TENANT, 'a'), Update::with($nothing))));
+                ->with(new PutInput(RecordEntity::create(self::TENANT, 'b')))
+                ->with(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), Update::with($nothing))));
             static::fail('The empty update should have been refused.');
         } catch (UpdateEmptyException) {
             // Expected.
@@ -789,8 +789,8 @@ class UpdateExpressionTest extends DynamoDbTestCase
     {
         $this->putArchive(ArchiveEntity::create('x'));
 
-        $this->updateArchive('x', Update::add('labels', new StringSet('a', 'b')));
-        $this->updateArchive('x', Update::add('labels', new StringSet('b', 'c')));
+        $this->updateArchive('x', Update::addToSet('labels', new StringSet('a', 'b')));
+        $this->updateArchive('x', Update::addToSet('labels', new StringSet('b', 'c')));
 
         // A set has no order.
         static::assertEqualsCanonicalizing(['a', 'b', 'c'], $this->readArchive('x')?->labels?->values);
@@ -802,7 +802,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity->labels = new StringSet('a', 'b', 'c');
         $this->putArchive($entity);
 
-        $this->updateArchive('x', Update::delete('labels', new StringSet('a', 'absent')));
+        $this->updateArchive('x', Update::removeFromSet('labels', new StringSet('a', 'absent')));
 
         // A set has no order.
         static::assertEqualsCanonicalizing(['b', 'c'], $this->readArchive('x')?->labels?->values);
@@ -818,10 +818,10 @@ class UpdateExpressionTest extends DynamoDbTestCase
         $entity->labels = new StringSet('a');
         $this->putArchive($entity);
 
-        $this->updateArchive('x', Update::delete('labels', new StringSet('a')));
+        $this->updateArchive('x', Update::removeFromSet('labels', new StringSet('a')));
         static::assertNull($this->readArchive('x')?->labels);
 
-        $this->updateArchive('x', Update::delete('labels', new StringSet('a')));
+        $this->updateArchive('x', Update::removeFromSet('labels', new StringSet('a')));
         static::assertNull($this->readArchive('x')?->labels);
     }
 
@@ -832,12 +832,12 @@ class UpdateExpressionTest extends DynamoDbTestCase
         static::expectException(ClientException::class);
         static::expectExceptionMessageMatches('/string set\s+may not be empty/');
 
-        $this->updateArchive('x', Update::add('labels', new StringSet()));
+        $this->updateArchive('x', Update::addToSet('labels', new StringSet()));
     }
 
     private function put(RecordEntity $entity): void
     {
-        $this->client()->put(RecordEntity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
     }
 
     /**
@@ -845,7 +845,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
      */
     private function update(string $id, array|UpdateExpression $update, ?FilterInterface $condition = null): void
     {
-        $this->client()->update(RecordEntity::class, new UpdateInput(new Index(self::TENANT, $id), $update, $condition));
+        $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, $id), $update, $condition));
     }
 
     /**
@@ -866,7 +866,7 @@ class UpdateExpressionTest extends DynamoDbTestCase
 
     private function read(string $id): ?RecordEntity
     {
-        $entity = $this->client()->get(new GetInput([RecordEntity::class => [new Index(self::TENANT, $id)]]))->first();
+        $entity = $this->client()->get(new GetInput([new Key(RecordEntity::class, self::TENANT, $id)]))->first();
         static::assertTrue($entity === null || $entity instanceof RecordEntity);
 
         /** @var ?RecordEntity $entity */
@@ -892,17 +892,17 @@ class UpdateExpressionTest extends DynamoDbTestCase
 
     private function putArchive(ArchiveEntity $entity): void
     {
-        $this->client()->put(ArchiveEntity::class, new PutInput($entity));
+        $this->client()->put(new PutInput($entity));
     }
 
     private function updateArchive(string $id, UpdateExpression $update): void
     {
-        $this->client()->update(ArchiveEntity::class, new UpdateInput(new Index($id), $update));
+        $this->client()->update(new UpdateInput(new Key(ArchiveEntity::class, $id), $update));
     }
 
     private function readArchive(string $id): ?ArchiveEntity
     {
-        $entity = $this->client()->get(new GetInput([ArchiveEntity::class => [new Index($id)]]))->first();
+        $entity = $this->client()->get(new GetInput([new Key(ArchiveEntity::class, $id)]))->first();
         static::assertTrue($entity === null || $entity instanceof ArchiveEntity);
 
         /** @var ?ArchiveEntity $entity */

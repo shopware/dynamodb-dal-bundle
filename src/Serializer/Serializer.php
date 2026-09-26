@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Serializer;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
-use Shopware\DynamodbDalBundle\Client\Index;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
@@ -61,8 +61,7 @@ class Serializer
     }
 
     /**
-     * Deserializes the provided fields. This is useful for partial DynamoDB
-     * structures like LastEvaluatedKey where required entity fields are not present.
+     * Deserializes the provided fields, a whole item or only some of them, such as a key.
      *
      * @template Entity of AbstractEntity
      *
@@ -96,6 +95,7 @@ class Serializer
                     continue;
                 }
 
+                // Left for the normalizer to fill in; deserialize() fails on it if it stays null
                 $fields[$name] = null;
 
                 continue;
@@ -180,24 +180,30 @@ class Serializer
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
-     * @param Entity|Index $key
+     * @param Entity|Key<Entity> $key
      *
      * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
      * @return array<string, AttributeValue>
      */
-    public function serializeKey(EntityDefinition $definition, AbstractEntity|Index $key): array
+    public function serializeKey(EntityDefinition $definition, AbstractEntity|Key $key): array
     {
         if ($key instanceof AbstractEntity) {
             $keySchema = $definition->getKeySchema();
             $vars = $key->getVars();
-            $key = new Index(
+            $key = new Key(
+                $definition->getClass(),
                 $vars[$keySchema->hashKey] ?? null,
                 $keySchema->rangeKey !== null ? ($vars[$keySchema->rangeKey] ?? null) : null,
             );
         }
 
-        $fields = $key->getFields($definition);
+        $keySchema = $definition->getKeySchema();
+        $fields = [$keySchema->hashKey => $key->hashValue];
+        if ($keySchema->rangeKey !== null) {
+            $fields[$keySchema->rangeKey] = $key->rangeValue;
+        }
+
         $result = $this->serialize($definition, $fields, NormalizerOperation::Key)->getFields();
 
         // A DynamoDB key must carry every key attribute; a key field that serialized to nothing is a bug.
@@ -221,11 +227,11 @@ class Serializer
      * @template Entity of AbstractEntity
      *
      * @param EntityDefinition<Entity> $definition
-     * @param Entity|Index|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
+     * @param Entity|Key<Entity>|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
      *
      * @throws DALException if a key field does not exist in the definition or a value is missing
      */
-    public function hashKey(EntityDefinition $definition, AbstractEntity|Index|array $key): string
+    public function hashKey(EntityDefinition $definition, AbstractEntity|Key|array $key): string
     {
         if (!\is_array($key)) {
             $key = $this->serializeKey($definition, $key);
@@ -235,13 +241,12 @@ class Serializer
         foreach ($definition->getKeySchema()->getFields() as $field) {
             $value = $key[$field] ?? null;
 
-            // A key attribute is only ever a string, number or binary.
+            // A key attribute is only ever a string, number or binary, so the default arm is only defensive.
             $parts[] = match (true) {
                 $value === null => '',
                 $value->getS() !== null => 'S:' . $value->getS(),
                 $value->getN() !== null => 'N:' . $value->getN(),
                 $value->getB() !== null => 'B:' . base64_encode($value->getB()),
-                // partition and sort keys are always one of the above, so this is only defensive.
                 default => '',
             };
         }
@@ -257,9 +262,9 @@ class Serializer
      *
      * @throws DALException
      *
-     * @return Index|null - Returns null if the key cannot be build from the provided fields, e.g. empty or key schema not matching
+     * @return Key<Entity>|null - Returns null if the key cannot be built from the provided fields, e.g. empty or key schema not matching
      */
-    public function deserializeKey(EntityDefinition $definition, array $output): ?Index
+    public function deserializeKey(EntityDefinition $definition, array $output): ?Key
     {
         $keySchema = $definition->getKeySchema();
 
@@ -276,7 +281,7 @@ class Serializer
 
         $rangeValue = $keySchema->rangeKey !== null ? ($deserialized[$keySchema->rangeKey] ?? null) : null;
 
-        return new Index($deserialized[$keySchema->hashKey] ?? null, $rangeValue);
+        return new Key($definition->getClass(), $deserialized[$keySchema->hashKey] ?? null, $rangeValue);
     }
 
     /**

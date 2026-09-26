@@ -3,9 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Definition;
 
 /**
- * The partition (and optional sort) key of a table or index, addressed by entity
- * field name. Field names — not raw DynamoDB attribute names — so the {@see \Shopware\DynamodbDalBundle\Serializer\Serializer}
- * can round-trip them when (de)serializing keys and `ExclusiveStartKey`s.
+ * The partition (and optional sort) key of a table or index, addressed by entity field name.
  */
 readonly class KeySchema
 {

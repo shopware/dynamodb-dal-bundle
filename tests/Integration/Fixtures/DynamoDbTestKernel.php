@@ -43,7 +43,7 @@ class DynamoDbTestKernel extends BaseKernel
     ];
 
     /**
-     * Logical entity name => physical table name.
+     * Logical name => physical table name.
      *
      * @var array<string, string>
      */
@@ -99,8 +99,8 @@ class DynamoDbTestKernel extends BaseKernel
             'php_errors' => ['log' => true],
         ]);
 
-        // Deliberately no `autoconfigure()`: the bundle has to pick the fixture entities up
-        // without it.
+        // Deliberately no `autoconfigure()`: the bundle has to pick the fixture field serializers
+        // up without it.
         $services = $container->services()
             ->defaults()
                 ->autowire();
