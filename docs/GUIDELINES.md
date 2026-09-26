@@ -14,7 +14,7 @@
 
 - The bundle supports PHP 8.4 and 8.5, and Symfony 7.3 and 8. CI runs each PHP version with both the lowest and the highest dependencies, so don't use an API outside that range
 - `composer phpstan` (level 9, strict rules) and `composer ecs` must pass. `composer ecs:fix` applies the code style
-- Inputs, outputs and value objects are `final` and `readonly` where possible
+- Inputs and value objects are `final` and `readonly` where possible. A class a consumer may want to double in a test, such as `Client` or an output, is `@final` instead: not meant to be extended, but open to mocks
 - `AttributeValue` stays inside the bundle. Public methods take and return entities and PHP values
 - A wrongly declared entity fails the container build, not a request. Validate it in `DefinitionBuilder` or a compiler pass
 - Generics use `@template`, so the entity type carries through from an entity class or input to its output
@@ -27,7 +27,9 @@
   class is public. The class is API; its constructor signature is not
 - Extension points are abstract classes (`AbstractFieldSerializer`, `AbstractNormalizer`) or interfaces (`FilterInterface`, `UpdateActionInterface`)
 - Decide which side of that boundary a new class belongs to when you add it
-- Client operations are addressed by entity class, never by `EntityDefinition`
+- Client operations are addressed by entity class, never by `EntityDefinition`. Every input names its class, through its entity, its `Key` or a class argument, so no `Client` method takes one
+- What a consumer needs to test code that uses the bundle lives in the `Test` namespace: `OutputFactory`, `EntityDefinitionFactory`, `CompiledExpression`, `ExceptionFactory`. It is public API, and builds what the rest of the API only builds internally, the way the bundle builds it
+- A method keeps one contract. Its atomicity, cost and exceptions do not depend on how many inputs it gets
 
 ## Services and configuration
 

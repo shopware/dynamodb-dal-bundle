@@ -52,8 +52,6 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class DynamoDbDataCollector extends AbstractDataCollector
 {
-    private const string TARGET_HEADER = 'x-amz-target';
-
     /**
      * @var list<SerializerOperation>
      */
@@ -76,7 +74,6 @@ class DynamoDbDataCollector extends AbstractDataCollector
     {
         // Extract eagerly: HttpClientDataCollector::collect() drains the TraceableHttpClient
         // in the same phase, so a deferred lateCollect() would see an empty list.
-        // Our priority (260) ensures we're invoked before HttpClientDataCollector (250).
         $dynamoOperations = $this->extractDynamoOperations();
 
         $byCaller = [];
@@ -197,7 +194,7 @@ class DynamoDbDataCollector extends AbstractDataCollector
         foreach ($this->httpClient->getTracedRequests() as $trace) {
             $options = self::arrayOrEmpty($trace['options'] ?? null);
             $headers = $options['headers'] ?? [];
-            $target = is_iterable($headers) ? $this->extractAmzTarget($headers) : null;
+            $target = is_iterable($headers) ? DynamoDbCall::target($headers) : null;
             if ($target === null || !str_starts_with($target, 'DynamoDB_')) {
                 continue;
             }
@@ -226,36 +223,6 @@ class DynamoDbDataCollector extends AbstractDataCollector
         }
 
         return $operations;
-    }
-
-    /**
-     * @param iterable<mixed, mixed> $headers
-     */
-    private function extractAmzTarget(iterable $headers): ?string
-    {
-        foreach ($headers as $key => $value) {
-            // Symfony takes headers both as a `name => value` map and as raw `'name: value'` lines.
-            $line = \is_string($key) ? $key . ': ' . self::headerValue($value) : self::headerValue($value);
-            if (stripos($line, self::TARGET_HEADER . ':') !== 0) {
-                continue;
-            }
-
-            return trim(substr($line, \strlen(self::TARGET_HEADER) + 1));
-        }
-
-        return null;
-    }
-
-    /**
-     * A header's value as one string; a name may carry a list of values, of which the first is ours.
-     */
-    private static function headerValue(mixed $value): string
-    {
-        if (\is_array($value)) {
-            $value = $value[0] ?? null;
-        }
-
-        return \is_scalar($value) ? (string) $value : '';
     }
 
     /**

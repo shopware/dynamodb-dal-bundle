@@ -107,10 +107,10 @@ class UpdateExpressionTest extends TestCase
     {
         [$expression] = $this->compile(
             Update::with(
-                Update::add('count', 2),
+                Update::increment('count', 2),
                 Update::remove('name'),
                 Update::setIfNotExists('ratio', 1.5),
-                Update::delete('tags', ['old']),
+                Update::removeFromSet('tags', ['old']),
                 Update::set('id', 'x'),
             ),
         );
@@ -170,8 +170,8 @@ class UpdateExpressionTest extends TestCase
 
     public function testAddAndDeleteTakeTheOperandAsTheFieldSerializesIt(): void
     {
-        [$add, $addContext] = $this->compile(Update::add('count', 1));
-        [$delete, $deleteContext] = $this->compile(Update::delete('tags', ['a']));
+        [$add, $addContext] = $this->compile(Update::increment('count', 1));
+        [$delete, $deleteContext] = $this->compile(Update::removeFromSet('tags', ['a']));
 
         static::assertSame('ADD #count :h_0_count', $add);
         static::assertEquals([':h_0_count' => new AttributeValue(['N' => '1'])], $addContext->values);
@@ -189,7 +189,7 @@ class UpdateExpressionTest extends TestCase
 
             public function compile(ExpressionCompileContext $context): string
             {
-                return "{$context->attribute('ratio')} = {$context->attribute('count')}";
+                return "{$context->path('ratio')} = {$context->path('count')}";
             }
         };
 
@@ -255,8 +255,8 @@ class UpdateExpressionTest extends TestCase
      */
     public static function nullOperandsProvider(): iterable
     {
-        yield 'ADD' => [Update::add('count', null), 'Operand for field "count"'];
-        yield 'DELETE' => [Update::delete('tags', null), 'Operand for field "tags"'];
+        yield 'ADD' => [Update::addToSet('count', null), 'Operand for field "count"'];
+        yield 'DELETE' => [Update::removeFromSet('tags', null), 'Operand for field "tags"'];
     }
 
     public function testAnActionTakesBackItsValueAndKeepsTheRest(): void

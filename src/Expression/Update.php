@@ -65,20 +65,19 @@ final class Update
     }
 
     /**
-     * Adds to a number, counting a missing one as 0. Shorthand for {@see self::add()} with a number.
+     * Adds to a number with DynamoDB's `ADD`, counting a missing one as 0.
      */
     public static function increment(string $fieldName, int|float $by = 1): UpdateExpression
     {
-        return self::add($fieldName, $by);
+        return self::with(new AddAction($fieldName, $by));
     }
 
     /**
-     * Subtracts from a number, counting a missing one as 0. Shorthand for {@see self::add()} with a
-     * negative number.
+     * Subtracts from a number with DynamoDB's `ADD` of the negative step, counting a missing one as 0.
      */
     public static function decrement(string $fieldName, int|float $by = 1): UpdateExpression
     {
-        return self::add($fieldName, -$by);
+        return self::with(new AddAction($fieldName, -$by));
     }
 
     /**
@@ -102,25 +101,27 @@ final class Update
     }
 
     /**
-     * DynamoDB's `ADD`: adds to a number, counting a missing one as 0, or adds elements to a set, creating a
-     * missing one.
+     * Adds elements to a set with DynamoDB's `ADD`, creating a missing set.
+     * `$elements` is a value of the set field, serialized by its serializer.
      */
-    public static function add(string $fieldName, mixed $value): UpdateExpression
+    public static function addToSet(string $fieldName, mixed $elements): UpdateExpression
     {
-        return self::with(new AddAction($fieldName, $value));
+        return self::with(new AddAction($fieldName, $elements));
     }
 
     /**
-     * DynamoDB's `DELETE`: removes elements from a set. To remove an attribute, use {@see self::remove()}.
+     * Removes elements from a set with DynamoDB's `DELETE`.
+     * `$elements` is a value of the set field, serialized by its serializer.
+     * To remove the attribute itself, use {@see self::remove()}.
      */
-    public static function delete(string $fieldName, mixed $value): UpdateExpression
+    public static function removeFromSet(string $fieldName, mixed $elements): UpdateExpression
     {
-        return self::with(new DeleteAction($fieldName, $value));
+        return self::with(new DeleteAction($fieldName, $elements));
     }
 
     /**
-     * Combines expressions, and actions of your own, into one, as `Filter::and()` combines filters. See
-     * {@see UpdateExpression::with()}.
+     * Combines expressions, and actions of your own, into one, as `Filter::and()` combines filters.
+     * See {@see UpdateExpression::with()}.
      */
     public static function with(UpdateExpression|UpdateActionInterface ...$updates): UpdateExpression
     {

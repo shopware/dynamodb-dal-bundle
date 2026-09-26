@@ -14,23 +14,34 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
+ * The matches of a {@see ScanInput} or {@see QueryInput}, streamed once.
+ * Iterating stops after the input's `limit` items, and reads every match without one.
+ * {@see page()} reads one page, with tokens for its neighbors.
+ *
  * @template Entity of AbstractEntity
  *
  * @extends ReadOutput<Entity, array<string, AttributeValue>|int>
+ *
+ * @final - considered final, but not marked as such so a test can double it
  */
-final class SearchOutput extends ReadOutput
+class SearchOutput extends ReadOutput
 {
     private readonly ?int $limit;
 
     /**
+     * `$source` keys each entity by its raw start key, as {@see ReaderClient::search()} yields them.
+     * A source keyed by position, streams all the same, but its tokens are refused when used.
+     *
      * @internal
      *
-     * @param \Generator<array<string, AttributeValue>|int, Entity> $source - each entity keyed by its raw start key, as {@see ReaderClient::search()} yields them. A source keyed by position (a test double) streams all the same, but its tokens are refused when used
+     * @param \Generator<array<string, AttributeValue>|int, Entity> $source
+     * @param ScanInput<Entity>|QueryInput<Entity> $search
      */
     public function __construct(
         \Generator $source,
         private readonly ScanInput|QueryInput $search,
     ) {
+        // A limit below 1 counts as 1: a page without items has no item to cut a token from
         $this->limit = $this->search->limit !== null ? max(1, $this->search->limit) : null;
         parent::__construct($source);
     }
@@ -56,16 +67,15 @@ final class SearchOutput extends ReadOutput
     }
 
     /**
-     * Returns all items requested until $limit is reached, with tokens for the neighbouring pages.
+     * Reads up to the input's `limit` items, or every match without one, with tokens for the neighboring pages.
      *
      * Going back is the same query read in reverse from the first item, so it needs no history of the pages visited before.
      *
      * @throws \LogicException if this output has already been read
      * @throws UnknownEntityDefinitionException
-     * @throws InvalidCursorException
+     * @throws InvalidCursorException also if a key attribute of a boundary item is not valid UTF-8
      * @throws DALException if the query does not compile, or an item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
-     * @throws \JsonException if a key attribute of a boundary item is not valid UTF-8
      *
      * @return Page<Entity>
      */

@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Exception;
 
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
+use Shopware\DynamodbDalBundle\Definition\FieldPath;
 
 /**
  * A field's serializer could not turn the value into a DynamoDB attribute
@@ -16,14 +17,7 @@ final class FieldSerializationException extends \RuntimeException implements DAL
         ?\Throwable $previous = null,
         ?string $path = null,
     ) {
-        $name = $fieldDefinition->getName();
-
-        $this->path = match (true) {
-            $path === null || $path === '' => $name,
-            str_starts_with($path, '[') || str_starts_with($path, '.') => $name . $path,
-            str_starts_with($path, strstr($name, '.', true) ?: $name) => $path,
-            default => $name . '.' . $path,
-        };
+        $this->path = FieldPath::locate($fieldDefinition, $path);
 
         parent::__construct(\sprintf(
             'Field "%s" in item "%s" could not be serialized',

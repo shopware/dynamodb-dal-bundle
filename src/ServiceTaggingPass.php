@@ -29,7 +29,6 @@ class ServiceTaggingPass implements CompilerPassInterface
                 continue;
             }
 
-            // The tag name matches the class name, which is what DefinitionCompilerPass looks for.
             if (is_subclass_of($class, AbstractFieldSerializer::class, true)) {
                 $definition->addTag(AbstractFieldSerializer::class);
             }

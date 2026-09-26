@@ -560,8 +560,8 @@ class DefinitionCompilerPassTest extends TestCase
      */
     private function assertValidEntityFieldDefinitions(EntityDefinition $definition, array $fieldDefinitions): void
     {
-        // stringValue
         static::assertCount(7, $fieldDefinitions);
+
         static::assertArrayHasKey('stringValue', $fieldDefinitions);
         static::assertSame('stringValue', $fieldDefinitions['stringValue']->getName());
         static::assertSame('string', $fieldDefinitions['stringValue']->getType());
@@ -571,7 +571,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(StringFieldSerializer::class, $fieldDefinitions['stringValue']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['stringValue']->getEntityDefinition());
 
-        // intValue
         static::assertArrayHasKey('intValue', $fieldDefinitions);
         static::assertSame('intValue', $fieldDefinitions['intValue']->getName());
         static::assertSame('int', $fieldDefinitions['intValue']->getType());
@@ -581,7 +580,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(IntFieldSerializer::class, $fieldDefinitions['intValue']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['intValue']->getEntityDefinition());
 
-        // floatValue
         static::assertArrayHasKey('floatValue', $fieldDefinitions);
         static::assertSame('floatValue', $fieldDefinitions['floatValue']->getName());
         static::assertSame('float', $fieldDefinitions['floatValue']->getType());
@@ -591,7 +589,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(FloatFieldSerializer::class, $fieldDefinitions['floatValue']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['floatValue']->getEntityDefinition());
 
-        // boolValue
         static::assertArrayHasKey('boolValue', $fieldDefinitions);
         static::assertSame('boolValue', $fieldDefinitions['boolValue']->getName());
         static::assertSame('bool', $fieldDefinitions['boolValue']->getType());
@@ -601,7 +598,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(BoolFieldSerializer::class, $fieldDefinitions['boolValue']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['boolValue']->getEntityDefinition());
 
-        // dateTimeValue
         static::assertArrayHasKey('dateTimeValue', $fieldDefinitions);
         static::assertSame('dateTimeValue', $fieldDefinitions['dateTimeValue']->getName());
         static::assertSame('DateTimeImmutable', $fieldDefinitions['dateTimeValue']->getType());
@@ -611,7 +607,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(DateTimeFieldSerializer::class, $fieldDefinitions['dateTimeValue']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['dateTimeValue']->getEntityDefinition());
 
-        // nullableValueWithDefault
         static::assertArrayHasKey('nullableValueWithDefault', $fieldDefinitions);
         static::assertSame('nullableValueWithDefault', $fieldDefinitions['nullableValueWithDefault']->getName());
         static::assertSame('string', $fieldDefinitions['nullableValueWithDefault']->getType());
@@ -621,7 +616,6 @@ class DefinitionCompilerPassTest extends TestCase
         static::assertInstanceOf(StringFieldSerializer::class, $fieldDefinitions['nullableValueWithDefault']->getSerializer());
         static::assertSame($definition, $fieldDefinitions['nullableValueWithDefault']->getEntityDefinition());
 
-        // nullableValue
         static::assertArrayHasKey('nullableValue', $fieldDefinitions);
         static::assertSame('nullableValue', $fieldDefinitions['nullableValue']->getName());
         static::assertSame('string', $fieldDefinitions['nullableValue']->getType());

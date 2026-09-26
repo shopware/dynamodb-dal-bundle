@@ -3,8 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Fixtures;
 
 /**
- * Fixture for ArrayTypeParser::getDocblockVarType() tests. Docblocks must be on the class in this file.
- *
+ * Fixture for ArrayTypeParser::getDocblockVarType() tests, which read the `@var` docblocks of these properties.
  */
 class ArrayTypeParserFixture
 {

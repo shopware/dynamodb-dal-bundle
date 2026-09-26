@@ -5,18 +5,18 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class EqualsAnyFilter implements FilterInterface
+final readonly class EqualsAnyFilter implements FilterInterface
 {
     /**
      * @var list<mixed>
      */
-    public readonly array $values;
+    public array $values;
 
     /**
      * @param list<mixed> $values
      */
     public function __construct(
-        public readonly string $fieldName,
+        public string $fieldName,
         array $values,
     ) {
         $this->values = array_values($values);
@@ -30,10 +30,10 @@ class EqualsAnyFilter implements FilterInterface
 
         $fieldName = $this->fieldName;
         $placeholders = implode(', ', array_map(
-            static fn (mixed $value): string => $context->placeholder($fieldName, $value),
+            static fn (mixed $value): string => $context->value($fieldName, $value),
             $this->values,
         ));
 
-        return "{$context->attribute($fieldName)} IN ({$placeholders})";
+        return "{$context->path($fieldName)} IN ({$placeholders})";
     }
 }

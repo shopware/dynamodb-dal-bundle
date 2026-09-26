@@ -2,8 +2,8 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Input;
 
-use Shopware\DynamodbDalBundle\Client\Index;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -12,144 +12,61 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(GetInput::class)]
 class GetInputTest extends TestCase
 {
-    public function testConstructorKeepsEntityClassesWithKeys(): void
+    public function testKeepsKeysOfSeveralEntityClassesInTheirOrder(): void
     {
-        $a = new Index('a');
-        $b = new Index('b');
+        $a = new Key(NormalEntity::class, 'a');
+        $o = new Key(OtherEntity::class, 'o');
+        $b = new Key(NormalEntity::class, 'b');
 
-        $input = new GetInput([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [$b],
-        ]);
-
-        static::assertSame([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [$b],
-        ], $input->keysByClass);
-    }
-
-    public function testConstructorDropsEntityClassesWithoutKeys(): void
-    {
-        $a = new Index('a');
-
-        $input = new GetInput([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [],
-        ]);
-
-        static::assertSame([NormalEntity::class => [$a]], $input->keysByClass);
+        static::assertSame([$a, $o, $b], new GetInput([$a, $o, $b])->keys);
     }
 
     public function testCompositeKeysArePreserved(): void
     {
-        $input = new GetInput([NormalEntity::class => [new Index('hash', 'range')]]);
+        $key = new GetInput([new Key(NormalEntity::class, 'hash', 'range')])->keys[0];
 
-        static::assertSame('hash', $input->keysByClass[NormalEntity::class][0]->hashValue);
-        static::assertSame('range', $input->keysByClass[NormalEntity::class][0]->rangeValue);
+        static::assertSame(NormalEntity::class, $key->class);
+        static::assertSame('hash', $key->hashValue);
+        static::assertSame('range', $key->rangeValue);
     }
 
-    public function testConsistentReadIsNullByDefault(): void
+    public function testAnInputWithoutKeysHasNone(): void
     {
-        static::assertNull(new GetInput([])->consistentRead);
+        static::assertSame([], new GetInput()->keys);
     }
 
-    public function testWithKeyCreatesABucketForTheEntityClass(): void
+    public function testConsistentReadIsOffByDefault(): void
     {
-        $a = new Index('a');
-
-        $input = new GetInput([])->withKey(NormalEntity::class, $a);
-
-        static::assertSame([NormalEntity::class => [$a]], $input->keysByClass);
+        static::assertFalse(new GetInput()->consistentRead);
     }
 
-    public function testWithKeyAppendsToExistingBucket(): void
+    public function testWithKeyAppendsKeysToANewInstanceAndLeavesTheOriginalUntouched(): void
     {
-        $a = new Index('a');
-        $b = new Index('b');
+        $a = new Key(NormalEntity::class, 'a');
+        $o = new Key(OtherEntity::class, 'o');
+        $input = new GetInput([$a]);
 
-        $input = new GetInput([NormalEntity::class => [$a]])->withKey(NormalEntity::class, $b);
+        $wider = $input->withKey($o, $a);
 
-        static::assertSame([NormalEntity::class => [$a, $b]], $input->keysByClass);
-    }
-
-    public function testWithKeyAppendsSeveralKeys(): void
-    {
-        $a = new Index('a');
-        $b = new Index('b');
-
-        $input = new GetInput([])->withKey(NormalEntity::class, $a, $b);
-
-        static::assertSame([NormalEntity::class => [$a, $b]], $input->keysByClass);
-    }
-
-    public function testWithKeyWithoutKeysDoesNotCreateABucket(): void
-    {
-        $input = new GetInput([])->withKey(NormalEntity::class);
-
-        static::assertSame([], $input->keysByClass);
-        static::assertArrayNotHasKey(NormalEntity::class, $input->keysByClass);
-    }
-
-    public function testConstructorDropsEveryEmptyEntityClass(): void
-    {
-        $input = new GetInput([NormalEntity::class => [], OtherEntity::class => []]);
-
-        static::assertSame([], $input->keysByClass);
-    }
-
-    public function testWithKeyPreservesEntityClassesAddedAcrossSeveralCalls(): void
-    {
-        $a = new Index('a');
-        $b = new Index('b');
-
-        $input = new GetInput([])
-            ->withKey(NormalEntity::class, $a)
-            ->withKey(OtherEntity::class, $b);
-
-        static::assertSame([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [$b],
-        ], $input->keysByClass);
-    }
-
-    public function testWithKeyReturnsANewInstanceAndLeavesTheOriginalUntouched(): void
-    {
-        $a = new Index('a');
-        $b = new Index('b');
-
-        $input = new GetInput([NormalEntity::class => [$a]]);
-        $widened = $input->withKey(OtherEntity::class, $b);
-
-        static::assertNotSame($input, $widened);
-        static::assertSame([NormalEntity::class => [$a]], $input->keysByClass);
-        static::assertSame([
-            NormalEntity::class => [$a],
-            OtherEntity::class => [$b],
-        ], $widened->keysByClass);
+        static::assertSame([$a], $input->keys);
+        static::assertSame([$a, $o, $a], $wider->keys);
     }
 
     public function testWithConsistentReadSetsTheFlagOnANewInstance(): void
     {
-        $a = new Index('a');
-        $input = new GetInput([NormalEntity::class => [$a]]);
+        $a = new Key(NormalEntity::class, 'a');
+        $input = new GetInput([$a]);
 
-        $consistent = $input->withConsistentRead(true);
+        $consistent = $input->withConsistentRead();
 
-        static::assertNotSame($input, $consistent);
-        static::assertNull($input->consistentRead);
+        static::assertFalse($input->consistentRead);
         static::assertTrue($consistent->consistentRead);
-        // The keys survive the copy.
-        static::assertSame([NormalEntity::class => [$a]], $consistent->keysByClass);
-
-        static::assertNull($consistent->withConsistentRead(null)->consistentRead);
+        static::assertSame([$a], $consistent->keys);
+        static::assertFalse($consistent->withConsistentRead(false)->consistentRead);
     }
 
     public function testWithKeyKeepsTheConsistentReadFlag(): void
     {
-        $input = new GetInput([])
-            ->withConsistentRead(true)
-            ->withKey(NormalEntity::class, new Index('a'));
-
-        static::assertTrue($input->consistentRead);
+        static::assertTrue(new GetInput([], consistentRead: true)->withKey(new Key(NormalEntity::class, 'a'))->consistentRead);
     }
 }

@@ -63,4 +63,11 @@ class CursorTest extends TestCase
 
         Cursor::decode($token);
     }
+
+    public function testEncodingAKeyThatIsNotValidUtf8IsRefused(): void
+    {
+        $this->expectException(InvalidCursorException::class);
+
+        new Cursor(['id' => new AttributeValue(['S' => "\xff"])])->encode();
+    }
 }

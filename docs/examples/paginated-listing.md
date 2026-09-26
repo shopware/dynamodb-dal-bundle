@@ -6,6 +6,7 @@
 - [Keeping filters in the links](#keeping-filters-in-the-links)
 - [A page merged from several queries](#a-page-merged-from-several-queries)
 - [Which approach to use](#which-approach-to-use)
+- [Testing a listing](#testing-a-listing)
 
 This example builds an article listing with "Previous" and "Next" links from a controller and a Twig
 template. Each page starts where the previous one ended, so reaching page 10 never reads pages 1 to 9
@@ -82,7 +83,8 @@ final class ArticleController extends AbstractController
     public function list(#[MapQueryParameter] ?string $cursor = null): Response
     {
         try {
-            $page = $this->client->search(ArticleEntity::class, new QueryInput(
+            $page = $this->client->search(new QueryInput(
+                ArticleEntity::class,
                 Filter::equals('status', 'published'),
                 index: 'statusCreatedAtIndex',
                 forward: false, // newest first
@@ -143,7 +145,9 @@ use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
     {
         try {
             $visited = CursorHistory::fromString($history); // null or '' is page 1
-            $page = $this->client->search(ArticleEntity::class, new ScanInput(cursor: $visited->current(), limit: 20))->page();
+            $page = $this->client
+                ->search(new ScanInput(ArticleEntity::class, cursor: $visited->current(), limit: 20))
+                ->page();
         } catch (InvalidCursorException) {
             return $this->redirectToRoute('article_all');
         }
@@ -211,7 +215,8 @@ $positions = CursorHistory::split($visited->current()); // ['draft' => token, �
 $pages = [];
 $items = [];
 foreach (['draft', 'published'] as $status) {
-    $pages[$status] = $this->client->search(ArticleEntity::class, new QueryInput(
+    $pages[$status] = $this->client->search(new QueryInput(
+        ArticleEntity::class,
         Filter::equals('status', $status),
         index: 'statusCreatedAtIndex',
         forward: false,
@@ -234,7 +239,7 @@ foreach ($visible as $article) {
     $positions[$article->status] = $pages[$article->status]->cursorAfter($article);
 }
 
-$nextHistory = $hasMore ? $visited->append(CursorHistory::combine($positions)) : null;
+$nextHistory = $hasMore ? $visited->advance(CursorHistory::combine($positions)) : null;
 ```
 
 The template is the same as for the scan listing.
@@ -247,3 +252,49 @@ The template is the same as for the scan listing.
 | One query, with page numbers | `CursorHistory` | `history`: grows with each page |
 | A scan | `CursorHistory` for "Previous"; `page.next` alone for forward-only | `history`, or `cursor` |
 | Several queries merged into one page | `cursorAfter()` + `CursorHistory::combine()` | `history` |
+
+## Testing a listing
+
+`OutputFactory::search()`, from the bundle's `Test` namespace, stands in for a search in a unit test. It streams
+the entities it is given, limited and paged as the input says, and builds its tokens from the key attributes
+`$keyOf` returns, as a real search builds them from the items DynamoDB returns. A test compares the token the code
+under test passes on with one its own stand-in hands out:
+
+```php
+use Shopware\DynamodbDalBundle\Client\Client;
+use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
+use Shopware\DynamodbDalBundle\Expression\Filter;
+use Shopware\DynamodbDalBundle\Test\OutputFactory;
+
+$keyOf = static fn (ArticleEntity $article): array => [
+    'id' => $article->id,
+    'status' => $article->status,
+    'createdAt' => $article->createdAt->getTimestamp(),
+];
+
+$client = $this->createMock(Client::class);
+$client->method('search')->willReturnCallback(
+    static fn (QueryInput $query): SearchOutput => OutputFactory::search($query, [$first, $second], $keyOf),
+);
+
+// … run the controller with a limit of 1 …
+
+$query = new QueryInput(
+    ArticleEntity::class,
+    Filter::equals('status', 'published'),
+    index: 'statusCreatedAtIndex',
+    forward: false,
+    limit: 1,
+);
+$expected = OutputFactory::search($query, [$first, $second], $keyOf)->page()->cursorAfter($first);
+static::assertSame($expected, $nextCursorTheControllerLinked);
+```
+
+- `$keyOf` returns the key attributes a search of the input resumes from, as strings and numbers: the table key,
+  plus the index key for a query of an index.
+- Without `$keyOf`, a page still hands out tokens, but every search refuses them.
+- `OutputFactory::get()` stands in for a key read the same way, for a double of `get()` or `findMany()`.
+- The outputs stream once, as the real ones do, so a double that returns one has to build it per call.
+- [Testing](testing.md) covers doubles of the client, its exceptions, and tests of filters and update actions of
+  your own.

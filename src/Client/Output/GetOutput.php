@@ -3,59 +3,24 @@
 namespace Shopware\DynamodbDalBundle\Client\Output;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
- * The typed result of a single- or multi-table {@see GetInput} — a bounded key read,
- * cached on first access (multi-key order is not preserved).
+ * The entities a single- or multi-table {@see GetInput} finds, in no particular order, streamed once like the
+ * matches of a search: each `BatchGetItem` of 100 keys is read as the stream reaches it.
+ * {@see forEntity()} and {@see grouped()} read it as the other terminals do, so use one of them, and only once.
  *
  * @template Entity of AbstractEntity = never
  *
- * @implements \IteratorAggregate<int, Entity>
+ * @extends ReadOutput<Entity, int>
+ *
+ * @final - considered final, but not marked as such so a test can double it
  */
-final class GetOutput implements \IteratorAggregate
+class GetOutput extends ReadOutput
 {
-    /**
-     * @var ?list<Entity>
-     */
-    private ?array $cache = null;
-
-    /**
-     * @internal
-     *
-     * @param \Generator<int, Entity> $source - each found entity
-     */
-    public function __construct(
-        private readonly \Generator $source,
-    ) {
-    }
-
-    /**
-     * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key does not serialize, or a stored item does not deserialize
-     * @throws AsyncAwsException if a request to DynamoDB fails
-     *
-     * @return \Traversable<int, Entity>
-     */
-    public function getIterator(): \Traversable
-    {
-        yield from $this->load();
-    }
-
-    /**
-     * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key does not serialize, or a stored item does not deserialize
-     * @throws AsyncAwsException if a request to DynamoDB fails
-     *
-     * @return list<Entity>
-     */
-    public function toArray(): array
-    {
-        return $this->load();
-    }
-
     /**
      * The found entities of one entity class.
      *
@@ -63,6 +28,7 @@ final class GetOutput implements \IteratorAggregate
      *
      * @param class-string<E> $class
      *
+     * @throws \LogicException if this output has already been read
      * @throws UnknownEntityDefinitionException
      * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
@@ -72,7 +38,7 @@ final class GetOutput implements \IteratorAggregate
     public function forEntity(string $class): array
     {
         $entities = [];
-        foreach ($this->load() as $entity) {
+        foreach ($this->stream() as $entity) {
             if ($entity instanceof $class) {
                 $entities[] = $entity;
             }
@@ -84,6 +50,7 @@ final class GetOutput implements \IteratorAggregate
     /**
      * All found entities bucketed by their exact entity class.
      *
+     * @throws \LogicException if this output has already been read
      * @throws UnknownEntityDefinitionException
      * @throws DALException if a key does not serialize, or a stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
@@ -93,36 +60,10 @@ final class GetOutput implements \IteratorAggregate
     public function grouped(): array
     {
         $grouped = [];
-        foreach ($this->load() as $entity) {
+        foreach ($this->stream() as $entity) {
             $grouped[$entity::class][] = $entity;
         }
 
         return $grouped;
-    }
-
-    /**
-     * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key does not serialize, or a stored item does not deserialize
-     * @throws AsyncAwsException if a request to DynamoDB fails
-     *
-     * @return ?Entity
-     */
-    public function first(): ?AbstractEntity
-    {
-        return $this->load()[0] ?? null;
-    }
-
-    /**
-     * @throws UnknownEntityDefinitionException
-     * @throws DALException if a key does not serialize, or a stored item does not deserialize
-     * @throws AsyncAwsException if a request to DynamoDB fails
-     *
-     * @return list<Entity>
-     *
-     * @phpstan-ignore-next-line throws.unusedType -- the source generator throws as iterator_to_array() reads it
-     */
-    private function load(): array
-    {
-        return $this->cache ??= iterator_to_array($this->source, false);
     }
 }

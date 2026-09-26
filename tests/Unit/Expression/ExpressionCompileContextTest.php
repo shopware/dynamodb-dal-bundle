@@ -90,8 +90,6 @@ class ExpressionCompileContextTest extends TestCase
 
     public function testEqualsAnyCompilesToInOperator(): void
     {
-        // EqualsAnyFilter calls placeholder() once per value (left of `IN`) before
-        // calling attribute() on the right side, so values get the lower indices.
         [$expression, $context] = $this->compile(Filter::equalsAny('name', ['a', 'b', 'c']));
 
         static::assertSame('#name IN (:h_0_name, :h_1_name, :h_2_name)', $expression);
@@ -200,9 +198,7 @@ class ExpressionCompileContextTest extends TestCase
 
         [$expression] = $this->compile($filter);
 
-        // For the IN clause, EqualsAnyFilter registers value placeholders BEFORE its
-        // attribute placeholder — that's why the values are :h_2/:h_3 but the attribute
-        // is #h_3.
+        // Value placeholders are numbered across the whole expression, so the IN values go on from :h_2.
         static::assertSame(
             'NOT #name = :h_0_name AND NOT contains(#name, :h_1_name) AND NOT attribute_exists(#required) AND NOT #name IN (:h_2_name, :h_3_name)',
             $expression,
@@ -379,8 +375,7 @@ class ExpressionCompileContextTest extends TestCase
     public function testDottedPathOnNonMapRootThrows(): void
     {
         // `name` is a plain string field — it has no `valueFieldDefinition`, so any path
-        // beyond the root is rejected. Subsequent segments aren't otherwise validated, but
-        // the root must opt into being traversable.
+        // beyond the root is rejected.
         $this->expectException(UnknownFieldException::class);
         $this->expectExceptionMessage('name.foo');
 
@@ -500,6 +495,23 @@ class ExpressionCompileContextTest extends TestCase
             [':h_0_settings_2efoo_2dbar' => new AttributeValue(['S' => 'baz'])],
             $context->values,
         );
+    }
+
+    public function testAFilterOfYourOwnThatParenthesizesItsClausesIsNotWrappedAgain(): void
+    {
+        $custom = new class implements FilterInterface {
+            public function compile(ExpressionCompileContext $context): string
+            {
+                return "({$context->path('name')} = {$context->value('name', 'a')} OR attribute_exists({$context->path('required')}))";
+            }
+        };
+
+        [$expression] = $this->compile(Filter::and(Filter::equals('required', 'r'), $custom));
+        [$negated] = $this->compile(Filter::not($custom));
+
+        static::assertIsString($expression);
+        static::assertStringEndsWith(' AND (#name = :' . self::PREFIX . '_1_name OR attribute_exists(#required))', $expression);
+        static::assertSame('NOT (#name = :' . self::PREFIX . '_0_name OR attribute_exists(#required))', $negated);
     }
 
     /**

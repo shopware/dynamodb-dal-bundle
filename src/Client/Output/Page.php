@@ -6,16 +6,17 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * @template Entity of AbstractEntity
  */
-readonly class Page
+final readonly class Page
 {
     /**
      * @internal - construction is internal, public properties not
-     * 
+     *
      * @param list<Entity> $items
      * @param ?string $next - resumes after the last item; `null` if there is no further page
      * @param ?string $previous - resumes before the first item; `null` on the first page and always for a scan, which has no order to reverse
@@ -36,7 +37,7 @@ readonly class Page
      * @param Entity $item - one of {@see $items}, by identity
      *
      * @throws \InvalidArgumentException if `$item` is not on this page
-     * @throws \JsonException if a key attribute of `$item` is not valid UTF-8
+     * @throws InvalidCursorException if a key attribute of `$item` is not valid UTF-8
      */
     public function cursorAfter(AbstractEntity $item): string
     {
@@ -50,7 +51,7 @@ readonly class Page
      * @param Entity $item - one of {@see $items}, by identity
      *
      * @throws \InvalidArgumentException if `$item` is not on this page
-     * @throws \JsonException if a key attribute of `$item` is not valid UTF-8
+     * @throws InvalidCursorException if a key attribute of `$item` is not valid UTF-8
      */
     public function cursorBefore(AbstractEntity $item): string
     {

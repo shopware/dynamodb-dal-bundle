@@ -13,16 +13,16 @@ use Shopware\DynamodbDalBundle\Expression\Update;
  * The entity's normalizer sees the elements as the value of the list, not the list they end up in. Where it removes
  * them, nothing is written, as for an empty list given: a missing list stays missing.
  */
-final class ListAppendAction implements NormalizableUpdateActionInterface
+final readonly class ListAppendAction implements NormalizableUpdateActionInterface
 {
     /**
      * @param mixed $values - the list {@see Update::append()} takes, or what the normalizer left in its place. The
      *                      list field's serializer refuses anything else on compile.
      */
     public function __construct(
-        public readonly string $fieldName,
-        public readonly mixed $values,
-        public readonly bool $prepend = false,
+        public string $fieldName,
+        public mixed $values,
+        public bool $prepend = false,
     ) {
     }
 
@@ -53,9 +53,9 @@ final class ListAppendAction implements NormalizableUpdateActionInterface
             return null;
         }
 
-        $attribute = $context->attribute($this->fieldName);
-        $current = "if_not_exists({$attribute}, {$context->placeholder($this->fieldName, [])})";
-        $values = $context->placeholder($this->fieldName, $this->values);
+        $attribute = $context->path($this->fieldName);
+        $current = "if_not_exists({$attribute}, {$context->value($this->fieldName, [])})";
+        $values = $context->value($this->fieldName, $this->values);
 
         return $this->prepend
             ? "{$attribute} = list_append({$values}, {$current})"

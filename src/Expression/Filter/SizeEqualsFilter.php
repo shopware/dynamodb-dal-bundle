@@ -9,20 +9,20 @@ use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
  * Matches when the DynamoDB `size()` of an attribute (map/list/set element count, string length, …)
  * equals a number, e.g. `size(tags) = 0` to match an empty collection.
  */
-class SizeEqualsFilter implements FilterInterface
+final readonly class SizeEqualsFilter implements FilterInterface
 {
     public function __construct(
-        public readonly string $fieldName,
-        public readonly int $value,
+        public string $fieldName,
+        public int $value,
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(ExpressionCompileContext $context): string
     {
         return \sprintf(
             'size(%s) = %s',
-            $context->attribute($this->fieldName),
-            $context->numberPlaceholder($this->value),
+            $context->path($this->fieldName),
+            $context->number($this->value),
         );
     }
 }

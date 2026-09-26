@@ -7,9 +7,9 @@ use Shopware\DynamodbDalBundle\Exception\DALException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 
 /**
- * A DynamoDB read result that streams its source generator **once**. It is single-use: the first of
- * {@see getIterator()}, {@see toArray()} or {@see first()} consumes the stream, and any further call to
- * any of them throws — there is no buffering, so a large scan never accumulates its rows in memory.
+ * A DynamoDB read result that streams its source generator **once**, whether a search or a key read produced it.
+ * It is single-use: the first read of it consumes the stream, and any further read throws.
+ * There is no buffering, so a large scan or key read never accumulates its rows in memory.
  *
  * @template Entity of AbstractEntity
  * @template Key - what the source keys each entity by; consumers only ever see positions
@@ -31,12 +31,10 @@ abstract class ReadOutput implements \IteratorAggregate
     }
 
     /**
-     * Streams the result exactly once, keyed by position. Throws if this output has already been consumed
-     * by an earlier `getIterator()`/`toArray()`/`first()`/`page()` — build a new result from the same query
-     * to read it again.
+     * Streams the result, keyed by position.
      *
      * @throws \LogicException if this output has already been read
-     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws DALException if the read fails in the DAL, e.g. on an item that does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<int, Entity>
@@ -50,7 +48,7 @@ abstract class ReadOutput implements \IteratorAggregate
 
     /**
      * @throws \LogicException if this output has already been read
-     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws DALException if the read fails in the DAL, e.g. on an item that does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return list<Entity>
@@ -62,7 +60,7 @@ abstract class ReadOutput implements \IteratorAggregate
 
     /**
      * @throws \LogicException if this output has already been read
-     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws DALException if the read fails in the DAL, e.g. on an item that does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return ?Entity
@@ -78,7 +76,7 @@ abstract class ReadOutput implements \IteratorAggregate
 
     /**
      * @throws \LogicException if this output has already been read
-     * @throws DALException if the search fails in the DAL, e.g. on an item that does not deserialize
+     * @throws DALException if the read fails in the DAL, e.g. on an item that does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
      *
      * @return \Generator<Key, Entity>

@@ -93,7 +93,7 @@ final class UpdateExpression
 
         foreach ($this->fields as $fieldName => $value) {
             if ($value !== null) {
-                $clauses[UpdateClause::Set->value][] = "{$context->attribute($fieldName)} = {$context->placeholder($fieldName, $value)}";
+                $clauses[UpdateClause::Set->value][] = "{$context->path($fieldName)} = {$context->value($fieldName, $value)}";
 
                 continue;
             }
@@ -104,7 +104,7 @@ final class UpdateExpression
                 throw new FieldMissingSerializedValueException($path->definition);
             }
 
-            $clauses[UpdateClause::Remove->value][] = $context->attribute($fieldName);
+            $clauses[UpdateClause::Remove->value][] = $context->path($fieldName);
         }
 
         foreach ($this->actions as $action) {

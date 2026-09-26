@@ -35,7 +35,8 @@ class DefinitionCompilerPass implements CompilerPassInterface
         /** @var array<string, class-string> $classesByTable */
         $classesByTable = [];
         foreach ($this->configuredEntities($container) as $entityClass => $table) {
-            // An entities are not services, remove them just in case
+            // Resource loading may have registered the entity as a service, which autowiring would then hand out as
+            // an empty instance, e.g. as a controller argument
             $container->removeDefinition($entityClass);
 
             [$itemName, $definition] = $builder->build($entityClass, $table);
@@ -47,7 +48,7 @@ class DefinitionCompilerPass implements CompilerPassInterface
 
             $classesByName[$itemName] = $entityClass;
 
-            // An item's entity class is told by its table alone, in a BatchGetItem response as in a scan
+            // An item does not record its entity class, so only its table tells it, in a BatchGetItem response as in a scan
             if (isset($classesByTable[$table])) {
                 $configured = $container->resolveEnvPlaceholders($table, '%%env(%s)%%');
                 $configured = \is_string($configured) ? $configured : $table;

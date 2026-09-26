@@ -11,9 +11,10 @@ use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 class Table
 {
     /**
+     * @param string $name - The entity's logical name, which the registry, the console commands and exception messages know it by
      * @param string $hashKey - Entity field name of the table partition (hash) key
      * @param string|null $rangeKey - Entity field name of the table sort (range) key, or null for a partition-only table
-     * @param string|null $normalizer - Symfony service ID of a class that extends {@see Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer}, or null if no normalizer should be used for this table
+     * @param string|null $normalizer - Class name of a normalizer extending {@see \Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer}, registered as a service under that class name; null for none
      * @param list<IndexSchema> $indexes - Global secondary indexes declared on this table
      */
     public function __construct(

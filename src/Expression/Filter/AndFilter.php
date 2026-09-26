@@ -5,7 +5,7 @@ namespace Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
-class AndFilter implements FilterInterface
+final readonly class AndFilter implements FilterInterface
 {
     /**
      * @var list<FilterInterface>
@@ -17,12 +17,9 @@ class AndFilter implements FilterInterface
         $this->filters = array_values($filters);
     }
 
-    public function and(FilterInterface ...$filters): self
+    public function with(FilterInterface ...$filters): self
     {
-        $filters = array_values($filters);
-        $this->filters = array_values(array_merge($this->filters, $filters));
-
-        return $this;
+        return new self(...$this->filters, ...array_values($filters));
     }
 
     public function compile(ExpressionCompileContext $context): ?string
@@ -35,7 +32,6 @@ class AndFilter implements FilterInterface
                 continue;
             }
 
-            /** @phpstan-ignore-next-line if.alwaysFalse -- the flag can change in `->compile` calls */
             if ($context->isCompound) {
                 $fragment = "({$fragment})";
             }

@@ -75,6 +75,7 @@ class MapFieldSerializer extends AbstractFieldSerializer
         }
 
         $map = $attributeValue->getM();
+        // getM() is `[]` for an empty map and for an attribute that is no map at all
         if ($map === [] && !isset($attributeValue->requestBody()['M'])) {
             throw new MissingAttributeValueException($definition, 'M');
         }

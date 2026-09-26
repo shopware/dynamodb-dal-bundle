@@ -26,7 +26,8 @@ return static function (ContainerConfigurator $container): void {
         ]);
 
     // Symfony orders decorators low-priority-outer / high-priority-inner, and HttpClientPass wraps
-    // every `http_client.client` in a TraceableHttpClient at priority 100
+    // every `http_client.client` in a TraceableHttpClient at priority 100, so priority 0 stays outside
+    // it and the stamped options land in the trace
     $services->set(CallerStampingHttpClient::class)
         ->decorate('aws.base-client', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
         ->args([service('.inner')]);

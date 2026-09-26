@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
@@ -17,8 +18,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * Compiles a whole expression, a {@see FilterInterface} or an {@see UpdateExpression}, into an
  * {@see ExpressionCompiledResult}. An update passes through the entity's normalizer first, as the fields of a put do.
  *
- * Each call results a result containing expression attributes that are unique
- * and can be merged with other results into one list without colliding keys.
+ * Each call namespaces its value placeholders apart, so results merge into one request without colliding.
+ * A name placeholder is derived from the attribute it stands for, so every result agrees on it.
  *
  * @internal
  */
@@ -30,8 +31,7 @@ class ExpressionCompiler implements ResetInterface
     private const string PREFIX = 'ex_';
 
     /**
-     * Names in compiled results should be unique to allow merging
-     * multiple results into one list without colliding keys
+     * The number of the last compile, which its prefix carries.
      */
     private int $sequence = 0;
 
@@ -51,6 +51,36 @@ class ExpressionCompiler implements ResetInterface
     public function compileFilter(EntityDefinition $definition, FilterInterface $filter): ExpressionCompiledResult
     {
         return $this->compile($definition, $filter);
+    }
+
+    /**
+     * Compiles conditions that have to check something, a write's condition or a query's key condition, into one that
+     * holds where all of them hold, joined as `Filter::and()` joins its children. Without a condition, a write would go
+     * through unconditionally and a query would be refused, so each of them has to compile to something, and none can
+     * hide behind another, such as a caller's condition behind an update's check that its item exists.
+     * At least one condition is required, and each has to compile to something.
+     *
+     * @throws ConditionEmptyException if a condition compiles to nothing
+     * @throws DALException if a condition names a field the entity does not have, or a value that does not serialize for it
+     */
+    public function compileCondition(EntityDefinition $definition, FilterInterface $condition, FilterInterface ...$conditions): ExpressionCompiledResult
+    {
+        $conditions = [$condition, ...array_values($conditions)];
+        $context = $this->createContext($definition);
+
+        $fragments = [];
+        foreach ($conditions as $filter) {
+            $context->isCompound = false;
+            $fragment = $filter->compile($context);
+            if ($fragment === null || trim($fragment) === '') {
+                throw new ConditionEmptyException($definition);
+            }
+
+            // A lone condition is never wrapped, as a key condition in parentheses may be refused
+            $fragments[] = \count($conditions) > 1 && $context->isCompound ? "({$fragment})" : $fragment;
+        }
+
+        return new ExpressionCompiledResult(implode(' AND ', $fragments), $context->names, $context->values);
     }
 
     /**
@@ -84,7 +114,7 @@ class ExpressionCompiler implements ResetInterface
      */
     private function compile(EntityDefinition $definition, FilterInterface|UpdateExpression $expression): ExpressionCompiledResult
     {
-        $context = new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
+        $context = $this->createContext($definition);
 
         $compiled = $expression->compile($context);
         if ($compiled === null || trim($compiled) === '') {
@@ -92,6 +122,11 @@ class ExpressionCompiler implements ResetInterface
         }
 
         return new ExpressionCompiledResult($compiled, $context->names, $context->values);
+    }
+
+    private function createContext(EntityDefinition $definition): ExpressionCompileContext
+    {
+        return new ExpressionCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
     }
 
     /**

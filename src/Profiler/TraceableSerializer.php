@@ -20,8 +20,6 @@ use Symfony\Component\Stopwatch\Stopwatch;
  */
 final class TraceableSerializer extends Serializer
 {
-    private const string DAL_NAMESPACE = 'Shopware\\DynamodbDalBundle\\';
-
     public function __construct(
         private readonly Serializer $inner,
         private readonly DynamoDbDataCollector $collector,
@@ -66,7 +64,7 @@ final class TraceableSerializer extends Serializer
      */
     private function trace(string $operation, NormalizerOperation $normalizerOperation, EntityDefinition $definition, callable $callback): mixed
     {
-        $caller = $this->findCaller();
+        $caller = DynamoDbCall::caller();
         $stopwatchEvent = $this->stopwatch?->start(\sprintf('dynamodb.serializer.%s', $operation), 'dynamodb.serializer');
         $startedAt = microtime(true);
 
@@ -86,36 +84,5 @@ final class TraceableSerializer extends Serializer
                 'caller_method' => $caller['method'] ?? null,
             ]);
         }
-    }
-
-    /**
-     * The application frame that entered the DAL: the frame right outside the innermost run of
-     * DAL frames. Keying on the namespace rather than on a base class keeps this working for any
-     * shape of caller — a repository, a service, a controller.
-     *
-     * @return array{class: class-string, method: string}|null
-     */
-    private function findCaller(): ?array
-    {
-        $trace = debug_backtrace(\DEBUG_BACKTRACE_IGNORE_ARGS, 30);
-
-        $lastDalFrame = null;
-        foreach ($trace as $index => $frame) {
-            if (str_starts_with($frame['class'] ?? '', self::DAL_NAMESPACE)) {
-                $lastDalFrame = $index;
-            }
-        }
-
-        if ($lastDalFrame === null) {
-            return null;
-        }
-
-        $frame = $trace[$lastDalFrame + 1] ?? null;
-        $class = $frame['class'] ?? null;
-        if ($frame === null || $class === null) {
-            return null;
-        }
-
-        return ['class' => $class, 'method' => $frame['function']];
     }
 }
