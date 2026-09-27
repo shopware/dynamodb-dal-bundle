@@ -7,9 +7,9 @@
   - [A filter or update action of your own](#a-filter-or-update-action-of-your-own)
   - [A normalizer](#a-normalizer)
 
-A unit test of code that reads and writes through the `Client` needs no DynamoDB. The `Client` can be doubled, and
-the bundle's `Test` namespace builds what a double returns or throws, and what a filter, update action or normalizer
-of your own is compiled against. These snippets build on the `OrderEntity` from [Basics](basics.md).
+A unit test of code that reads and writes through the `Client` needs no DynamoDB. The `Client` can be doubled. The
+bundle's `Test` namespace builds what a double returns or throws, and what a filter, update action or normalizer of
+your own is compiled against. These snippets build on the `OrderEntity` from [Basics](basics.md).
 
 ## A double of the client
 
@@ -29,14 +29,17 @@ $client->expects(static::once())
 new OrderRepository($client)->save($order);
 ```
 
-Inputs, keys and filters are plain values with public properties, so a test builds real ones and compares them
-rather than doubling them. Build the filter to compare with through `Filter`, as the code under test does, such as
-`static::assertEquals(Filter::equals('customerId', 'c-42'), $query->keyCondition)`, so the test does not depend on the
-classes a filter is made of.
+Inputs, keys and filters are plain values with public properties. A test builds real ones and compares them, rather
+than doubling them. Build the filter to compare with through `Filter`, as the code under test does, so the test
+doesn't depend on the classes a filter is made of:
+
+```php
+static::assertEquals(Filter::equals('customerId', 'c-42'), $query->keyCondition);
+```
 
 ## Results of a double
 
-The outputs of a read can be doubled too, but a real one is closer to what the code under test receives.
+The outputs of a read can be doubled too, but a real output is closer to what the code under test receives.
 `OutputFactory` builds them:
 
 ```php
@@ -53,12 +56,20 @@ $client->method('findMany')->willReturnCallback(
 );
 ```
 
-- `OutputFactory::search()` streams the entities as the search would find them, limited and paged as the input says.
-  A page's tokens need the key attributes of each entity, which `$keyOf` gives. See
-  [Testing a listing](paginated-listing.md#testing-a-listing).
-- `OutputFactory::get()` stands in for `get()` and `findMany()`.
-- Outputs stream once, as the real ones do, so a double builds a fresh one per call.
-- `find()` returns the entity itself, so a double of it needs no output.
+| Method | Stands in for | Returns |
+|---|---|---|
+| `OutputFactory::search($input, $entities, $keyOf)` | `search()` | A `SearchOutput` that streams the entities, limited and paged as the input says |
+| `OutputFactory::get($entities)` | `get()` and `findMany()` | A `GetOutput` that streams the entities |
+
+`find()` returns the entity itself, so a double of it needs no output. A page's tokens need the key attributes of
+each entity, which `$keyOf` gives. See [Testing a listing](paginated-listing.md#testing-a-listing).
+
+### Pitfalls
+
+- Outputs stream once, as the real ones do. Build a fresh output per call with `willReturnCallback()`. A
+  `willReturn()` hands the same output to every call, and the second read throws.
+- `OutputFactory::search()` doesn't evaluate the key condition or the filter. It streams exactly the entities it is
+  given.
 
 ## Exceptions of a double
 
@@ -73,8 +84,8 @@ $client->method('put')->willThrowException(ExceptionFactory::conditionalCheckFai
 $client->method('transactWrite')->willThrowException(ExceptionFactory::transactionCanceled('None', 'ConditionalCheckFailed'));
 ```
 
-The exceptions of the bundle itself name the definition, and the field, they are about. `EntityDefinitionFactory`
-builds the definition of an entity class:
+The exceptions of the bundle itself name the definition they are about, and the field where there is one.
+`EntityDefinitionFactory` builds the definition of an entity class:
 
 ```php
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
@@ -86,6 +97,8 @@ $definition = EntityDefinitionFactory::create(OrderEntity::class);
 $client->method('put')->willThrowException(new ConditionEmptyException($definition));
 $client->method('update')->willThrowException(new WrongTypeException($definition->getFieldDefinition('status'), 'string', 1));
 ```
+
+[Exceptions](exceptions.md) lists what each exception means.
 
 ## A filter or update action of your own
 
@@ -110,16 +123,43 @@ static::assertSame(
 );
 ```
 
+`resolved()` quotes a string, and writes a number, a boolean or `null` as it is. It writes a list as `[…]`, a map as
+`{"key": …}` and a set as `<<…>>`. The raw `expression`, `names` and `values` are there as well.
+
+`EntityDefinitionFactory::create()` also takes field serializers of your own, which take precedence as they do when
+registered, the normalizer that `#[Table]` names, and the physical table name.
+
+### How it works
+
 - `EntityDefinitionFactory::create()` builds the definition from the entity's attributes, as the container does, and
-  refuses a wrongly declared entity the same way. It takes field serializers of your own, which take precedence as
-  they do when registered, the normalizer `#[Table]` names where it needs constructor arguments, and the physical
-  table name.
-- `resolved()` quotes a string, reads a number, a boolean or `null` as it is, and writes a list as `[…]`, a map as
-  `{"key": …}` and a set as `<<…>>`. The raw `expression`, `names` and `values` are there as well.
-- `ofUpdate()` passes the update through the entity's normalizer first, as a write does, and throws
+  refuses a wrongly declared entity the same way.
+- `ofUpdate()` passes the update through the entity's normalizer first, as a write does. It throws
   `UpdateEmptyException` for an update that writes nothing.
+
+### Pitfalls
+
+- `EntityDefinitionFactory::create()` builds the normalizer that `#[Table]` names without constructor arguments. Pass
+  a normalizer that needs arguments in yourself, or the factory throws a `\LogicException`.
 
 ## A normalizer
 
-A normalizer works on a `NormalizerContext`, which `NormalizerContext::fromFields()` builds. See
-[A normalizer](extending.md#a-normalizer).
+A [normalizer](extending.md#a-normalizer) works on a `NormalizerContext`. `NormalizerContext::fromFields()` builds
+one for the operation and fields you give it. Run the normalizer on it, and read the fields back:
+
+```php
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
+
+$context = NormalizerContext::fromFields(NormalizerOperation::Update, [
+    'amountCents' => -1_300,
+    'createdAt' => new \DateTimeImmutable('2026-01-01'),
+]);
+
+new LedgerEntryNormalizer()->normalize($context);
+
+static::assertInstanceOf(\DateTimeImmutable::class, $context->get('updatedAt'));
+static::assertFalse($context->has('createdAt'));
+```
+
+`fromFields()` takes the fields as given, and doesn't check them against the entity. Pass the fields the operation
+carries: every field for a `Put` or `Read`, the written paths for an `Update`, and the key fields for a `Key`.

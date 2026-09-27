@@ -49,7 +49,7 @@ final class NormalizerContext
     }
 
     /**
-     * The path's value, `null` for one that is absent or not present.
+     * The path's value, or `null` where the path is `null` or not present.
      */
     public function get(string $path): mixed
     {

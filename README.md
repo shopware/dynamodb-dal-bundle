@@ -21,12 +21,13 @@ write it.
 ## Documentation
 
 - [Quick setup](docs/QUICK_SETUP.md): requirements, installation, a first entity and its use
-- [Basics](docs/examples/basics.md): entities, reading by key, queries, scans, counts, puts and deletes
+- [Basics](docs/examples/basics.md): entities, reading by key, queries, scans, counts, filters, puts and deletes
 - [Updates, conditions and transactions](docs/examples/writes.md): partial and nested updates, update expressions, conditional writes and transactions
 - [Paginated listing](docs/examples/paginated-listing.md): previous and next links, page numbers, and pages
   merged from several queries
 - [Custom types, normalizers, filters and update actions](docs/examples/extending.md)
 - [Testing](docs/examples/testing.md): doubles of the client, and tests of filters, update actions and normalizers of your own
+- [Exceptions](docs/examples/exceptions.md): which exceptions to catch, and what each one means
 - [Architecture decisions](docs/adr/)
 
 ## Development tooling
