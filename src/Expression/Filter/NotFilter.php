@@ -14,17 +14,8 @@ final readonly class NotFilter implements FilterInterface
 
     public function compile(FilterCompileContext $context): ?string
     {
-        $context->isCompound = false;
         $inner = $this->filter->compile($context);
-        if ($inner === null) {
-            return null;
-        }
 
-        $expression = $context->isCompound ? "NOT ({$inner})" : "NOT {$inner}";
-
-        // `NOT ...` is one operand, whatever the inner filter was
-        $context->isCompound = false;
-
-        return $expression;
+        return $inner !== null ? "NOT {$inner}" : null;
     }
 }

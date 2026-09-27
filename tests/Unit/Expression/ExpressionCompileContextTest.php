@@ -51,7 +51,7 @@ class ExpressionCompileContextTest extends TestCase
         [$expression, $context] = $this->compile($filter);
 
         static::assertSame(
-            '#name = :h_0_name AND (#required = :h_1_required OR #required = :h_2_required)',
+            '(#name = :h_0_name AND (#required = :h_1_required OR #required = :h_2_required))',
             $expression,
         );
         static::assertSame(
@@ -73,7 +73,7 @@ class ExpressionCompileContextTest extends TestCase
         [$expression, $context] = $this->compile($filter);
 
         static::assertSame(
-            '#name = :h_0_name AND #name > :h_1_name AND #name >= :h_2_name AND #name < :h_3_name AND #name <= :h_4_name',
+            '(#name = :h_0_name AND #name > :h_1_name AND #name >= :h_2_name AND #name < :h_3_name AND #name <= :h_4_name)',
             $expression,
         );
         static::assertEquals([
@@ -142,7 +142,7 @@ class ExpressionCompileContextTest extends TestCase
 
         // Both operands are a part of the stored string rather than a value of the field, so neither carries its path.
         static::assertSame(
-            'begins_with(#name, :h_0) AND contains(#name, :h_1)',
+            '(begins_with(#name, :h_0) AND contains(#name, :h_1))',
             $expression,
         );
     }
@@ -156,7 +156,7 @@ class ExpressionCompileContextTest extends TestCase
 
         [$expression, $context] = $this->compile($filter);
 
-        static::assertSame('attribute_exists(#name) AND attribute_exists(#required)', $expression);
+        static::assertSame('(attribute_exists(#name) AND attribute_exists(#required))', $expression);
         static::assertSame(['#name' => 'name', '#required' => 'required'], $context->names);
         static::assertSame([], $context->values);
     }
@@ -171,16 +171,15 @@ class ExpressionCompileContextTest extends TestCase
         [$expression] = $this->compile($filter);
 
         static::assertSame(
-            'NOT #name = :h_0_name AND NOT #name > :h_1_name',
+            '(NOT #name = :h_0_name AND NOT #name > :h_1_name)',
             $expression,
         );
     }
 
     public function testNotOfCompoundIsNotReWrappedByParent(): void
     {
-        // `NOT (...)` already parenthesises its operand, so a sibling And/Or must not
-        // add a second outer pair. NotFilter resets `$context->isCompound` to advertise
-        // this — without that reset the And below would emit `(NOT (...))`.
+        // The Or comes in its own parentheses, so `NOT` negates all of it, and the And takes
+        // `NOT (...)` as one operand without a second pair around it.
         $filter = Filter::and(
             Filter::equals('name', 'foo'),
             Filter::not(Filter::or(
@@ -192,7 +191,7 @@ class ExpressionCompileContextTest extends TestCase
         [$expression] = $this->compile($filter);
 
         static::assertSame(
-            '#name = :h_0_name AND NOT (#required = :h_1_required OR #required = :h_2_required)',
+            '(#name = :h_0_name AND NOT (#required = :h_1_required OR #required = :h_2_required))',
             $expression,
         );
     }
@@ -210,7 +209,7 @@ class ExpressionCompileContextTest extends TestCase
 
         // Value placeholders are numbered across the whole expression, so the IN values go on from :h_2.
         static::assertSame(
-            'NOT #name = :h_0_name AND NOT contains(#name, :h_1) AND NOT attribute_exists(#required) AND NOT #name IN (:h_2_name, :h_3_name)',
+            '(NOT #name = :h_0_name AND NOT contains(#name, :h_1) AND NOT attribute_exists(#required) AND NOT #name IN (:h_2_name, :h_3_name))',
             $expression,
         );
     }
@@ -260,7 +259,7 @@ class ExpressionCompileContextTest extends TestCase
 
         [$expression] = $this->compile($filter);
 
-        static::assertSame('#name = :h_0_name AND #required = :h_1_required', $expression);
+        static::assertSame('(#name = :h_0_name AND #required = :h_1_required)', $expression);
     }
 
     public function testRepeatedFieldCollapsesItsNameButNotItsValues(): void
@@ -349,7 +348,7 @@ class ExpressionCompileContextTest extends TestCase
         [$expression, $context] = $this->compile($filter, MapDefinition::create());
 
         static::assertSame(
-            '#settings.#color = :h_0_settings_2ecolor AND #settings.#color = :h_1_settings_2ecolor AND #settings.#shape = :h_2_settings_2eshape',
+            '(#settings.#color = :h_0_settings_2ecolor AND #settings.#color = :h_1_settings_2ecolor AND #settings.#shape = :h_2_settings_2eshape)',
             $expression,
         );
         // Three references, four distinct segments between them, three entries.
@@ -549,7 +548,7 @@ class ExpressionCompileContextTest extends TestCase
             CounterDefinition::create(),
         );
 
-        static::assertSame('#tags = :h_0_tags AND NOT #active = :h_1_active', $expression);
+        static::assertSame('(#tags = :h_0_tags AND NOT #active = :h_1_active)', $expression);
     }
 
     public function testBeginsWithSendsThePrefixAsGivenWhateverThePhpTypeOfTheField(): void
@@ -591,7 +590,7 @@ class ExpressionCompileContextTest extends TestCase
         );
 
         // A string is a part of the stored JSON as it is given; anything else is what the field would store for it.
-        static::assertSame('contains(#payload, :h_0) AND contains(#payload, :h_1_payload)', $expression);
+        static::assertSame('(contains(#payload, :h_0) AND contains(#payload, :h_1_payload))', $expression);
         static::assertEquals([
             ':h_0' => new AttributeValue(['S' => 'needle']),
             ':h_1_payload' => new AttributeValue(['S' => '{"a":1}']),
@@ -605,7 +604,7 @@ class ExpressionCompileContextTest extends TestCase
             CounterDefinition::create(),
         );
 
-        static::assertSame('contains(#tags, :h_0_tags) AND contains(#labels, :h_1)', $expression);
+        static::assertSame('(contains(#tags, :h_0_tags) AND contains(#labels, :h_1))', $expression);
         static::assertEquals([
             ':h_0_tags' => new AttributeValue(['S' => 'blue']),
             ':h_1' => new AttributeValue(['S' => 'red']),
@@ -647,8 +646,8 @@ class ExpressionCompileContextTest extends TestCase
         );
 
         static::assertSame(
-            'size(#untyped) = :h_0 AND begins_with(#untyped, :h_1) AND contains(#untyped, :h_2_untyped) AND #untyped > #count'
-                . ' AND attribute_exists(#untyped[0]) AND attribute_exists(#untyped.#key)',
+            '(size(#untyped) = :h_0 AND begins_with(#untyped, :h_1) AND contains(#untyped, :h_2_untyped) AND #untyped > #count'
+                . ' AND attribute_exists(#untyped[0]) AND attribute_exists(#untyped.#key))',
             $expression,
         );
     }
@@ -658,7 +657,7 @@ class ExpressionCompileContextTest extends TestCase
         [$empty] = $this->compile(Filter::and(Filter::equals('name', 'a'), Filter::isEmpty('tags')), CounterDefinition::create());
         [$notEmpty] = $this->compile(Filter::isNotEmpty('tags'), CounterDefinition::create());
 
-        static::assertSame('#name = :h_0_name AND (NOT attribute_exists(#tags) OR size(#tags) = :h_1)', $empty);
+        static::assertSame('(#name = :h_0_name AND (NOT attribute_exists(#tags) OR size(#tags) = :h_1))', $empty);
         static::assertSame('size(#tags) > :h_0', $notEmpty);
     }
 
@@ -678,7 +677,7 @@ class ExpressionCompileContextTest extends TestCase
         );
 
         static::assertSame(
-            '(contains(#tags, :h_0_tags) OR contains(#tags, :h_1_tags)) AND (contains(#labels, :h_2) AND contains(#labels, :h_3))',
+            '((contains(#tags, :h_0_tags) OR contains(#tags, :h_1_tags)) AND (contains(#labels, :h_2) AND contains(#labels, :h_3)))',
             $expression,
         );
     }
@@ -720,9 +719,8 @@ class ExpressionCompileContextTest extends TestCase
         [$expression] = $this->compile(Filter::and(Filter::equals('required', 'r'), $custom));
         [$negated] = $this->compile(Filter::not($custom));
 
-        static::assertIsString($expression);
-        static::assertStringEndsWith(' AND (#name = :' . self::PREFIX . '_1_name OR attribute_exists(#required))', $expression);
-        static::assertSame('NOT (#name = :' . self::PREFIX . '_0_name OR attribute_exists(#required))', $negated);
+        static::assertSame('(#required = :h_0_required AND (#name = :h_1_name OR attribute_exists(#required)))', $expression);
+        static::assertSame('NOT (#name = :h_0_name OR attribute_exists(#required))', $negated);
     }
 
     public function testFieldValueSerializesWithTheFieldAndElementValueWithItsElements(): void

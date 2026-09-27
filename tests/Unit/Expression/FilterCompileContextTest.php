@@ -51,31 +51,6 @@ class FilterCompileContextTest extends TestCase
     }
 
     /**
-     * A filter of your own that joins several clauses says so, and is wrapped where it is nested, but not as a whole
-     * condition, which DynamoDB may refuse in parentheses.
-     */
-    public function testAFilterOfYourOwnThatJoinsClausesIsWrappedOnlyWhereItIsNested(): void
-    {
-        $custom = new class implements FilterInterface {
-            public function compile(FilterCompileContext $context): string
-            {
-                $fragment = "{$context->path('name')} = {$context->fieldValue('name', 'a')} OR attribute_exists({$context->path('count')})";
-                $context->isCompound = true;
-
-                return $fragment;
-            }
-        };
-
-        [$alone] = $this->compile($custom, CounterDefinition::create());
-        [$nested] = $this->compile(Filter::and(Filter::exists('tags'), $custom), CounterDefinition::create());
-        [$negated] = $this->compile(Filter::not($custom), CounterDefinition::create());
-
-        static::assertSame('#name = :h_0_name OR attribute_exists(#count)', $alone);
-        static::assertSame('attribute_exists(#tags) AND (#name = :h_0_name OR attribute_exists(#count))', $nested);
-        static::assertSame('NOT (#name = :h_0_name OR attribute_exists(#count))', $negated);
-    }
-
-    /**
      * A filter of your own may compile one of the bundle's comparisons, which checks the types for it.
      */
     public function testAFilterOfYourOwnComparesByCompilingABuiltInOne(): void
@@ -119,7 +94,7 @@ class FilterCompileContextTest extends TestCase
         ));
 
         static::assertSame(
-            'size(#name) = :h_0 AND NOT size(#name) = :h_1 AND size(#name) <= :h_2 AND size(#name) BETWEEN :h_3 AND :h_4 AND size(#name) IN (:h_5, :h_6)',
+            '(size(#name) = :h_0 AND NOT size(#name) = :h_1 AND size(#name) <= :h_2 AND size(#name) BETWEEN :h_3 AND :h_4 AND size(#name) IN (:h_5, :h_6))',
             $expression,
         );
     }
@@ -183,7 +158,7 @@ class FilterCompileContextTest extends TestCase
         );
 
         static::assertSame(
-            'size(#tags) = #count AND #count > size(#tags) AND size(#tags) < size(#meta) AND #count IN (:h_0_count, size(#meta))',
+            '(size(#tags) = #count AND #count > size(#tags) AND size(#tags) < size(#meta) AND #count IN (:h_0_count, size(#meta)))',
             $expression,
         );
     }

@@ -55,9 +55,8 @@ final readonly class KeyFilter implements FilterInterface
 
         self::check($context, $this->rangeKey, 'range', $keySchema?->rangeKey);
         $rangeKey = $this->rangeKey->compile($context);
-        $context->isCompound = true;
 
-        return "{$hashKey} AND {$rangeKey}";
+        return "({$hashKey} AND {$rangeKey})";
     }
 
     /**

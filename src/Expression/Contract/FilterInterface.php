@@ -18,8 +18,9 @@ interface FilterInterface
 {
     /**
      * Compile this filter into a condition, such as `#status = :value`, registering the attribute names and
-     * values it uses on the context. A filter that joins clauses with `AND` or `OR` sets
-     * {@see FilterCompileContext::$isCompound} instead of wrapping itself in parentheses.
+     * values it uses on the context. A filter that joins clauses with `AND` or `OR` wraps itself in parentheses, as
+     * in `(#a = :a OR #b = :b)`, so it keeps its meaning where it is nested. Where it is sent on its own, the
+     * enclosing pair is dropped.
      *
      * Returning `null` means "no contribution": a logical group that contains the filter skips it, a search drops
      * it, and a write's condition refuses it with a {@see ConditionEmptyException}.
