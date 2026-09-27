@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
  * nothing. A transaction refuses an update without an update expression, and a lone `UpdateItem`
  * would pass as a write that changed nothing.
  */
-final class UpdateEmptyException extends \RuntimeException implements DALException
+final class UpdateEmptyException extends \RuntimeException implements ExpressionException
 {
     public function __construct(public readonly EntityDefinition $entityDefinition)
     {

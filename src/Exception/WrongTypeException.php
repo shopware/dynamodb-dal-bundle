@@ -7,7 +7,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 /**
  * A value handed to a field's serializer is not of the type that serializer works on.
  */
-final class WrongTypeException extends \RuntimeException implements DALException
+final class WrongTypeException extends \UnexpectedValueException implements SerializationException
 {
     public readonly string $actualType;
 

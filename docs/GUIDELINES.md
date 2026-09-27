@@ -42,6 +42,10 @@
 - A runtime failure throws a `final` exception that extends an SPL exception and implements `DALException`.
   Catching `DALException` then catches everything the DAL throws
 - The exception class says what went wrong. Its public readonly properties say where, such as the definition and the field
+- An exception implements the group that says what failed, instead of `DALException` directly, if one fits:
+  `SerializationException` for a value that doesn't fit its field, `DeserializationException` for a stored row that
+  doesn't fit its entity, and `ExpressionException` for a filter, condition or update that can't be sent.
+  A class belongs to one group at most, and it belongs there wherever it is thrown
 - Rethrow a `DALException` as it is. Wrap any other throwable in an exception that names the field
 - Use `\LogicException` for programming errors and container build failures
 - AsyncAws exceptions, such as `ConditionalCheckFailedException`, pass through unwrapped

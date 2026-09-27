@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
  * the values of two actions. The normalizer takes one value per path, so one of the two would be lost without a
  * word. Other overlapping paths, such as a field and an increment of it, reach DynamoDB, which refuses them.
  */
-final class UpdateDuplicatePathException extends \RuntimeException implements DALException
+final class UpdateDuplicatePathException extends \RuntimeException implements ExpressionException
 {
     public function __construct(
         public readonly EntityDefinition $entityDefinition,

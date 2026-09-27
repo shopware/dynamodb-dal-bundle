@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldPath;
 /**
  * A field's serializer could not turn the value into a DynamoDB attribute
  */
-final class FieldSerializationException extends \RuntimeException implements DALException
+final class FieldSerializationException extends \RuntimeException implements SerializationException
 {
     public readonly string $path;
 

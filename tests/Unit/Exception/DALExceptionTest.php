@@ -7,15 +7,22 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\DeserializationException;
+use Shopware\DynamodbDalBundle\Exception\ExpressionException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\NullOperandException;
+use Shopware\DynamodbDalBundle\Exception\SerializationException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -55,6 +62,56 @@ class DALExceptionTest extends TestCase
 
             if ($class !== DALException::class) {
                 static::assertTrue(is_subclass_of($class, DALException::class), "{$class} does not implement DALException");
+            }
+        }
+    }
+
+    /**
+     * A caller that handles one kind of failure catches its group, so each class sits in the one group that says
+     * what failed, wherever it is thrown. A new class has to be placed here, in a group or in none.
+     */
+    public function testEveryFailureBelongsToOneGroupAtMost(): void
+    {
+        $groups = [
+            SerializationException::class => [
+                FieldMissingSerializedValueException::class,
+                FieldSerializationException::class,
+                WrongTypeException::class,
+            ],
+            DeserializationException::class => [
+                FieldDeserializationException::class,
+                FieldMissingDeserializedValueException::class,
+                MissingAttributeValueException::class,
+            ],
+            ExpressionException::class => [
+                AttributeTypeMismatchException::class,
+                ConditionEmptyException::class,
+                NullOperandException::class,
+                UnknownFieldException::class,
+                UpdateDuplicatePathException::class,
+                UpdateEmptyException::class,
+            ],
+            DALException::class => [
+                InvalidCursorException::class,
+                UnknownEntityDefinitionException::class,
+            ],
+        ];
+
+        $files = glob(\dirname(__DIR__, 3) . '/src/Exception/*Exception.php') ?: [];
+        $classes = array_filter(
+            array_map(static fn (string $file): string => 'Shopware\DynamodbDalBundle\Exception\\' . basename($file, '.php'), $files),
+            class_exists(...),
+        );
+        static::assertEqualsCanonicalizing(array_values($classes), array_merge(...array_values($groups)));
+
+        $named = [SerializationException::class, DeserializationException::class, ExpressionException::class];
+        foreach ($groups as $group => $members) {
+            foreach ($members as $class) {
+                static::assertSame(
+                    $group === DALException::class ? [] : [$group],
+                    array_values(array_intersect($named, class_implements($class) ?: [])),
+                    "{$class} does not belong to {$group} alone",
+                );
             }
         }
     }
