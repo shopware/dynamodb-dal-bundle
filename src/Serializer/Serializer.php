@@ -141,12 +141,8 @@ class Serializer
 
         $result = [];
         foreach ($fields as $name => $value) {
-            $path = FieldPath::tryParse($definition, $name);
-
             // A field name outside the definition is a typo, not a value to skip silently.
-            if (!$path) {
-                throw new UnknownFieldException($definition, $name);
-            }
+            $path = FieldPath::parse($definition, $name);
 
             // DynamoDB has no null attribute, so an unset value is absent from a put.
             if ($value === null && $path->definition->allowsNull()) {

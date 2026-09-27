@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -23,6 +24,11 @@ class DateTimeFieldSerializer extends AbstractFieldSerializer
     {
         return $type === \DateTimeImmutable::class
             || $type === \DateTime::class;
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::Number;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue

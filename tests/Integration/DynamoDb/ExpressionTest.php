@@ -13,10 +13,12 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\StringSet;
 use AsyncAws\Core\Exception\Http\ClientException;
 
 /**
@@ -25,7 +27,7 @@ use AsyncAws\Core\Exception\Http\ClientException;
  * differently than intended, is exactly what a unit test over the string cannot catch — and it is the
  * shape repositories lean on hardest.
  */
-#[CoversClass(ExpressionCompiler::class)]
+#[CoversClass(FilterCompiler::class)]
 #[CoversClass(Filter::class)]
 class ExpressionTest extends DynamoDbTestCase
 {
@@ -108,13 +110,114 @@ class ExpressionTest extends DynamoDbTestCase
         static::assertSame(['b'], $this->scan(Filter::notExists('deletedAt')));
     }
 
-    public function testSizeEqualsMatchesAnEmptyCollection(): void
+    public function testEveryComparisonMatchesTheSizeOfACollection(): void
     {
         $this->seed(RecordEntity::create(self::TENANT, 'a', tags: []));
         $this->seed(RecordEntity::create(self::TENANT, 'b', tags: ['one', 'two']));
+        $this->seed(RecordEntity::create(self::TENANT, 'c', tags: ['one', 'two', 'three']));
 
-        static::assertSame(['a'], $this->scan(Filter::sizeEquals('tags', 0)));
-        static::assertSame(['b'], $this->scan(Filter::sizeEquals('tags', 2)));
+        static::assertSame(['a'], $this->scan(Filter::equals(Filter::size('tags'), 0)));
+        static::assertSame(['b', 'c'], $this->scan(Filter::notEquals(Filter::size('tags'), 0)));
+        static::assertSame(['c'], $this->scan(Filter::greaterThan(Filter::size('tags'), 2)));
+        static::assertSame(['a', 'b'], $this->scan(Filter::lessThanOrEquals(Filter::size('tags'), 2)));
+        static::assertSame(['b', 'c'], $this->scan(Filter::between(Filter::size('tags'), 1, 3)));
+        static::assertSame(['a', 'c'], $this->scan(Filter::equalsAny(Filter::size('tags'), [0, 3])));
+    }
+
+    /**
+     * A missing attribute has no size, and DynamoDB takes a comparison with it as false and the comparison's negation
+     * as true, so `notEquals(size, 0)` matches a missing field where `isNotEmpty()` does not.
+     */
+    public function testIsEmptyMatchesWhatReadsBackAsEmptyOrNullAndIsNotEmptyTheRest(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a'));
+        $this->seed(RecordEntity::create(self::TENANT, 'b', name: '', tags: ['x']));
+        $this->seed(RecordEntity::create(self::TENANT, 'c', name: 'n', tags: ['x', 'y']));
+
+        static::assertSame(['a', 'b'], $this->scan(Filter::isEmpty('name')));
+        static::assertSame(['c'], $this->scan(Filter::isNotEmpty('name')));
+        static::assertSame(['c'], $this->scan(Filter::not(Filter::isEmpty('name'))));
+        static::assertSame(['a'], $this->scan(Filter::isEmpty('tags')));
+        static::assertSame(['b', 'c'], $this->scan(Filter::isNotEmpty('tags')));
+        static::assertSame(['a', 'c'], $this->scan(Filter::notEquals(Filter::size('name'), 0)));
+    }
+
+    public function testContainsAnyAndContainsAllMatchElementsOfAList(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a', tags: ['red']));
+        $this->seed(RecordEntity::create(self::TENANT, 'b', tags: ['red', 'blue']));
+        $this->seed(RecordEntity::create(self::TENANT, 'c', tags: ['green']));
+
+        static::assertSame(['b', 'c'], $this->scan(Filter::containsAny('tags', ['blue', 'green'])));
+        static::assertSame(['b'], $this->scan(Filter::containsAll('tags', ['red', 'blue'])));
+    }
+
+    public function testASizeMatchesTheLengthOfAString(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a', name: 'ab'));
+        $this->seed(RecordEntity::create(self::TENANT, 'b', name: 'abcd'));
+
+        static::assertSame(['b'], $this->scan(Filter::greaterThanOrEquals(Filter::size('name'), 3)));
+    }
+
+    public function testAFieldComparesWithAnotherField(): void
+    {
+        foreach (['a' => [1, 0.5], 'b' => [1, 1.0], 'c' => [1, 2.5]] as $id => [$counter, $amount]) {
+            $entity = RecordEntity::create(self::TENANT, $id, counter: $counter);
+            $entity->amount = $amount;
+            $this->seed($entity);
+        }
+
+        static::assertSame(['c'], $this->scan(Filter::greaterThan('amount', Filter::field('counter'))));
+        static::assertSame(['b'], $this->scan(Filter::equals('amount', Filter::field('counter'))));
+        static::assertSame(['a', 'b'], $this->scan(Filter::between('counter', Filter::field('amount'), 3)));
+    }
+
+    public function testASizeComparesWithAField(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a', counter: 1, tags: ['one', 'two']));
+        $this->seed(RecordEntity::create(self::TENANT, 'b', counter: 3, tags: ['one', 'two']));
+
+        static::assertSame(['b'], $this->scan(Filter::lessThan(Filter::size('tags'), Filter::field('counter'))));
+    }
+
+    /**
+     * The prefix is a part of the stored string, so it matches a field whose PHP type is no string, such as an enum.
+     */
+    public function testBeginsWithMatchesAPrefixOfWhatTheFieldIsStoredAs(): void
+    {
+        $this->seedStatuses();
+
+        static::assertSame(['done'], $this->scan(Filter::beginsWith('status', 'do')));
+    }
+
+    public function testContainsMatchesASubstringInsideAJsonEncodedField(): void
+    {
+        $a = RecordEntity::create(self::TENANT, 'a');
+        $a->payload = ['note' => 'a needle in json'];
+        $this->seed($a);
+        $b = RecordEntity::create(self::TENANT, 'b');
+        $b->payload = ['note' => 'nothing'];
+        $this->seed($b);
+
+        static::assertSame(['a'], $this->scan(Filter::contains('payload', 'needle')));
+        static::assertSame(['b'], $this->scan(Filter::contains('payload', ['note' => 'nothing'])));
+    }
+
+    /**
+     * The set's serializer is the application's own and declares the set it writes, so the operand is one element.
+     */
+    public function testContainsMatchesOneElementOfASet(): void
+    {
+        foreach (['a' => new StringSet('red', 'blue'), 'b' => new StringSet('green')] as $id => $labels) {
+            $entity = ArchiveEntity::create($id);
+            $entity->labels = $labels;
+            $this->client()->put(new PutInput($entity));
+        }
+
+        $matches = $this->client()->search(new ScanInput(ArchiveEntity::class, Filter::contains('labels', 'blue')))->toArray();
+
+        static::assertSame(['a'], array_map(static fn (ArchiveEntity $entity): string => $entity->id, $matches));
     }
 
     public function testNestedAndOrGroupsKeepTheirPrecedence(): void

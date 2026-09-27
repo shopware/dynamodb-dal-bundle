@@ -48,6 +48,6 @@ final readonly class SetIfNotExistsAction implements NormalizableUpdateActionInt
 
         $attribute = $context->path($this->fieldName);
 
-        return "{$attribute} = if_not_exists({$attribute}, {$context->value($this->fieldName, $this->value)})";
+        return "{$attribute} = if_not_exists({$attribute}, {$context->fieldValue($this->fieldName, $this->value)})";
     }
 }

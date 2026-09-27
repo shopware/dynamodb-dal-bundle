@@ -29,6 +29,7 @@ final readonly class Money
 namespace App\Money;
 
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -44,6 +45,11 @@ final class MoneyFieldSerializer extends AbstractFieldSerializer
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         return $type === Money::class;
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::String;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
@@ -77,7 +83,12 @@ public Money $total;
   `priority`, higher first.
 - `supports()` runs for every field while the container is built. Claim only your own type.
 - Filters and conditions on the field serialize their values with this serializer too, for example
-  `Filter::equals('total', new Money(1999, 'EUR'))`.
+  `Filter::equals('total', new Money(1999, 'EUR'))`. A prefix or substring is a part of the stored string instead,
+  so `Filter::beginsWith('total', '1999 ')` matches 1999 of any currency.
+- `getAttributeType()` declares the DynamoDB type `serialize()` writes. Filters and update actions check what they
+  do with the field against it, such as `Filter::beginsWith()` against a string or `Update::append()` against a
+  list, and throw `AttributeTypeMismatchException` before the request where DynamoDB would reject it or never match.
+  Without it, the type is `null`: every check passes, and DynamoDB decides.
 - Throw `WrongTypeException` or `MissingAttributeValueException` so the error names the field. The bundle wraps
   any other exception in a `FieldSerializationException` or `FieldDeserializationException` that names the
   field.
@@ -274,31 +285,34 @@ $entry->updatedAt; // stamped without the caller naming it
 ## A filter of your own
 
 `Filter` covers DynamoDB's comparisons and functions. Anything else can implement `FilterInterface`: its
-`compile()` returns an expression fragment and registers the attribute names and values it uses on the context.
+`compile()` returns an expression fragment and registers the attribute names and values it uses on the
+`FilterCompileContext`.
 
 ```php
 namespace App\Dal;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
 /**
- * Matches a list or map with more than `$count` elements, or a string longer than `$count` characters.
+ * Matches an item whose field is stored as another type than its serializer writes today, such as a number an older
+ * writer stored as a string: DynamoDB's `attribute_type()`.
  */
-final readonly class SizeGreaterThanFilter implements FilterInterface
+final readonly class StoredAsFilter implements FilterInterface
 {
     public function __construct(
         private string $fieldName,
-        private int $count,
+        private AttributeType $type,
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(FilterCompileContext $context): ?string
     {
         return \sprintf(
-            'size(%s) > %s',
+            'attribute_type(%s, %s)',
             $context->path($this->fieldName),
-            $context->number($this->count),
+            $context->literal($this->type->value),
         );
     }
 }
@@ -310,20 +324,36 @@ It works anywhere a `Filter` does, including inside `Filter::and()` and in write
 new QueryInput(
     OrderEntity::class,
     Filter::equals('customerId', 'c-42'),
-    filter: Filter::and(Filter::equals('status', OrderStatus::Open), new SizeGreaterThanFilter('tags', 2)),
+    filter: Filter::and(Filter::equals('status', OrderStatus::Open), new StoredAsFilter('totalCents', AttributeType::String)),
 );
 ```
 
 - `path($fieldName)` registers a field or a path such as `meta.carrier` and returns its placeholder. It
-  throws `UnknownFieldException` for a field the entity doesn't have.
-- `value($fieldName, $value)` serializes a value with that field's serializer. Pass
-  `useValueFieldDefinition: true` to serialize a single element of a list or map field instead.
-- `number($number)` registers a plain number, for operands that are numbers whatever the field's type,
-  such as the result of `size()`.
+  throws `UnknownFieldException` for a field the entity doesn't have, or a path the field has no place for, such as
+  an index into a map. Name the types a function needs, as in `path('tags', AttributeType::List)`, and it throws
+  `AttributeTypeMismatchException` for a field stored as another one.
+- `fieldDefinition($fieldName)` returns the definition of what the path addresses. Its `getAttributeType()` is the
+  type it is stored as, `null` where its serializer declares none.
+- `fieldValue($fieldName, $value)` serializes a value with that field's serializer.
+- `elementValue($fieldName, $value)` serializes one element of a list or map field, such as the element `contains()`
+  looks for. It throws `AttributeTypeMismatchException` for a field that is no list or map.
+- `literal($value)` registers a string or number as it is, for an operand that is no value of the field, such as the
+  number a size is compared with or the type name `attribute_type()` takes.
+- `operand($fieldName)` and `comparand($fieldName, $value)` compile the two sides of a comparison, as the bundle's
+  comparisons do: a field or `Filter::size()` on the left, and a value, `Filter::field()` or `Filter::size()` on the
+  right, of the same type. Or compile one of the bundle's filters, which does the same:
+
+  ```php
+  return Filter::lessThanOrEquals(Filter::size($this->fieldName), $this->max)->compile($context);
+  ```
+
+- A filter written against the `ExpressionCompileContext` that `FilterCompileContext` extends keeps working, as long
+  as it needs neither of the two.
+
 - Return `null` to add nothing, for example for an optional criterion. Register no names or values in that case.
-- If the fragment joins several clauses with `AND` or `OR`, wrap it in parentheses, as `(#a = :a OR #b = :b)`, so
-  an enclosing `and()` or `not()` keeps its meaning. Leave them out of a filter meant as a whole key condition, which
-  DynamoDB may refuse in parentheses.
+- If the fragment joins several clauses with `AND` or `OR`, set `$context->isCompound = true` after writing it. An
+  enclosing `and()`, `or()` or `not()` then wraps it in parentheses, so it keeps its meaning, and a whole key
+  condition stays unwrapped, which DynamoDB may refuse in parentheses.
 - To test it on its own, compile it with `Test\CompiledExpression`, see
   [A filter or update action of your own](testing.md#a-filter-or-update-action-of-your-own).
 
@@ -331,7 +361,8 @@ new QueryInput(
 
 [`Update`](writes.md#update-expressions) covers DynamoDB's update actions and functions. Anything else its update
 syntax allows can implement `UpdateActionInterface`: `getClause()` names the clause the action belongs to, and
-`compile()` returns its fragment without the clause keyword, using the same context as a filter.
+`compile()` returns its fragment without the clause keyword. Its context is the `ExpressionCompileContext` a
+filter's extends, without `operand()` and `comparand()`, since DynamoDB has no `size()` in an update.
 
 ```php
 namespace App\Dal;
@@ -431,14 +462,14 @@ $this->client->update(new UpdateInput(
               '%s = if_not_exists(%s, %s)',
               $context->path($this->to),
               $context->path($this->from),
-              $context->value($this->to, $this->fallback),
+              $context->fieldValue($this->to, $this->fallback),
           );
       }
   }
   ```
 
   `withValue()` only rebuilds the action. It gets `null` where the normalizer removed the value, and `compile()`
-  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `value()`, whose
+  decides what that writes, returning `null` for nothing. A value of the wrong type fails in `fieldValue()`, whose
   field serializer refuses it with a `WrongTypeException`. Where the normalizer leaves the path out, the action is
   dropped from the update.
 - A path may carry one value per update. Another action or a field giving the same path a value throws

@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -28,6 +29,11 @@ class JsonFieldSerializer extends AbstractFieldSerializer
         }
 
         return $type === 'array' || self::isSupportedJsonSerializable($type);
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::String;
     }
 
     /**

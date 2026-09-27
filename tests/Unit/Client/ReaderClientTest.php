@@ -10,7 +10,7 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
@@ -61,7 +61,7 @@ class ReaderClientTest extends TestCase
 
         $registry = $this->registry();
 
-        $this->reader = new ReaderClient($this->dynamo, $this->serializer, new ExpressionCompiler($this->serializer), $registry);
+        $this->reader = new ReaderClient($this->dynamo, $this->serializer, new FilterCompiler(), $registry);
     }
 
     public function testSearchScanDeserializesEveryItem(): void
@@ -461,7 +461,7 @@ class ReaderClientTest extends TestCase
         $reader = new ReaderClient(
             $this->dynamo,
             $this->serializer,
-            new ExpressionCompiler($this->serializer),
+            new FilterCompiler(),
             new EntityDefinitionRegistry([
                 $this->definition->getName() => $this->definition,
                 $otherDefinition->getName() => $otherDefinition,
@@ -639,8 +639,7 @@ class ReaderClientTest extends TestCase
 
         $serialized = [];
         foreach ($fields as $name => $value) {
-            $path = FieldPath::tryParse($definition, $name);
-            static::assertNotNull($path);
+            $path = FieldPath::parse($definition, $name);
             static::assertIsString($value);
 
             $serialized[$name] = new SerializedFieldResult($path, new AttributeValue(['S' => $value]));

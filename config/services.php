@@ -6,7 +6,8 @@ use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\BackedEnumFieldSerializer;
@@ -27,7 +28,10 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(Serializer::class);
 
-    $services->set(ExpressionCompiler::class)
+    $services->set(FilterCompiler::class)
+        ->tag('kernel.reset', ['method' => 'reset']);
+
+    $services->set(UpdateCompiler::class)
         ->args([service(Serializer::class)])
         ->tag('kernel.reset', ['method' => 'reset']);
 
@@ -35,7 +39,7 @@ return static function (ContainerConfigurator $container): void {
         ->args([
             service(DynamoDbClient::class),
             service(Serializer::class),
-            service(ExpressionCompiler::class),
+            service(FilterCompiler::class),
             service(EntityDefinitionRegistry::class),
         ]);
 
@@ -43,7 +47,8 @@ return static function (ContainerConfigurator $container): void {
         ->args([
             service(DynamoDbClient::class),
             service(Serializer::class),
-            service(ExpressionCompiler::class),
+            service(FilterCompiler::class),
+            service(UpdateCompiler::class),
             service(EntityDefinitionRegistry::class),
             service(ReaderClient::class),
         ]);

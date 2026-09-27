@@ -18,7 +18,8 @@ use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
@@ -63,7 +64,8 @@ class WriterClient
     public function __construct(
         protected readonly DynamoDbClient $client,
         protected readonly Serializer $serializer,
-        protected readonly ExpressionCompiler $expressionCompiler,
+        protected readonly FilterCompiler $filterCompiler,
+        protected readonly UpdateCompiler $updateCompiler,
         protected readonly EntityDefinitionRegistry $definitionRegistry,
         protected readonly ReaderClient $reader,
     ) {
@@ -122,7 +124,7 @@ class WriterClient
     {
         $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        [, $update] = $this->expressionCompiler->compileUpdate($definition, $input->update);
+        [, $update] = $this->updateCompiler->update($definition, $input->update);
         $condition = $this->compileUpdateCondition($definition, $input);
         $entity = $input->refresh !== Refresh::None && $input->key instanceof AbstractEntity ? $input->key : null;
 
@@ -262,7 +264,7 @@ class WriterClient
             }
 
             if ($operation instanceof UpdateInput) {
-                [$normalized, $update] = $this->expressionCompiler->compileUpdate($definition, $operation->update);
+                [$normalized, $update] = $this->updateCompiler->update($definition, $operation->update);
                 $condition = $this->compileUpdateCondition($definition, $operation);
 
                 $writeRequests[] = new TransactWriteItem(['Update' => [
@@ -369,7 +371,7 @@ class WriterClient
             return new ExpressionCompiledResult();
         }
 
-        return $this->expressionCompiler->compileCondition($definition, $condition);
+        return $this->filterCompiler->condition($definition, $condition);
     }
 
     /**
@@ -386,7 +388,7 @@ class WriterClient
         $exists = Filter::exists($definition->getKeySchema()->hashKey);
 
         return $input->condition !== null
-            ? $this->expressionCompiler->compileCondition($definition, $exists, $input->condition)
-            : $this->expressionCompiler->compileCondition($definition, $exists);
+            ? $this->filterCompiler->condition($definition, $exists, $input->condition)
+            : $this->filterCompiler->condition($definition, $exists);
     }
 }

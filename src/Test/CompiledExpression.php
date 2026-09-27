@@ -9,9 +9,10 @@ use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
@@ -20,9 +21,9 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  * {@see resolved()} reads it back without its placeholders, so a test need not depend on how they are named:
  *
  * ```
- * $compiled = CompiledExpression::ofFilter(EntityDefinitionFactory::create(OrderEntity::class), new SizeGreaterThanFilter('tags', 2));
+ * $compiled = CompiledExpression::ofFilter(EntityDefinitionFactory::create(OrderEntity::class), new StoredAsFilter('totalCents', AttributeType::String));
  *
- * static::assertSame('size(tags) > 2', $compiled->resolved());
+ * static::assertSame('attribute_type(totalCents, "S")', $compiled->resolved());
  * ```
  */
 final readonly class CompiledExpression
@@ -48,7 +49,7 @@ final readonly class CompiledExpression
      */
     public static function ofFilter(EntityDefinition $definition, FilterInterface $filter): self
     {
-        $result = new ExpressionCompiler(new Serializer())->compileFilter($definition, $filter);
+        $result = new FilterCompiler()->filter($definition, $filter);
 
         return new self($result->expression, $result->names, $result->values);
     }
@@ -65,7 +66,7 @@ final readonly class CompiledExpression
      */
     public static function ofUpdate(EntityDefinition $definition, UpdateExpression|UpdateActionInterface $update): self
     {
-        [, $result] = new ExpressionCompiler(new Serializer())->compileUpdate(
+        [, $result] = new UpdateCompiler(new Serializer())->update(
             $definition,
             $update instanceof UpdateExpression ? $update : Update::with($update),
         );

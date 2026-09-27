@@ -23,9 +23,9 @@ class CompiledExpressionTest extends TestCase
     {
         $compiled = CompiledExpression::ofFilter(CounterDefinition::create(), Filter::equals('name', 'a'));
 
-        static::assertSame('#name = :ex_1_0_name', $compiled->expression);
+        static::assertSame('#name = :f_1_0_name', $compiled->expression);
         static::assertSame(['#name' => 'name'], $compiled->names);
-        static::assertEquals([':ex_1_0_name' => new AttributeValue(['S' => 'a'])], $compiled->values);
+        static::assertEquals([':f_1_0_name' => new AttributeValue(['S' => 'a'])], $compiled->values);
     }
 
     public function testResolvedReadsTheExpressionWithoutItsPlaceholders(): void
@@ -44,11 +44,11 @@ class CompiledExpressionTest extends TestCase
         $filter = new class implements FilterInterface {
             public function compile(ExpressionCompileContext $context): string
             {
-                return \sprintf('size(%s) > %s', $context->path('tags'), $context->number(2));
+                return \sprintf('attribute_type(%s, %s)', $context->path('ratio'), $context->literal('S'));
             }
         };
 
-        static::assertSame('size(tags) > 2', CompiledExpression::ofFilter(CounterDefinition::create(), $filter)->resolved());
+        static::assertSame('attribute_type(ratio, "S")', CompiledExpression::ofFilter(CounterDefinition::create(), $filter)->resolved());
     }
 
     public function testAFilterThatCompilesToNothingHasNoExpression(): void

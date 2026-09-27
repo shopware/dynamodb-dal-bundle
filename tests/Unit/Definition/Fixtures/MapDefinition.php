@@ -5,7 +5,8 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
+use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 
@@ -17,12 +18,12 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 final class MapDefinition
 {
     /**
-     * `settings` and `tags` hold strings; `deep`, `users` and `matrix` hold collections of strings, so
-     * a path may descend two levels below the attribute.
+     * `settings` is a map and `tags` a list of strings; `deep` is a map of maps, `users` a list of maps and `matrix` a
+     * list of lists of strings, so a path may descend two levels below the attribute.
      *
      * @return EntityDefinition<NormalEntity>
      */
-    public static function create(AbstractFieldSerializer $serializer = new StringFieldSerializer()): EntityDefinition
+    public static function create(): EntityDefinition
     {
         /** @var EntityDefinition<NormalEntity> $definition */
         $definition = new EntityDefinition(
@@ -31,11 +32,11 @@ final class MapDefinition
             NormalEntity::class,
             null,
             [
-                'settings' => self::collection('settings', $serializer),
-                'deep' => self::collection('deep', $serializer, self::collection('value', $serializer)),
-                'tags' => self::collection('tags', $serializer),
-                'users' => self::collection('users', $serializer, self::collection('value', $serializer)),
-                'matrix' => self::collection('matrix', $serializer, self::collection('value', $serializer)),
+                'settings' => self::map('settings'),
+                'deep' => self::map('deep', self::map('value')),
+                'tags' => self::list('tags'),
+                'users' => self::list('users', self::map('value')),
+                'matrix' => self::list('matrix', self::list('value')),
             ],
             new KeySchema('settings'),
         );
@@ -44,24 +45,26 @@ final class MapDefinition
     }
 
     /**
-     * A collection whose values are `$value`, or strings when none is given.
+     * A map whose values are `$value`, or strings when none is given.
      *
      * Each call builds its own instances: `setEntityDefinition()` recurses into the value definition
      * and refuses to set it twice, so two fields cannot share one.
      */
-    private static function collection(
-        string $name,
-        AbstractFieldSerializer $serializer,
-        ?FieldDefinition $value = null,
-    ): FieldDefinition {
-        return new FieldDefinition(
-            $name,
-            'array',
-            true,
-            true,
-            null,
-            $serializer,
-            $value ?? new FieldDefinition('value', 'string', false, false, null, $serializer),
-        );
+    private static function map(string $name, ?FieldDefinition $value = null): FieldDefinition
+    {
+        return new FieldDefinition($name, 'array', true, true, null, new MapFieldSerializer(), $value ?? self::string());
+    }
+
+    /**
+     * A list whose values are `$value`, or strings when none is given.
+     */
+    private static function list(string $name, ?FieldDefinition $value = null): FieldDefinition
+    {
+        return new FieldDefinition($name, 'array', true, true, null, new ListFieldSerializer(), $value ?? self::string());
+    }
+
+    private static function string(): FieldDefinition
+    {
+        return new FieldDefinition('value', 'string', false, false, null, new StringFieldSerializer());
     }
 }

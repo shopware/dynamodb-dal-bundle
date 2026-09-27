@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
 final readonly class EqualsAnyFilter implements FilterInterface
 {
@@ -13,16 +13,16 @@ final readonly class EqualsAnyFilter implements FilterInterface
     public array $values;
 
     /**
-     * @param list<mixed> $values
+     * @param list<mixed> $values - values, {@see FieldOperand} or {@see SizeOperand}
      */
     public function __construct(
-        public string $fieldName,
+        public string|SizeOperand $fieldName,
         array $values,
     ) {
         $this->values = array_values($values);
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(FilterCompileContext $context): ?string
     {
         if ($this->values === []) {
             return null;
@@ -30,10 +30,10 @@ final readonly class EqualsAnyFilter implements FilterInterface
 
         $fieldName = $this->fieldName;
         $placeholders = implode(', ', array_map(
-            static fn (mixed $value): string => $context->value($fieldName, $value),
+            static fn (mixed $value): string => $context->comparand($fieldName, $value),
             $this->values,
         ));
 
-        return "{$context->path($fieldName)} IN ({$placeholders})";
+        return \sprintf('%s IN (%s)', $context->operand($fieldName), $placeholders);
     }
 }

@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
 final readonly class ExistsFilter implements FilterInterface
 {
@@ -12,7 +12,7 @@ final readonly class ExistsFilter implements FilterInterface
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): string
+    public function compile(FilterCompileContext $context): string
     {
         return "attribute_exists({$context->path($this->fieldName)})";
     }

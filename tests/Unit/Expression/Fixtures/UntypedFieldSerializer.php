@@ -1,28 +1,24 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Serializer\Field;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures;
 
-use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
+use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * @internal
+ * Writes a string, but declares no attribute type, as a serializer of your own may. Every check against the stored
+ * type then passes, and DynamoDB decides.
  *
- * @extends AbstractFieldSerializer<string, 'string'>
+ * @extends AbstractFieldSerializer<string, string>
  */
-class StringFieldSerializer extends AbstractFieldSerializer
+final class UntypedFieldSerializer extends AbstractFieldSerializer
 {
     public static function supports(string $type, ?string $docblockType = null): bool
     {
-        return $type === 'string';
-    }
-
-    public function getAttributeType(FieldDefinition $definition): AttributeType
-    {
-        return AttributeType::String;
+        return false;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
@@ -36,10 +32,6 @@ class StringFieldSerializer extends AbstractFieldSerializer
 
     public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
     {
-        if (($value = $attributeValue->getS()) === null) {
-            throw new MissingAttributeValueException($definition, 'S');
-        }
-
-        return $value;
+        return $attributeValue->getS() ?? throw new MissingAttributeValueException($definition, 'S');
     }
 }

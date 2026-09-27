@@ -3,10 +3,12 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Definition;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\UntypedFieldSerializer;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -41,6 +43,22 @@ class FieldDefinitionTest extends TestCase
         static::assertSame('#id', $definition->getExpressionAttributeName());
         static::assertSame(':id', $definition->getExpressionValueName());
         static::assertSame($serializer, $definition->getSerializer());
+    }
+
+    public function testTheAttributeTypeIsWhatItsSerializerDeclaresForIt(): void
+    {
+        $serializer = $this->createMock(AbstractFieldSerializer::class);
+        $definition = new FieldDefinition('tags', 'array', false, true, [], $serializer);
+        $serializer->expects(static::once())->method('getAttributeType')->with($definition)->willReturn(AttributeType::List);
+
+        static::assertSame(AttributeType::List, $definition->getAttributeType());
+    }
+
+    public function testTheAttributeTypeIsUnknownWhereItsSerializerDeclaresNone(): void
+    {
+        $definition = new FieldDefinition('bag', 'string', false, true, '', new UntypedFieldSerializer());
+
+        static::assertNull($definition->getAttributeType());
     }
 
     public function testSettingDefinitionTwiceThrows(): void

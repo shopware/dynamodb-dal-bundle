@@ -2,9 +2,17 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
+/**
+ * Matches a string that contains a substring, or a list or set that contains an element.
+ *
+ * On a string field, a PHP string is sent as is, so it also finds a substring of a JSON field.
+ * Any other value is serialized by the field, such as an enum by its value.
+ * On a list, the value is serialized as one element.
+ */
 final readonly class ContainsFilter implements FilterInterface
 {
     public function __construct(
@@ -13,13 +21,27 @@ final readonly class ContainsFilter implements FilterInterface
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): string
+    public function compile(FilterCompileContext $context): string
     {
-        return \sprintf(
-            'contains(%s, %s)',
-            $context->path($this->fieldName),
-            // DynamoDB contains(listField, value) expects `value` to be one list element.
-            $context->value($this->fieldName, $this->value, useValueFieldDefinition: true),
+        $path = $context->path(
+            $this->fieldName,
+            AttributeType::String,
+            AttributeType::List,
+            AttributeType::StringSet,
+            AttributeType::NumberSet,
+            AttributeType::BinarySet,
         );
+
+        $field = $context->fieldDefinition($this->fieldName);
+        $type = $field->getAttributeType();
+        $operand = match (true) {
+            \is_string($this->value) && ($type === AttributeType::String || $type === AttributeType::StringSet) => $context->literal($this->value),
+            (\is_int($this->value) || \is_float($this->value)) && $type === AttributeType::NumberSet => $context->literal($this->value),
+            // DynamoDB contains(listField, value) expects `value` to be one list element.
+            $field->getValueFieldDefinition() !== null => $context->elementValue($this->fieldName, $this->value),
+            default => $context->fieldValue($this->fieldName, $this->value),
+        };
+
+        return "contains({$path}, {$operand})";
     }
 }

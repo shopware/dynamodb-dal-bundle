@@ -6,17 +6,15 @@ use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\Comparator;
+use Shopware\DynamodbDalBundle\Expression\Filter\ComparisonFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\EqualsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\LessThanFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\LessThanOrEqualsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\SizeEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\FieldOperand;
+use Shopware\DynamodbDalBundle\Expression\Filter\SizeOperand;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -25,11 +23,11 @@ class FilterTest extends TestCase
 {
     public function testEqualsAndComparators(): void
     {
-        static::assertEquals(new EqualsFilter('a', 1), Filter::equals('a', 1));
-        static::assertEquals(new GreaterThanFilter('a', 1), Filter::greaterThan('a', 1));
-        static::assertEquals(new GreaterThanOrEqualsFilter('a', 1), Filter::greaterThanOrEquals('a', 1));
-        static::assertEquals(new LessThanFilter('a', 1), Filter::lessThan('a', 1));
-        static::assertEquals(new LessThanOrEqualsFilter('a', 1), Filter::lessThanOrEquals('a', 1));
+        static::assertEquals(new ComparisonFilter('a', Comparator::Equals, 1), Filter::equals('a', 1));
+        static::assertEquals(new ComparisonFilter('a', Comparator::GreaterThan, 1), Filter::greaterThan('a', 1));
+        static::assertEquals(new ComparisonFilter('a', Comparator::GreaterThanOrEquals, 1), Filter::greaterThanOrEquals('a', 1));
+        static::assertEquals(new ComparisonFilter('a', Comparator::LessThan, 1), Filter::lessThan('a', 1));
+        static::assertEquals(new ComparisonFilter('a', Comparator::LessThanOrEquals, 1), Filter::lessThanOrEquals('a', 1));
         static::assertEquals(new BetweenFilter('a', 1, 2), Filter::between('a', 1, 2));
     }
 
@@ -43,13 +41,60 @@ class FilterTest extends TestCase
         static::assertEquals(new BeginsWithFilter('a', 'pre'), Filter::beginsWith('a', 'pre'));
         static::assertEquals(new ContainsFilter('a', 'sub'), Filter::contains('a', 'sub'));
         static::assertEquals(new ExistsFilter('a'), Filter::exists('a'));
-        static::assertEquals(new SizeEqualsFilter('a', 0), Filter::sizeEquals('a', 0));
+    }
+
+    public function testComparisonsTakeASizeInPlaceOfTheFieldAndAnOperandInPlaceOfTheValue(): void
+    {
+        static::assertEquals(new SizeOperand('a'), Filter::size('a'));
+        static::assertEquals(new FieldOperand('a'), Filter::field('a'));
+        static::assertEquals(
+            new ComparisonFilter(new SizeOperand('a'), Comparator::Equals, new FieldOperand('b')),
+            Filter::equals(Filter::size('a'), Filter::field('b')),
+        );
+        static::assertEquals(
+            new NotFilter(new EqualsAnyFilter(new SizeOperand('a'), [0, new SizeOperand('b')])),
+            Filter::notEqualsAny(Filter::size('a'), [0, Filter::size('b')]),
+        );
+    }
+
+    public function testIsEmptyTakesAMissingFieldAsEmptyAndIsNotEmptyAsksForASize(): void
+    {
+        static::assertEquals(
+            new OrFilter(new NotFilter(new ExistsFilter('a')), new ComparisonFilter(new SizeOperand('a'), Comparator::Equals, 0)),
+            Filter::isEmpty('a'),
+        );
+        static::assertEquals(new ComparisonFilter(new SizeOperand('a'), Comparator::GreaterThan, 0), Filter::isNotEmpty('a'));
+    }
+
+    public function testContainsAnyAndContainsAllJoinOneContainsPerValue(): void
+    {
+        static::assertEquals(
+            new OrFilter(new ContainsFilter('a', 'x'), new ContainsFilter('a', 'y')),
+            Filter::containsAny('a', ['x', 'y']),
+        );
+        static::assertEquals(
+            new AndFilter(new ContainsFilter('a', 'x'), new ContainsFilter('a', 'y')),
+            Filter::containsAll('a', ['x', 'y']),
+        );
+        static::assertSame([], Filter::containsAny('a', [])->filters);
+        static::assertSame([], Filter::containsAll('a', [])->filters);
+    }
+
+    public function testANullChildDropsOut(): void
+    {
+        $a = Filter::equals('a', 1);
+
+        static::assertSame([$a], Filter::and(null, $a, null)->filters);
+        static::assertSame([$a], Filter::or($a, null)->filters);
+        static::assertSame([$a], Filter::and()->with(null, $a)->filters);
+        static::assertSame([$a], Filter::or()->with($a, null)->filters);
+        static::assertSame([], Filter::or(null)->filters);
     }
 
     public function testLogicalGroupsForwardChildren(): void
     {
-        $a = new EqualsFilter('a', 1);
-        $b = new EqualsFilter('b', 2);
+        $a = new ComparisonFilter('a', Comparator::Equals, 1);
+        $b = new ComparisonFilter('b', Comparator::Equals, 2);
 
         $and = Filter::and($a, $b);
         static::assertSame([$a, $b], $and->filters);
@@ -73,10 +118,10 @@ class FilterTest extends TestCase
 
         static::assertEquals(
             new AndFilter(
-                new EqualsFilter('name', 'something'),
+                new ComparisonFilter('name', Comparator::Equals, 'something'),
                 new OrFilter(
-                    new EqualsFilter('counter', -1),
-                    new EqualsFilter('counter', 2),
+                    new ComparisonFilter('counter', Comparator::Equals, -1),
+                    new ComparisonFilter('counter', Comparator::Equals, 2),
                 ),
             ),
             $tree,
@@ -86,7 +131,7 @@ class FilterTest extends TestCase
     public function testNegationShortcutsWrapTheirPositiveCounterpart(): void
     {
         static::assertEquals(
-            new NotFilter(new EqualsFilter('a', 1)),
+            new NotFilter(new ComparisonFilter('a', Comparator::Equals, 1)),
             Filter::notEquals('a', 1),
         );
         static::assertEquals(

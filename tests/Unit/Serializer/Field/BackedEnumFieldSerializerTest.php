@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\OrderEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -109,6 +110,11 @@ class BackedEnumFieldSerializerTest extends TestCase
         $this->expectExceptionObject(new \ValueError(\sprintf('"%s" is not a valid backing value for enum %s', $value, ZeroEnum::class)));
 
         $this->serializer->deserialize($definition, AttributeValue::create(['S' => $value]));
+    }
+
+    public function testDeclaresItStoresTheFieldAsAStringWhateverItsBacking(): void
+    {
+        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createFieldDefinition()));
     }
 
     /**

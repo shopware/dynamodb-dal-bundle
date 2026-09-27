@@ -7,17 +7,15 @@ use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\Comparator;
+use Shopware\DynamodbDalBundle\Expression\Filter\ComparisonFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\EqualsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\GreaterThanOrEqualsFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\LessThanFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\LessThanOrEqualsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
-use Shopware\DynamodbDalBundle\Expression\Filter\SizeEqualsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\FieldOperand;
+use Shopware\DynamodbDalBundle\Expression\Filter\SizeOperand;
 
 /**
  * Static factory for building expression trees passed to the client inputs:
@@ -41,55 +39,134 @@ final class Filter
     {
     }
 
-    public static function equals(string $fieldName, mixed $value): EqualsFilter
+    /**
+     * DynamoDB's `size()` of a field, to compare instead of the field: the length of a string or binary, or the number
+     * of elements of a list, map or set.
+     *
+     * ```
+     * Filter::equals(Filter::size('tags'), 0)
+     * ```
+     */
+    public static function size(string $fieldName): SizeOperand
     {
-        return new EqualsFilter($fieldName, $value);
+        return new SizeOperand($fieldName);
+    }
+
+    /**
+     * Another field, to compare with instead of a value. Both have to be stored as the same type.
+     *
+     * ```
+     * Filter::greaterThan('updatedAt', Filter::field('createdAt'))
+     * ```
+     */
+    public static function field(string $fieldName): FieldOperand
+    {
+        return new FieldOperand($fieldName);
+    }
+
+    /**
+     * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function equals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
+    {
+        return new ComparisonFilter($fieldName, Comparator::Equals, $value);
     }
 
     /**
      * Without values it checks nothing and drops out: a search filter then matches every item, and a condition of
      * nothing else throws a {@see ConditionEmptyException}.
      *
-     * @param list<mixed> $values
+     * @param list<mixed> $values - values, {@see self::field()} or {@see self::size()}
      */
-    public static function equalsAny(string $fieldName, array $values): EqualsAnyFilter
+    public static function equalsAny(string|SizeOperand $fieldName, array $values): EqualsAnyFilter
     {
         return new EqualsAnyFilter($fieldName, $values);
     }
 
-    public static function greaterThan(string $fieldName, mixed $value): GreaterThanFilter
+    /**
+     * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function greaterThan(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
-        return new GreaterThanFilter($fieldName, $value);
+        return new ComparisonFilter($fieldName, Comparator::GreaterThan, $value);
     }
 
-    public static function greaterThanOrEquals(string $fieldName, mixed $value): GreaterThanOrEqualsFilter
+    /**
+     * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function greaterThanOrEquals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
-        return new GreaterThanOrEqualsFilter($fieldName, $value);
+        return new ComparisonFilter($fieldName, Comparator::GreaterThanOrEquals, $value);
     }
 
-    public static function lessThan(string $fieldName, mixed $value): LessThanFilter
+    /**
+     * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function lessThan(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
-        return new LessThanFilter($fieldName, $value);
+        return new ComparisonFilter($fieldName, Comparator::LessThan, $value);
     }
 
-    public static function lessThanOrEquals(string $fieldName, mixed $value): LessThanOrEqualsFilter
+    /**
+     * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function lessThanOrEquals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
-        return new LessThanOrEqualsFilter($fieldName, $value);
+        return new ComparisonFilter($fieldName, Comparator::LessThanOrEquals, $value);
     }
 
-    public static function between(string $fieldName, mixed $fromValue, mixed $toValue): BetweenFilter
+    /**
+     * @param mixed $fromValue - a value, a {@see self::field()} or a {@see self::size()}
+     * @param mixed $toValue - a value, a {@see self::field()} or a {@see self::size()}
+     */
+    public static function between(string|SizeOperand $fieldName, mixed $fromValue, mixed $toValue): BetweenFilter
     {
         return new BetweenFilter($fieldName, $fromValue, $toValue);
     }
 
-    public static function beginsWith(string $fieldName, mixed $value): BeginsWithFilter
+    /**
+     * Matches a string field that starts with the prefix. See {@see BeginsWithFilter}.
+     */
+    public static function beginsWith(string $fieldName, string $prefix): BeginsWithFilter
     {
-        return new BeginsWithFilter($fieldName, $value);
+        return new BeginsWithFilter($fieldName, $prefix);
     }
 
+    /**
+     * Matches a string field that contains a substring, or a list or set field that contains an element. See
+     * {@see ContainsFilter}.
+     */
     public static function contains(string $fieldName, mixed $value): ContainsFilter
     {
         return new ContainsFilter($fieldName, $value);
+    }
+
+    /**
+     * Matches a field that contains any of the values. Shorthand for `Filter::or()` of {@see self::contains()}, so
+     * without values it checks nothing.
+     *
+     * @param list<mixed> $values
+     */
+    public static function containsAny(string $fieldName, array $values): OrFilter
+    {
+        return new OrFilter(...array_map(
+            static fn (mixed $value): ContainsFilter => new ContainsFilter($fieldName, $value),
+            array_values($values),
+        ));
+    }
+
+    /**
+     * Matches a field that contains all of the values. Shorthand for `Filter::and()` of {@see self::contains()}, so
+     * without values it checks nothing.
+     *
+     * @param list<mixed> $values
+     */
+    public static function containsAll(string $fieldName, array $values): AndFilter
+    {
+        return new AndFilter(...array_map(
+            static fn (mixed $value): ContainsFilter => new ContainsFilter($fieldName, $value),
+            array_values($values),
+        ));
     }
 
     public static function exists(string $fieldName): ExistsFilter
@@ -97,25 +174,46 @@ final class Filter
         return new ExistsFilter($fieldName);
     }
 
-    public static function sizeEquals(string $fieldName, int $value): SizeEqualsFilter
+    /**
+     * Matches a string, list, map or set field that is empty or missing.
+     * Shorthand for `Filter::or(Filter::notExists(...), Filter::equals(Filter::size(...), 0))`.
+     */
+    public static function isEmpty(string $fieldName): OrFilter
     {
-        return new SizeEqualsFilter($fieldName, $value);
+        return new OrFilter(new NotFilter(new ExistsFilter($fieldName)), new ComparisonFilter(new SizeOperand($fieldName), Comparator::Equals, 0));
     }
 
     /**
-     * Filters that check nothing drop out.
-     * With none left, this checks nothing either, like {@see self::equalsAny()} without values.
+     * The opposite of {@see self::isEmpty()}. Shorthand for `Filter::greaterThan(Filter::size(...), 0)`, as
+     * `Filter::notEquals(Filter::size(...), 0)` would match a missing field too.
      */
-    public static function and(FilterInterface ...$filters): AndFilter
+    public static function isNotEmpty(string $fieldName): ComparisonFilter
+    {
+        return new ComparisonFilter(new SizeOperand($fieldName), Comparator::GreaterThan, 0);
+    }
+
+    /**
+     * Filters that check nothing drop out, and so does a `null`, for an optional criterion:
+     *
+     * ```
+     * Filter::and(
+     *     Filter::equals('customerId', $customerId),
+     *     $createdBefore !== null ? Filter::lessThan('createdAt', $createdBefore) : null,
+     * )
+     * ```
+     *
+     * With none left, this checks nothing either.
+     */
+    public static function and(?FilterInterface ...$filters): AndFilter
     {
         return new AndFilter(...$filters);
     }
 
     /**
-     * Filters that check nothing drop out.
-     * With none left, this checks nothing either, like {@see self::equalsAny()} without values.
+     * Filters that check nothing drop out, and so does a `null`, for an optional criterion.
+     * With none left, this checks nothing either.
      */
-    public static function or(FilterInterface ...$filters): OrFilter
+    public static function or(?FilterInterface ...$filters): OrFilter
     {
         return new OrFilter(...$filters);
     }
@@ -128,9 +226,9 @@ final class Filter
     /**
      * Shorthand for `Filter::not(Filter::equals(...))`
      */
-    public static function notEquals(string $fieldName, mixed $value): NotFilter
+    public static function notEquals(string|SizeOperand $fieldName, mixed $value): NotFilter
     {
-        return new NotFilter(new EqualsFilter($fieldName, $value));
+        return new NotFilter(new ComparisonFilter($fieldName, Comparator::Equals, $value));
     }
 
     /**
@@ -138,7 +236,7 @@ final class Filter
      *
      * @param list<mixed> $values
      */
-    public static function notEqualsAny(string $fieldName, array $values): NotFilter
+    public static function notEqualsAny(string|SizeOperand $fieldName, array $values): NotFilter
     {
         return new NotFilter(new EqualsAnyFilter($fieldName, $values));
     }

@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Update;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Expression\Contract\NormalizableUpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Expression\Update;
@@ -53,9 +54,9 @@ final readonly class ListAppendAction implements NormalizableUpdateActionInterfa
             return null;
         }
 
-        $attribute = $context->path($this->fieldName);
-        $current = "if_not_exists({$attribute}, {$context->value($this->fieldName, [])})";
-        $values = $context->value($this->fieldName, $this->values);
+        $attribute = $context->path($this->fieldName, AttributeType::List);
+        $current = "if_not_exists({$attribute}, {$context->fieldValue($this->fieldName, [])})";
+        $values = $context->fieldValue($this->fieldName, $this->values);
 
         return $this->prepend
             ? "{$attribute} = list_append({$values}, {$current})"

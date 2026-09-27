@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\ArrayTypeParser;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
@@ -25,6 +26,11 @@ class MapFieldSerializer extends AbstractFieldSerializer
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         return $type === 'array' && $docblockType !== null && ArrayTypeParser::isMapType($docblockType);
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::Map;
     }
 
     /**

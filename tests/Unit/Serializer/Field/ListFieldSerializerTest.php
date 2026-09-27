@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
@@ -309,6 +310,11 @@ class ListFieldSerializerTest extends TestCase
         } catch (FieldDeserializationException $e) {
             static::assertSame('matrix[1][1]', $e->path);
         }
+    }
+
+    public function testDeclaresItStoresTheFieldAsAList(): void
+    {
+        static::assertSame(AttributeType::List, $this->serializer->getAttributeType($this->createStringListDefinition()));
     }
 
     private function createStringListDefinition(): FieldDefinition

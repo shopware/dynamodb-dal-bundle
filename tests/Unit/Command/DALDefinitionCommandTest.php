@@ -74,9 +74,16 @@ class DALDefinitionCommandTest extends TestCase
         static::assertStringContainsString('list<string>', $output);
     }
 
+    public function testRendersTheTypeEachFieldIsStoredAs(): void
+    {
+        static::assertSame(Command::SUCCESS, $this->command->__invoke($this->io, 'order'));
+
+        static::assertMatchesRegularExpression('/stored as.*\n(?:.*\n)*.*StringFieldSerializer\s+S\s/', $this->output->fetch());
+    }
+
     /**
      * The compiled value definitions of an `array<string, list<string>>` field, so both nesting levels
-     * have to be named after their own serializer.
+     * have to be named after the type each is stored as.
      */
     public function testRendersNestedMapAndListValueDefinitions(): void
     {

@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
@@ -110,13 +111,13 @@ class UpdateExpressionTest extends TestCase
                 Update::increment('count', 2),
                 Update::remove('name'),
                 Update::setIfNotExists('ratio', 1.5),
-                Update::removeFromSet('tags', ['old']),
+                Update::removeFromSet('labels', ['old']),
                 Update::set('id', 'x'),
             ),
         );
 
         static::assertSame(
-            'SET #id = :h_0_id, #ratio = if_not_exists(#ratio, :h_2_ratio) REMOVE #name ADD #count :h_1_count DELETE #tags :h_3_tags',
+            'SET #id = :h_0_id, #ratio = if_not_exists(#ratio, :h_2_ratio) REMOVE #name ADD #count :h_1_count DELETE #labels :h_3_labels',
             $expression,
         );
     }
@@ -171,12 +172,44 @@ class UpdateExpressionTest extends TestCase
     public function testAddAndDeleteTakeTheOperandAsTheFieldSerializesIt(): void
     {
         [$add, $addContext] = $this->compile(Update::increment('count', 1));
-        [$delete, $deleteContext] = $this->compile(Update::removeFromSet('tags', ['a']));
+        [$delete, $deleteContext] = $this->compile(Update::removeFromSet('labels', ['a']));
 
         static::assertSame('ADD #count :h_0_count', $add);
         static::assertEquals([':h_0_count' => new AttributeValue(['N' => '1'])], $addContext->values);
-        static::assertSame('DELETE #tags :h_0_tags', $delete);
-        static::assertEquals([':h_0_tags' => new AttributeValue(['L' => [new AttributeValue(['S' => 'a'])]])], $deleteContext->values);
+        static::assertSame('DELETE #labels :h_0_labels', $delete);
+        static::assertEquals([':h_0_labels' => new AttributeValue(['SS' => ['a']])], $deleteContext->values);
+    }
+
+    /**
+     * DynamoDB rejects each of them, far from the code that built the update.
+     */
+    #[DataProvider('actionOnTheWrongTypeProvider')]
+    public function testAnActionOnAFieldNotStoredAsItsTypeIsRefused(UpdateExpression $update, string $message): void
+    {
+        $this->expectException(AttributeTypeMismatchException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->compile($update);
+    }
+
+    /**
+     * @return iterable<string, array{UpdateExpression, string}>
+     */
+    public static function actionOnTheWrongTypeProvider(): iterable
+    {
+        yield 'list_append() to a map' => [Update::append('meta', [1]), '"meta" in item "counter" is of type M, where L is expected'];
+        yield 'list_append() to a JSON-encoded field' => [Update::prepend('payload', [1]), '"payload" in item "counter" is of type S, where L is expected'];
+        yield 'ADD to a list' => [Update::addToSet('tags', ['a']), '"tags" in item "counter" is of type L, where one of N, SS, NS, BS is expected'];
+        yield 'ADD to a string' => [Update::increment('name'), '"name" in item "counter" is of type S, where one of N, SS, NS, BS is expected'];
+        yield 'DELETE from a list' => [Update::removeFromSet('tags', ['a']), '"tags" in item "counter" is of type L, where one of SS, NS, BS is expected'];
+        yield 'DELETE from a number' => [Update::removeFromSet('count', 1), '"count" in item "counter" is of type N, where one of SS, NS, BS is expected'];
+    }
+
+    public function testAnActionOnAFieldWhoseSerializerDeclaresNoTypeIsLeftToDynamoDb(): void
+    {
+        [$expression] = $this->compile(Update::with(Update::addToSet('untyped', 'a'), Update::removeFromSet('untyped', 'b')));
+
+        static::assertSame('ADD #untyped :h_0_untyped DELETE #untyped :h_1_untyped', $expression);
     }
 
     public function testAnActionOfYourOwnCompilesIntoItsClause(): void
@@ -256,7 +289,7 @@ class UpdateExpressionTest extends TestCase
     public static function nullOperandsProvider(): iterable
     {
         yield 'ADD' => [Update::addToSet('count', null), 'Operand for field "count"'];
-        yield 'DELETE' => [Update::removeFromSet('tags', null), 'Operand for field "tags"'];
+        yield 'DELETE' => [Update::removeFromSet('labels', null), 'Operand for field "labels"'];
     }
 
     public function testAnActionTakesBackItsValueAndKeepsTheRest(): void

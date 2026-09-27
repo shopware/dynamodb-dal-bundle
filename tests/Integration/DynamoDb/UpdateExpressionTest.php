@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Integration\DynamoDb;
 
 use AsyncAws\Core\Exception\Http\ClientException;
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
@@ -581,16 +582,15 @@ class UpdateExpressionTest extends DynamoDbTestCase
     }
 
     /**
-     * `ADD` and `DELETE` take a number or a set. The bundle ships no set type, so a list serializes as a
-     * list, and DynamoDB refuses it.
+     * `ADD` and `DELETE` take a number or a set, which DynamoDB would refuse only once the request is out. The
+     * bundle ships no set type, and the fields declare the type they are stored as, so the update is refused before.
      */
     #[DataProvider('operandsAddAndDeleteRefuseProvider')]
-    public function testAddAndDeleteRefuseAnOperandThatIsNoNumberOrSet(UpdateExpression $update): void
+    public function testAddAndDeleteRefuseAFieldThatIsNoNumberOrSet(UpdateExpression $update): void
     {
         $this->put(RecordEntity::create(self::TENANT, 'a', name: 'stored', tags: ['x']));
 
-        static::expectException(ClientException::class);
-        static::expectExceptionMessageMatches('/Incorrect operand type for operator or function/');
+        static::expectException(AttributeTypeMismatchException::class);
 
         $this->update('a', $update);
     }

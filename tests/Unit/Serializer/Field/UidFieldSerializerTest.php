@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -86,6 +87,11 @@ class UidFieldSerializerTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $this->serializer->deserialize($this->definition, $attribute);
+    }
+
+    public function testDeclaresItStoresTheFieldAsAString(): void
+    {
+        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createUidDefinition()));
     }
 
     private function createUidDefinition(): FieldDefinition

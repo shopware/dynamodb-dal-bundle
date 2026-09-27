@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
 final readonly class NotFilter implements FilterInterface
 {
@@ -12,7 +12,7 @@ final readonly class NotFilter implements FilterInterface
     ) {
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(FilterCompileContext $context): ?string
     {
         $context->isCompound = false;
         $inner = $this->filter->compile($context);

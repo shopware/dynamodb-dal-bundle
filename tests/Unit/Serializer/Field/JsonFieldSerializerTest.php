@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -127,6 +128,11 @@ class JsonFieldSerializerTest extends TestCase
         $this->expectException(\JsonException::class);
 
         $this->serializer->deserialize($this->definition, AttributeValue::create(['S' => '{not json']));
+    }
+
+    public function testDeclaresItStoresTheFieldAsAString(): void
+    {
+        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createJsonDefinition()));
     }
 
     private function jsonSerializable(mixed $serialized): \JsonSerializable

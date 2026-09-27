@@ -7,7 +7,6 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
-use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Expression\Contract\NormalizableUpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
@@ -93,13 +92,13 @@ final class UpdateExpression
 
         foreach ($this->fields as $fieldName => $value) {
             if ($value !== null) {
-                $clauses[UpdateClause::Set->value][] = "{$context->path($fieldName)} = {$context->value($fieldName, $value)}";
+                $clauses[UpdateClause::Set->value][] = "{$context->path($fieldName)} = {$context->fieldValue($fieldName, $value)}";
 
                 continue;
             }
 
             // DynamoDB has no null attribute, so null removes, and a field that may not be null cannot be removed.
-            $path = FieldPath::tryParse($context->definition, $fieldName) ?? throw new UnknownFieldException($context->definition, $fieldName);
+            $path = FieldPath::parse($context->definition, $fieldName);
             if (!$path->definition->allowsNull()) {
                 throw new FieldMissingSerializedValueException($path->definition);
             }

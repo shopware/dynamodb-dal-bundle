@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Expression\Update;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 
@@ -25,6 +26,8 @@ final readonly class AddAction implements UpdateActionInterface
 
     public function compile(ExpressionCompileContext $context): string
     {
-        return "{$context->path($this->fieldName)} {$context->value($this->fieldName, $this->value)}";
+        $path = $context->path($this->fieldName, AttributeType::Number, AttributeType::StringSet, AttributeType::NumberSet, AttributeType::BinarySet);
+
+        return "{$path} {$context->fieldValue($this->fieldName, $this->value)}";
     }
 }

@@ -5,13 +5,13 @@ namespace Shopware\DynamodbDalBundle\Expression;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Output of {@see ExpressionCompiler}: the compiled expression string plus the `ExpressionAttributeNames` /
+ * Output of {@see FilterCompiler} and {@see UpdateCompiler}: the compiled expression string plus the `ExpressionAttributeNames` /
  * `ExpressionAttributeValues` placeholder maps it references. The expressions of one request, such as a key
  * condition and a filter, share one pair of maps:
  *
  * ```
- * $keyResult = $compiler->compileCondition($definition, $keyCondition);
- * $filterResult = $compiler->compileFilter($definition, $filter);
+ * $keyResult = $compiler->condition($definition, $keyCondition);
+ * $filterResult = $compiler->filter($definition, $filter);
  *
  * $client->query([
  *     'TableName' => $definition->getTable(),
@@ -27,7 +27,7 @@ class ExpressionCompiledResult
 {
     /**
      * @param array<string, string> $names `['#field' => 'field']`
-     * @param array<string, AttributeValue> $values `[':ex_1_0_field' => AttributeValue]`
+     * @param array<string, AttributeValue> $values `[':f_1_0_field' => AttributeValue]`
      */
     public function __construct(
         public readonly ?string $expression = null,

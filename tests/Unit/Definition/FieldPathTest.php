@@ -3,6 +3,13 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Definition;
 
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
+use Shopware\DynamodbDalBundle\Definition\KeySchema;
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\UntypedFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -36,13 +43,15 @@ class FieldPathTest extends TestCase
         yield 'nested list elements' => ['matrix[0][1]', ['matrix', 0, 1], true];
         yield 'deep map entries' => ['deep.theme.color', ['deep', 'theme', 'color'], true];
         // A numeric map key is an attribute, not an index — `[0]` is what opts into list syntax.
-        yield 'numeric map key' => ['tags.0', ['tags', '0'], true];
+        yield 'numeric map key' => ['settings.0', ['settings', '0'], true];
     }
 
     #[DataProvider('unparsableProvider')]
     public function testParseRejectsAPathThatAddressesNothing(string $path): void
     {
-        static::assertNull(FieldPath::tryParse(MapDefinition::create(), $path));
+        $this->expectException(UnknownFieldException::class);
+
+        FieldPath::parse(MapDefinition::create(), $path);
     }
 
     /**
@@ -57,6 +66,29 @@ class FieldPathTest extends TestCase
         yield 'unknown root of a nested path' => ['doesNotExist.color'];
         // `settings` holds strings, so a third segment would descend into a scalar.
         yield 'deeper than the type nests' => ['settings.color.shade'];
+        // A map is addressed by name and a list by index, so DynamoDB finds nothing under the other one.
+        yield 'index into a map' => ['settings[0]'];
+        yield 'name inside a list' => ['tags.name'];
+        yield 'numeric name inside a list' => ['tags.0'];
+        yield 'name inside a nested list' => ['matrix[0].name'];
+        yield 'index into a nested map' => ['users[0][1]'];
+    }
+
+    /**
+     * A serializer of your own that declares no type leaves the shape to DynamoDB, so both forms parse.
+     */
+    public function testParseChecksAFieldWhoseSerializerDeclaresNoTypeForDepthOnly(): void
+    {
+        $definition = new EntityDefinition('untyped', 'untyped', NormalEntity::class, null, [
+            'bag' => new FieldDefinition('bag', 'array', true, true, null, new UntypedFieldSerializer(), new FieldDefinition('value', 'string', false, false, null, new StringFieldSerializer())),
+        ], new KeySchema('bag'));
+
+        static::assertSame(['bag', 0], FieldPath::parse($definition, 'bag[0]')->segments);
+        static::assertSame(['bag', 'name'], FieldPath::parse($definition, 'bag.name')->segments);
+
+        $this->expectException(UnknownFieldException::class);
+
+        FieldPath::parse($definition, 'bag.name.deeper');
     }
 
     /**
@@ -68,7 +100,9 @@ class FieldPathTest extends TestCase
     #[DataProvider('malformedProvider')]
     public function testParseRejectsAPathTheGrammarDoesNotCoverWhole(string $path): void
     {
-        static::assertNull(FieldPath::tryParse(MapDefinition::create(), $path));
+        $this->expectException(UnknownFieldException::class);
+
+        FieldPath::parse(MapDefinition::create(), $path);
     }
 
     /**
@@ -197,9 +231,6 @@ class FieldPathTest extends TestCase
 
     private function parse(string $path): FieldPath
     {
-        $parsed = FieldPath::tryParse(MapDefinition::create(), $path);
-        static::assertNotNull($parsed, "Expected \"{$path}\" to address something in the fixture.");
-
-        return $parsed;
+        return FieldPath::parse(MapDefinition::create(), $path);
     }
 }

@@ -89,6 +89,14 @@ class FieldDefinition
     }
 
     /**
+     * The DynamoDB type the field is stored as, `null` where its serializer declares none.
+     */
+    public function getAttributeType(): ?AttributeType
+    {
+        return $this->serializer->getAttributeType($this);
+    }
+
+    /**
      * For Map/List fields: definition used to serialize/deserialize each value. Null for scalar fields.
      */
     public function getValueFieldDefinition(): ?FieldDefinition
