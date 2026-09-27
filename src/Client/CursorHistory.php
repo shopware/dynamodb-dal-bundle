@@ -57,14 +57,15 @@ final readonly class CursorHistory
      * Folds the positions of a page merged from several searches — one token per search, e.g. one per status
      * — into a single position. Leave out a search still on its first page; it has no token.
      *
-     * @param array<string, string> $positions - name => token
+     * @param array<array-key, string> $positions - name => token; PHP keeps a numeric name such as `'200'` as an int key, which works the same
      *
      * @throws InvalidCursorException if a name or a token is not valid UTF-8
      */
     public static function combine(array $positions): string
     {
         try {
-            $json = json_encode($positions, \JSON_THROW_ON_ERROR);
+            // An object even where PHP counts the names as a list, such as `['0' => $token]`, so that split() reads them as names
+            $json = json_encode($positions, \JSON_THROW_ON_ERROR | \JSON_FORCE_OBJECT);
         } catch (\JsonException $e) {
             throw new InvalidCursorException('a name or a token is not valid UTF-8', $e);
         }
@@ -77,7 +78,7 @@ final readonly class CursorHistory
      *
      * @throws InvalidCursorException if the position was not combined
      *
-     * @return array<string, string> - name => token
+     * @return array<array-key, string> - name => token; a numeric name comes back as an int key, as PHP stores it in any array
      */
     public static function split(?string $position): array
     {
@@ -94,7 +95,8 @@ final readonly class CursorHistory
 
         $tokens = [];
         foreach ($positions as $name => $token) {
-            if (!\is_string($name) || !\is_string($token)) {
+            // A numeric name decodes to an int key, and a position combined as a JSON list names its tokens 0, 1, …
+            if (!\is_string($token)) {
                 throw new InvalidCursorException('the history position does not name several tokens');
             }
 

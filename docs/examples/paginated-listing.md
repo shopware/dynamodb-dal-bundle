@@ -288,10 +288,11 @@ $nextHistory = $hasMore ? $visited->advance(CursorHistory::combine($positions)) 
 The template is the same as for the scan listing. `Page::cursorBefore($entity)` is the backward counterpart of
 `cursorAfter()`.
 
+The names can be any strings. `split()` returns them as PHP stores array keys, so a numeric name such as `'200'`
+comes back as the integer `200`. A lookup such as `$positions[$status]` finds it either way.
+
 ### Pitfalls
 
-- Name the positions with strings that PHP keeps as strings, such as `'status-200'`. PHP turns a numeric array key
-  such as `'200'` into an integer, and `split()` then refuses the position it was given.
 - `cursorAfter()` and `cursorBefore()` take an entity of that page, by identity. Any other entity throws an
   `\InvalidArgumentException`.
 
