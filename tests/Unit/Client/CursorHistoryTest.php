@@ -98,6 +98,40 @@ class CursorHistoryTest extends TestCase
     }
 
     /**
+     * PHP keeps a numeric name as an int key, both in the array given to combine() and in the one split() returns.
+     * The lookup by name works all the same.
+     */
+    public function testCombinedPositionsWithNumericNamesSplitBackIntoTheirNamedTokens(): void
+    {
+        $tokens = ['200' => self::token('a'), '404' => self::token('b')];
+
+        $split = CursorHistory::split(CursorHistory::combine($tokens));
+
+        static::assertSame($tokens, $split);
+        static::assertSame(self::token('a'), $split['200']);
+    }
+
+    /**
+     * `['0' => $token]` is a list to PHP, which would encode as a JSON list without its names.
+     */
+    public function testCombinedPositionsNamedLikeAListSplitBackIntoTheirNamedTokens(): void
+    {
+        $tokens = ['0' => self::token('a'), '1' => self::token('b')];
+
+        static::assertSame($tokens, CursorHistory::split(CursorHistory::combine($tokens)));
+    }
+
+    /**
+     * A position combined as a JSON list, as combine() encoded such names before, names its tokens by position.
+     */
+    public function testAPositionCombinedAsAListSplitsIntoTokensNamedByPosition(): void
+    {
+        $position = rtrim(strtr(base64_encode(json_encode([self::token('a'), self::token('b')], \JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+
+        static::assertSame([0 => self::token('a'), 1 => self::token('b')], CursorHistory::split($position));
+    }
+
+    /**
      * @return iterable<string, array{string}>
      */
     public static function uncombinedPositions(): iterable
@@ -107,7 +141,6 @@ class CursorHistoryTest extends TestCase
         yield 'plain token' => [self::token('a')];
         yield 'not base64' => ['!!!'];
         yield 'scalar' => [$encode('"open"')];
-        yield 'list of tokens' => [$encode('["a","b"]')];
         yield 'non-string token' => [$encode('{"open":1}')];
     }
 
