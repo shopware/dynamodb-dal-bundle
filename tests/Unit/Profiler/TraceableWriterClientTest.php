@@ -7,7 +7,7 @@ use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Key;
-use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Profiler\DalCallTracer;
 use Shopware\DynamodbDalBundle\Profiler\TraceableWriterClient;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;

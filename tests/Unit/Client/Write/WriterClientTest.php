@@ -1,7 +1,8 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Write;
 
+use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
@@ -9,15 +10,21 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
-use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Client\Write\WriteRequestFactory;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReadRequestFactory;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
+use Shopware\DynamodbDalBundle\Exception\DeserializationException;
+use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
+use Shopware\DynamodbDalBundle\Exception\EntityOutOfSyncException;
+use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
@@ -25,6 +32,7 @@ use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
+use Shopware\DynamodbDalBundle\Serializer\SerializedKeyResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Definition\Fixtures\MapDefinition;
@@ -62,8 +70,6 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 #[CoversClass(WriterClient::class)]
 class WriterClientTest extends TestCase
 {
-    private const string SERIALIZED_ID = 'x';
-
     private DynamoDbClient&MockObject $client;
 
     private Serializer&MockObject $serializer;
@@ -82,24 +88,25 @@ class WriterClientTest extends TestCase
         $this->definition = NormalEntity::createDefinition();
 
         $this->serializer->method('serialize')->willReturnCallback(
-            fn (EntityDefinition $definition, mixed $fields, NormalizerOperation $operation): SerializedResult => $this->serializedResult($operation),
+            fn (EntityDefinition $definition, mixed $fields, NormalizerOperation $operation): SerializedResult => $this->serializedResult($operation, $fields),
         );
-        $this->serializer->method('serializeKey')
-            ->willReturn(['autofilledId' => new AttributeValue(['S' => self::SERIALIZED_ID])]);
+        // Each entity or key its own, since a transaction refuses a key named twice
+        $this->serializer->method('serializeKey')->willReturnCallback(
+            static function (EntityDefinition $definition, AbstractEntity|Key $key): SerializedKeyResult {
+                $hashKey = $definition->getKeySchema()->hashKey;
+                $value = $key instanceof Key ? $key->hashValue : ($key->getVars()[$hashKey] ?? null);
+                static::assertIsString($value);
+
+                return SerializedKeyResult::fromItem($definition, [$hashKey => new AttributeValue(['S' => $value])]);
+            },
+        );
         // The definitions here carry no shape-changing normalizer, so (de)normalizing is the identity —
         // stubbed rather than mocked away, since an update and the write-back run through it.
         $this->serializer->method('normalize')->willReturnArgument(1);
         $this->serializer->method('denormalize')->willReturnArgument(1);
 
         $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
-        $this->writer = new WriterClient(
-            $this->client,
-            $this->serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($this->serializer),
-            $registry,
-            new ReaderClient($this->client, $this->serializer, new FilterCompiler(), $registry),
-        );
+        $this->writer = $this->createWriter($this->serializer, $registry);
     }
 
     public function testAnEmptyBatchSendsNothing(): void
@@ -293,7 +300,7 @@ class WriterClientTest extends TestCase
                 ->with(new UpdateInput(new Key(NormalEntity::class, 'b'), ['name' => 'two'])),
         );
 
-        static::assertSame(self::SERIALIZED_ID, $entity->getAutofilledId());
+        static::assertSame(self::serializedId('a'), $entity->getAutofilledId());
     }
 
     /**
@@ -480,14 +487,7 @@ class WriterClientTest extends TestCase
         $serializer = new Serializer();
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
 
-        $writer = new WriterClient(
-            $this->client,
-            $serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($serializer),
-            $registry,
-            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
-        );
+        $writer = $this->createWriter($serializer, $registry);
 
         $this->client->expects(static::once())
             ->method('transactWriteItems')
@@ -523,14 +523,7 @@ class WriterClientTest extends TestCase
         $serializer = new Serializer();
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
 
-        $writer = new WriterClient(
-            $this->client,
-            $serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($serializer),
-            $registry,
-            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
-        );
+        $writer = $this->createWriter($serializer, $registry);
 
         $this->client->expects(static::once())
             ->method('updateItem')
@@ -756,28 +749,31 @@ class WriterClientTest extends TestCase
     {
         $table = $this->definition->getTable();
         $unprocessed = [$table => [
-            new WriteRequest(['PutRequest' => ['Item' => ['autofilledId' => new AttributeValue(['S' => 'b'])]]]),
+            new WriteRequest(['PutRequest' => ['Item' => ['autofilledId' => new AttributeValue(['S' => self::serializedId('b')])]]]),
         ]];
 
         $withUnprocessed = ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => $unprocessed]);
         $done = ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]);
 
+        $entityA = $this->entity('a');
+        $entityB = $this->entity('b');
+
         // An ArrayObject holder, so phpstan does not constant-fold what the callback records.
         /** @var \ArrayObject<int, array<string, list<WriteRequest>>> $requestItemsPerCall */
         $requestItemsPerCall = new \ArrayObject();
+        /** @var \ArrayObject<int, list<string>> $idsPerCall */
+        $idsPerCall = new \ArrayObject();
         $this->client->expects(static::exactly(2))
             ->method('batchWriteItem')
             ->willReturnCallback(
                 /** @param array{RequestItems: array<string, list<WriteRequest>>} $args */
-                static function (array $args) use ($requestItemsPerCall, $withUnprocessed, $done): BatchWriteItemOutput {
+                static function (array $args) use ($requestItemsPerCall, $idsPerCall, $entityA, $entityB, $withUnprocessed, $done): BatchWriteItemOutput {
                     $requestItemsPerCall->append($args['RequestItems']);
+                    $idsPerCall->append([$entityA->getAutofilledId(), $entityB->getAutofilledId()]);
 
                     return \count($requestItemsPerCall) === 1 ? $withUnprocessed : $done;
                 },
             );
-
-        $entityA = $this->entity('a');
-        $entityB = $this->entity('b');
 
         $this->writer->batchWrite(new BatchWriteInput()->withPut($entityA, $entityB));
 
@@ -786,8 +782,278 @@ class WriterClientTest extends TestCase
         static::assertCount(2, $requestItemsPerCall[0][$table] ?? []);
         static::assertSame($unprocessed, $requestItemsPerCall[1]);
 
-        static::assertSame(self::SERIALIZED_ID, $entityA->getAutofilledId());
-        static::assertSame(self::SERIALIZED_ID, $entityB->getAutofilledId());
+        // Both puts are applied back once the batch is sent, so the leftover goes out beside entities not yet touched
+        static::assertSame(['a', 'b'], $idsPerCall[1]);
+        static::assertSame(self::serializedId('a'), $entityA->getAutofilledId());
+        static::assertSame(self::serializedId('b'), $entityB->getAutofilledId());
+    }
+
+    /**
+     * DynamoDB refuses a request that names a key twice, after the requests before it were written, and lets the
+     * later of two requests win where they are sent apart. So a batch that does is refused before any of it is sent.
+     */
+    public function testABatchThatPutsAnEntityTwiceIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('batchWriteItem');
+
+        $entities = array_map(fn (int $id): NormalEntity => $this->entity((string) $id), range(1, 25));
+
+        $this->expectException(DuplicateKeyException::class);
+        $this->expectExceptionMessage('A batch write or transaction names the same key of item "normal" twice');
+
+        // 25 apart, so the two puts would go out in separate requests
+        $this->writer->batchWrite(new BatchWriteInput([...$entities, $entities[0]]));
+    }
+
+    public function testABatchThatPutsAndDeletesOneEntityIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('batchWriteItem');
+
+        $this->expectException(DuplicateKeyException::class);
+
+        $this->normalizingWriter(new RecordingNormalizer())->batchWrite(
+            new BatchWriteInput([$this->entity('a')], [new Key(NormalEntity::class, 'a')]),
+        );
+    }
+
+    /**
+     * A batch is not atomic, so the entities of the requests that went through are brought up to date although a later
+     * request fails, and those of the failed request are not.
+     */
+    public function testAFailedBatchRequestLeavesTheEntitiesOfTheRequestsBeforeItUpToDate(): void
+    {
+        /** @var \ArrayObject<int, true> $calls */
+        $calls = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('batchWriteItem')
+            ->willReturnCallback(static function () use ($calls): BatchWriteItemOutput {
+                $calls->append(true);
+                if (\count($calls) === 2) {
+                    throw new \RuntimeException('The second request fails');
+                }
+
+                return ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]);
+            });
+
+        $entities = array_map(fn (int $id): NormalEntity => $this->entity((string) $id), range(1, 26));
+
+        try {
+            $this->writer->batchWrite(new BatchWriteInput($entities));
+            static::fail('The second request fails');
+        } catch (\RuntimeException) {
+        }
+
+        static::assertSame(self::serializedId('25'), $entities[24]->getAutofilledId());
+        static::assertSame('26', $entities[25]->getAutofilledId());
+    }
+
+    /**
+     * Past 100 operations, each transaction is atomic on its own, so the entities of one that went through are brought
+     * up to date although a later one fails.
+     */
+    public function testAFailedTransactionLeavesTheEntitiesOfTheTransactionsBeforeItUpToDate(): void
+    {
+        $cancellation = $this->transactionCanceledException('ConditionalCheckFailed');
+
+        /** @var \ArrayObject<int, true> $calls */
+        $calls = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('transactWriteItems')
+            ->willReturnCallback(static function () use ($calls, $cancellation): TransactWriteItemsOutput {
+                $calls->append(true);
+                if (\count($calls) === 2) {
+                    throw $cancellation;
+                }
+
+                return ResultMockFactory::create(TransactWriteItemsOutput::class);
+            });
+
+        $entities = array_map(fn (int $id): NormalEntity => $this->entity((string) $id), range(1, 101));
+
+        try {
+            $this->writer->transactWrite(new TransactWriteInput(...array_map(static fn (NormalEntity $entity): PutInput => new PutInput($entity), $entities)));
+            static::fail('The second transaction is cancelled');
+        } catch (TransactionCanceledException) {
+        }
+
+        static::assertSame(self::serializedId('100'), $entities[99]->getAutofilledId());
+        static::assertSame('101', $entities[100]->getAutofilledId());
+    }
+
+    /**
+     * DynamoDB refuses a transaction that writes an item twice, and past 100 operations, whether two of them land in one
+     * transaction depends on where they stand. So a transaction that names a key twice is refused before any of it is sent.
+     */
+    public function testATransactionThatNamesAKeyTwiceIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('transactWriteItems');
+
+        $deletes = array_map(static fn (int $id): DeleteInput => new DeleteInput(new Key(NormalEntity::class, (string) $id)), range(1, 100));
+
+        $this->expectException(DuplicateKeyException::class);
+
+        // 100 apart, so the two would go out in separate transactions
+        $this->writer->transactWrite(new TransactWriteInput(...[...$deletes, new UpdateInput(new Key(NormalEntity::class, '1'), ['name' => 'one'])]));
+    }
+
+    /**
+     * DynamoDB applies a transaction once per token, however often AsyncAws sends it. A cancelled one applied nothing,
+     * so the next attempt is a transaction of its own, with a token of its own.
+     */
+    public function testEachAttemptAtATransactionCarriesATokenOfItsOwn(): void
+    {
+        $conflict = $this->transactionCanceledException('TransactionConflict');
+
+        /** @var \ArrayObject<int, mixed> $tokens */
+        $tokens = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('transactWriteItems')
+            ->willReturnCallback(static function (array $args) use ($tokens, $conflict): TransactWriteItemsOutput {
+                $tokens->append($args['ClientRequestToken'] ?? null);
+                if (\count($tokens) === 1) {
+                    throw $conflict;
+                }
+
+                return ResultMockFactory::create(TransactWriteItemsOutput::class);
+            });
+
+        $this->writer->transactWrite(new TransactWriteInput(new DeleteInput(new Key(NormalEntity::class, 'a'))));
+
+        static::assertIsString($tokens[0]);
+        static::assertIsString($tokens[1]);
+        // DynamoDB takes a token of up to 36 characters
+        static::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $tokens[0]);
+        static::assertNotSame($tokens[0], $tokens[1]);
+    }
+
+    public function testTransactWriteRetriesAThrottledTransaction(): void
+    {
+        $throttled = $this->transactionCanceledException('None', 'ThrottlingError');
+
+        /** @var \ArrayObject<int, true> $calls */
+        $calls = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('transactWriteItems')
+            ->willReturnCallback(static function () use ($calls, $throttled): TransactWriteItemsOutput {
+                $calls->append(true);
+                if (\count($calls) === 1) {
+                    throw $throttled;
+                }
+
+                return ResultMockFactory::create(TransactWriteItemsOutput::class);
+            });
+
+        $this->writer->transactWrite(new TransactWriteInput(
+            new DeleteInput(new Key(NormalEntity::class, 'a')),
+            new DeleteInput(new Key(NormalEntity::class, 'b')),
+        ));
+    }
+
+    /**
+     * The update is stored before its entity takes the row, so a row that does not deserialize is caught as before, as a
+     * {@see DeserializationException}, and told apart from a write that failed.
+     */
+    public function testAnUpdateStoredWithARowThatDoesNotDeserializeLeavesItsEntityOutOfSync(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => ['autofilledId' => new AttributeValue(['S' => 'a'])]]));
+
+        $missing = $this->missingRequiredField();
+        $this->serializer->method('deserialize')->willThrowException($missing);
+
+        try {
+            $this->writer->update(new UpdateInput($this->entity('a'), ['name' => 'after']));
+            static::fail('The stored row does not deserialize');
+        } catch (DeserializationException $exception) {
+            static::assertInstanceOf(EntityOutOfSyncException::class, $exception);
+            static::assertSame($missing, $exception->getPrevious());
+        }
+    }
+
+    /**
+     * The entities are brought up to date once every transaction is sent, so one that cannot be read back keeps none of
+     * them from being sent, and the others still take what they wrote.
+     */
+    public function testAnEntityThatCannotBeReadBackKeepsNoTransactionFromBeingSent(): void
+    {
+        $this->client->expects(static::exactly(2))
+            ->method('transactWriteItems')
+            ->willReturnCallback(static fn (): TransactWriteItemsOutput => ResultMockFactory::create(TransactWriteItemsOutput::class));
+
+        $missing = $this->failingReadBack();
+
+        $puts = array_map(fn (int $id): PutInput => new PutInput($this->entity((string) $id)), range(1, 100));
+
+        try {
+            $this->writer->transactWrite(new TransactWriteInput(...[new UpdateInput($this->entity('a'), Update::setIfNotExists('name', 'first')), ...$puts]));
+            static::fail('The updated entity cannot be read back');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertSame($missing, $exception->getPrevious());
+        }
+
+        static::assertSame(self::serializedId('100'), $puts[99]->entity->getAutofilledId());
+    }
+
+    /**
+     * After a failed transaction, the entities of the ones before it are brought up to date as far as they can be. The
+     * caller has to handle the failed transaction, so a failure to bring one up to date does not take its place.
+     */
+    public function testAFailedTransactionIsThrownRatherThanAnEntityThatCannotBeReadBack(): void
+    {
+        $cancellation = $this->transactionCanceledException('ConditionalCheckFailed');
+
+        /** @var \ArrayObject<int, true> $calls */
+        $calls = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('transactWriteItems')
+            ->willReturnCallback(static function () use ($calls, $cancellation): TransactWriteItemsOutput {
+                $calls->append(true);
+                if (\count($calls) === 2) {
+                    throw $cancellation;
+                }
+
+                return ResultMockFactory::create(TransactWriteItemsOutput::class);
+            });
+
+        $this->failingReadBack();
+
+        $puts = array_map(fn (int $id): PutInput => new PutInput($this->entity((string) $id)), range(1, 100));
+
+        try {
+            $this->writer->transactWrite(new TransactWriteInput(...[new UpdateInput($this->entity('a'), Update::setIfNotExists('name', 'first')), ...$puts]));
+            static::fail('The second transaction is cancelled');
+        } catch (TransactionCanceledException $exception) {
+            static::assertSame($cancellation, $exception);
+        }
+
+        // The first transaction's puts are brought up to date, and those of the one cancelled are not
+        static::assertSame(self::serializedId('99'), $puts[98]->entity->getAutofilledId());
+        static::assertSame('100', $puts[99]->entity->getAutofilledId());
+    }
+
+    /**
+     * An entity read back takes a `GetItem` when it is the only one, and its row does not deserialize.
+     */
+    private function failingReadBack(): FieldMissingDeserializedValueException
+    {
+        $this->client->expects(static::once())
+            ->method('getItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ConsistentRead'] ?? null) === true))
+            ->willReturn(ResultMockFactory::create(GetItemOutput::class, ['item' => ['autofilledId' => new AttributeValue(['S' => 'a'])]]));
+
+        $missing = $this->missingRequiredField();
+        $this->serializer->method('deserialize')->willThrowException($missing);
+
+        return $missing;
+    }
+
+    private function missingRequiredField(): FieldMissingDeserializedValueException
+    {
+        $required = $this->definition->getFieldDefinition('required');
+        static::assertNotNull($required);
+
+        return new FieldMissingDeserializedValueException($required);
     }
 
     /**
@@ -800,23 +1066,14 @@ class WriterClientTest extends TestCase
         $serializer = $this->createMock(Serializer::class);
         $serializer->method('normalize')->willReturnArgument(1);
         $serializer->method('serializeKey')
-            ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): array => [
+            ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): SerializedKeyResult => SerializedKeyResult::fromItem($d, [
                 'settings' => new AttributeValue(['S' => spl_object_hash((object) $key)]),
-            ]);
-        $serializer->method('hashKey')
-            ->willReturnCallback(static fn (EntityDefinition $d, array $key): string => (string) $key['settings']->getS());
+            ]));
         $serializer->method('denormalize')->willReturnArgument(1);
 
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
 
-        return new WriterClient(
-            $this->client,
-            $serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($serializer),
-            $registry,
-            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
-        );
+        return $this->createWriter($serializer, $registry);
     }
 
     /**
@@ -827,14 +1084,7 @@ class WriterClientTest extends TestCase
         $other = OtherEntity::createDefinition();
         $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition, $other->getName() => $other]);
 
-        return new WriterClient(
-            $this->client,
-            $this->serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($this->serializer),
-            $registry,
-            new ReaderClient($this->client, $this->serializer, new FilterCompiler(), $registry),
-        );
+        return $this->createWriter($this->serializer, $registry);
     }
 
     /**
@@ -846,13 +1096,19 @@ class WriterClientTest extends TestCase
         $serializer = new Serializer();
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
 
+        return $this->createWriter($serializer, $registry);
+    }
+
+    /**
+     * A writer over the mocked client, wired as `config/services.php` wires it.
+     */
+    private function createWriter(Serializer $serializer, EntityDefinitionRegistry $registry): WriterClient
+    {
         return new WriterClient(
             $this->client,
             $serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($serializer),
-            $registry,
-            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
+            new WriteRequestFactory($serializer, new FilterCompiler(), new UpdateCompiler($serializer), $registry),
+            new ReaderClient($this->client, $serializer, new ReadRequestFactory($serializer, new FilterCompiler(), $registry)),
         );
     }
 
@@ -876,15 +1132,26 @@ class WriterClientTest extends TestCase
         return new NormalEntity()->setAutofilledId($id)->setRequired('req');
     }
 
-    private function serializedResult(NormalizerOperation $operation): SerializedResult
+    /**
+     * A put of the entity as if its normalizer changed its key, so that a test sees the put applied back onto it,
+     * while every entity keeps a key of its own.
+     */
+    private function serializedResult(NormalizerOperation $operation, mixed $entity): SerializedResult
     {
+        static::assertInstanceOf(NormalEntity::class, $entity);
+        $id = self::serializedId($entity->getAutofilledId());
         $idPath = FieldPath::parse($this->definition, 'autofilledId');
 
         return new SerializedResult(
-            ['autofilledId' => new SerializedFieldResult($idPath, new AttributeValue(['S' => self::SERIALIZED_ID]))],
-            ['autofilledId' => self::SERIALIZED_ID],
+            ['autofilledId' => new SerializedFieldResult($idPath, new AttributeValue(['S' => $id]))],
+            ['autofilledId' => $id],
             $operation,
         );
+    }
+
+    private static function serializedId(string $id): string
+    {
+        return "{$id}-serialized";
     }
 
     private function transactionCanceledException(string ...$cancellationReasonCodes): TransactionCanceledException

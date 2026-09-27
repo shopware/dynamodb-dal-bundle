@@ -185,7 +185,7 @@ $this->client->refresh(new RefreshInput([$order], consistentRead: true));
 
 - `find()` sends a `GetItem`.
 - `findMany()` sends `BatchGetItem` requests of 100 keys each. It requests the keys that DynamoDB leaves unprocessed
-  again.
+  again, after a pause that doubles with each round, up to a second.
 - A key given more than once is read once. Its entity comes back once, and `refresh()` writes the row into every
   instance with that key.
 

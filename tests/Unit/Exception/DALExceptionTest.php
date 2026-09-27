@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Exception;
 
+use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
@@ -10,6 +11,8 @@ use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\DeserializationException;
+use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
+use Shopware\DynamodbDalBundle\Exception\EntityOutOfSyncException;
 use Shopware\DynamodbDalBundle\Exception\ExpressionException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
@@ -36,6 +39,8 @@ use PHPUnit\Framework\TestCase;
  * happened on stays on the exception, for a caller that wants more than the sentence.
  */
 #[CoversClass(AttributeTypeMismatchException::class)]
+#[CoversClass(DuplicateKeyException::class)]
+#[CoversClass(EntityOutOfSyncException::class)]
 #[CoversClass(FieldDeserializationException::class)]
 #[CoversClass(FieldMissingDeserializedValueException::class)]
 #[CoversClass(FieldMissingSerializedValueException::class)]
@@ -67,18 +72,22 @@ class DALExceptionTest extends TestCase
     }
 
     /**
-     * A caller that handles one kind of failure catches its group, so each class sits in the one group that says
-     * what failed, wherever it is thrown. A new class has to be placed here, in a group or in none.
+     * A caller that handles one kind of failure catches its group, so each class sits in the group of every kind of
+     * failure it is thrown for, and in no other. A new class has to be placed here, in its groups or in none.
      */
-    public function testEveryFailureBelongsToOneGroupAtMost(): void
+    public function testEveryFailureBelongsToTheGroupsOfWhatFailed(): void
     {
         $groups = [
             SerializationException::class => [
                 FieldMissingSerializedValueException::class,
                 FieldSerializationException::class,
+                // A normalizer that sets a field the entity does not declare
+                UnknownFieldException::class,
                 WrongTypeException::class,
             ],
             DeserializationException::class => [
+                // A stored write whose entity could not take its row, most of the time because the row does not fit it
+                EntityOutOfSyncException::class,
                 FieldDeserializationException::class,
                 FieldMissingDeserializedValueException::class,
                 MissingAttributeValueException::class,
@@ -93,6 +102,7 @@ class DALExceptionTest extends TestCase
                 UpdateEmptyException::class,
             ],
             DALException::class => [
+                DuplicateKeyException::class,
                 InvalidCursorException::class,
                 UnknownEntityDefinitionException::class,
                 UnknownIndexException::class,
@@ -104,17 +114,17 @@ class DALExceptionTest extends TestCase
             array_map(static fn (string $file): string => 'Shopware\DynamodbDalBundle\Exception\\' . basename($file, '.php'), $files),
             class_exists(...),
         );
-        static::assertEqualsCanonicalizing(array_values($classes), array_merge(...array_values($groups)));
+        static::assertEqualsCanonicalizing(array_values($classes), array_values(array_unique(array_merge(...array_values($groups)))));
 
         $named = [SerializationException::class, DeserializationException::class, ExpressionException::class];
-        foreach ($groups as $group => $members) {
-            foreach ($members as $class) {
-                static::assertSame(
-                    $group === DALException::class ? [] : [$group],
-                    array_values(array_intersect($named, class_implements($class) ?: [])),
-                    "{$class} does not belong to {$group} alone",
-                );
-            }
+        foreach ($classes as $class) {
+            $listed = array_keys(array_filter($groups, static fn (array $members): bool => \in_array($class, $members, true)));
+
+            static::assertEqualsCanonicalizing(
+                array_values(array_diff($listed, [DALException::class])),
+                array_values(array_intersect($named, class_implements($class) ?: [])),
+                "{$class} does not belong to the groups it is listed in, and to no other",
+            );
         }
     }
 
@@ -153,6 +163,29 @@ class DALExceptionTest extends TestCase
         $exception = new AttributeTypeMismatchException($this->entityDefinition(), 'size(label)', AttributeType::Number, [AttributeType::String, AttributeType::Binary]);
 
         static::assertSame('"size(label)" in item "customer" is of type N, where one of S, B is expected', $exception->getMessage());
+    }
+
+    public function testDuplicateKey(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $key = new Key(CustomerEntity::class, 'c-1');
+        $exception = new DuplicateKeyException($entityDefinition, $key);
+
+        static::assertSame('A batch write or transaction names the same key of item "customer" twice', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($key, $exception->key);
+    }
+
+    /**
+     * The write went through, so the message says so first, and the failure that kept its entity behind is kept.
+     */
+    public function testEntityOutOfSync(): void
+    {
+        $previous = new \RuntimeException('Rate exceeded');
+        $exception = new EntityOutOfSyncException($previous);
+
+        static::assertSame('The write is stored, but not every entity it wrote could be brought up to date: Rate exceeded', $exception->getMessage());
+        static::assertSame($previous, $exception->getPrevious());
     }
 
     public function testUpdateEmpty(): void

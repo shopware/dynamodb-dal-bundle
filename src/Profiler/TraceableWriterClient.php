@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Key;
-use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 
 /**
  * Decorates the writer to record every call into it with {@see DalCallTracer}. A write that reads its items back

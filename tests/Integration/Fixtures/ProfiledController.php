@@ -12,6 +12,7 @@ use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Expression\Filter;
+use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -65,11 +66,9 @@ final readonly class ProfiledController
 
     public function rejected(): Response
     {
-        $entity = RecordEntity::create(self::TENANT, 'a');
-
         try {
-            // DynamoDB refuses a batch that writes one key twice
-            $this->client->batchWrite(new BatchWriteInput([$entity, clone $entity]));
+            // DynamoDB refuses an update whose paths overlap before it checks the row exists, and the bundle leaves it to it
+            $this->client->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'a'), Update::with(Update::increment('counter'), Update::increment('counter'))));
         } catch (ClientException) {
         }
 

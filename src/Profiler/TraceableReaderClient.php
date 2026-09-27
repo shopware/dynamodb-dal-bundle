@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\Key;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
 
 /**
  * Decorates the reader to record every call into it with {@see DalCallTracer}.

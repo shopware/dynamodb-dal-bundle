@@ -13,9 +13,6 @@ final class DalCall
 {
     private const string DAL_NAMESPACE = 'Shopware\\DynamodbDalBundle\\';
 
-    // The bundle's own tests call the DAL the way an application does
-    private const string TESTS_NAMESPACE = 'Shopware\\DynamodbDalBundle\\Tests\\';
-
     public private(set) int $durationNs = 0;
 
     /**
@@ -27,6 +24,13 @@ final class DalCall
      * @var list<DynamoDbRequest>
      */
     public private(set) array $requests = [];
+
+    /**
+     * Whether each class of the DAL's namespace seen so far is defined in the bundle's source, by class name.
+     *
+     * @var array<class-string, bool>
+     */
+    private static array $isSource = [];
 
     /**
      * @param string $method - the DAL method the application called, e.g. `search`
@@ -98,8 +102,19 @@ final class DalCall
         }
     }
 
+    /**
+     * Whether the class is defined in the bundle's source. The namespace alone does not tell, as code outside the
+     * source may share it, such as the bundle's own tests, which call the DAL the way an application does.
+     */
     private static function isDal(string $class): bool
     {
-        return str_starts_with($class, self::DAL_NAMESPACE) && !str_starts_with($class, self::TESTS_NAMESPACE);
+        if (!str_starts_with($class, self::DAL_NAMESPACE) || !class_exists($class, false)) {
+            return false;
+        }
+
+        return self::$isSource[$class] ??= str_starts_with(
+            (string) new \ReflectionClass($class)->getFileName(),
+            \dirname(__DIR__) . \DIRECTORY_SEPARATOR,
+        );
     }
 }

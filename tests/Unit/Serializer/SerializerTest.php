@@ -17,6 +17,7 @@ use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
+use Shopware\DynamodbDalBundle\Serializer\SerializedKeyResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalNormalizer;
@@ -292,21 +293,13 @@ class SerializerTest extends TestCase
         static::assertSame([['normalize', NormalizerOperation::Update, ['name' => 'test-name']]], $normalizer->calls);
     }
 
-    /**
-     * Both directions of a key are a key: a lookup serializes one, a cursor deserializes one.
-     */
-    public function testAKeyTellsTheNormalizerBothWays(): void
+    public function testAKeyTellsTheNormalizerAndHandsItTheKeyFields(): void
     {
         $normalizer = new RecordingNormalizer();
-        $definition = NormalEntity::createDefinition($normalizer);
 
-        $this->serializer->serializeKey($definition, new Key(NormalEntity::class, 'test-id'));
-        $this->serializer->deserializeKey($definition, ['autofilledId' => new AttributeValue(['S' => 'test-id'])]);
+        $this->serializer->serializeKey(NormalEntity::createDefinition($normalizer), new Key(NormalEntity::class, 'test-id'));
 
-        static::assertSame([
-            ['normalize', NormalizerOperation::Key, ['autofilledId' => 'test-id']],
-            ['denormalize', NormalizerOperation::Key, ['autofilledId' => 'test-id']],
-        ], $normalizer->calls);
+        static::assertSame([['normalize', NormalizerOperation::Key, ['autofilledId' => 'test-id']]], $normalizer->calls);
     }
 
     public function testAReadTellsTheNormalizerAndHandsItEveryField(): void
@@ -500,130 +493,33 @@ class SerializerTest extends TestCase
      * The point of the hash: what a read sends and what it gets back have to land on the same string, or a
      * batched response cannot be paired with the request it answers.
      */
-    public function testHashKeyDerivesTheSameStringFromAnEntityAKeyAndTheRowItself(): void
+    public function testSerializeKeyHashesAnEntityAKeyAndTheRowItselfAlike(): void
     {
         $entity = new NormalEntity()->setAutofilledId('id-1')->setRequired('req');
 
-        $fromEntity = $this->serializer->hashKey($this->definition, $entity);
-        $fromKey = $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-1'));
-        $fromRow = $this->serializer->hashKey($this->definition, [
+        $fromEntity = $this->serializer->serializeKey($this->definition, $entity)->hash;
+        $fromKey = $this->serializer->serializeKey($this->definition, new Key(NormalEntity::class, 'id-1'))->hash;
+        $fromRow = SerializedKeyResult::fromItem($this->definition, [
             'autofilledId' => new AttributeValue(['S' => 'id-1']),
             'name' => new AttributeValue(['S' => 'not part of the key']),
-        ]);
+        ])->hash;
 
         static::assertSame($fromEntity, $fromKey);
         static::assertSame($fromEntity, $fromRow);
-    }
-
-    public function testHashKeyTellsDifferentKeysApart(): void
-    {
-        static::assertNotSame(
-            $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-1')),
-            $this->serializer->hashKey($this->definition, new Key(NormalEntity::class, 'id-2')),
-        );
-    }
-
-    /**
-     * A composite key hashes both halves, so two rows sharing a hash key stay distinct.
-     */
-    public function testHashKeyCoversTheSortKeyToo(): void
-    {
-        $definition = $this->keyedDefinition();
-        $tenant = new AttributeValue(['S' => 'tenant-1']);
-
-        $first = $this->serializer->hashKey($definition, [
-            'tenantId' => $tenant,
-            'createdAt' => new AttributeValue(['N' => '1700000000']),
-        ]);
-        $second = $this->serializer->hashKey($definition, [
-            'tenantId' => $tenant,
-            'createdAt' => new AttributeValue(['N' => '1700000001']),
-        ]);
-
-        static::assertNotSame($first, $second);
-    }
-
-    public function testDeserializeKeyWithHashOnlyKey(): void
-    {
-        $key = $this->serializer->deserializeKey($this->definition, [
-            'autofilledId' => new AttributeValue(['S' => 'id-1']),
-        ]);
-
-        static::assertInstanceOf(Key::class, $key);
-        static::assertSame('id-1', $key->hashValue);
-        static::assertNull($key->rangeValue);
-    }
-
-    public function testDeserializeKeyIgnoresNonKeyFields(): void
-    {
-        $key = $this->serializer->deserializeKey($this->definition, [
-            'autofilledId' => new AttributeValue(['S' => 'id-1']),
-            'name' => new AttributeValue(['S' => 'ignored']),
-        ]);
-
-        static::assertInstanceOf(Key::class, $key);
-        static::assertSame('id-1', $key->hashValue);
-        static::assertNull($key->rangeValue);
-    }
-
-    public function testDeserializeKeyReturnsNullWhenHashKeyMissing(): void
-    {
-        static::assertNull($this->serializer->deserializeKey($this->definition, []));
-        static::assertNull($this->serializer->deserializeKey($this->definition, [
-            'name' => new AttributeValue(['S' => 'no-key']),
-        ]));
-    }
-
-    public function testDeserializeKeyWithHashAndRangeKeyDeserializesValues(): void
-    {
-        $definition = $this->keyedDefinition();
-        $createdAt = new \DateTimeImmutable('2026-06-02T10:00:00+00:00');
-
-        $key = $this->serializer->deserializeKey($definition, [
-            'tenantId' => new AttributeValue(['S' => 'tenant-1']),
-            'createdAt' => new AttributeValue(['N' => (string) $createdAt->getTimestamp()]),
-        ]);
-
-        static::assertInstanceOf(Key::class, $key);
-        static::assertSame('tenant-1', $key->hashValue);
-        static::assertInstanceOf(\DateTimeImmutable::class, $key->rangeValue);
-        static::assertEquals($createdAt, $key->rangeValue);
-    }
-
-    public function testDeserializeKeyReturnsNullWhenRangeKeyMissing(): void
-    {
-        $definition = $this->keyedDefinition();
-
-        static::assertNull($this->serializer->deserializeKey($definition, [
-            'tenantId' => new AttributeValue(['S' => 'tenant-1']),
-        ]));
-    }
-
-    public function testDeserializeKeyThrowsWhenAKeyValueCannotBeDeserialized(): void
-    {
-        // The createdAt range key reads a number or a date string, and `not-a-timestamp` is neither.
-        $definition = $this->keyedDefinition();
-
-        static::expectException(FieldDeserializationException::class);
-
-        $this->serializer->deserializeKey($definition, [
-            'tenantId' => new AttributeValue(['S' => 'tenant-1']),
-            'createdAt' => new AttributeValue(['S' => 'not-a-timestamp']),
-        ]);
     }
 
     public function testSerializeKeyWithEntityReadsKeyFieldsOffTheEntity(): void
     {
         $entity = new NormalEntity()->setAutofilledId('id-1')->setRequired('req');
 
-        $fields = $this->serializer->serializeKey($this->definition, $entity);
+        $fields = $this->serializer->serializeKey($this->definition, $entity)->fields;
 
         static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'id-1'])], $fields);
     }
 
     public function testSerializeKeyWithAKeyReadsTheTableKeyFields(): void
     {
-        $fields = $this->serializer->serializeKey($this->definition, new Key(NormalEntity::class, 'id-1'));
+        $fields = $this->serializer->serializeKey($this->definition, new Key(NormalEntity::class, 'id-1'))->fields;
 
         static::assertEquals(['autofilledId' => new AttributeValue(['S' => 'id-1'])], $fields);
     }
@@ -661,7 +557,7 @@ class SerializerTest extends TestCase
     }
 
     /**
-     * A definition with a hash + range primary key and a GSI, for key (de)serialization.
+     * A definition with a hash + range primary key and a GSI, for keys.
      *
      * @return EntityDefinition<NormalEntity>
      */

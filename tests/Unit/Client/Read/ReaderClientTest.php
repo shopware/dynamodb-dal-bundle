@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-namespace Shopware\DynamodbDalBundle\Tests\Unit\Client;
+namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Read;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Cursor;
@@ -9,7 +9,8 @@ use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReadRequestFactory;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
@@ -22,6 +23,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
+use Shopware\DynamodbDalBundle\Serializer\SerializedKeyResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\DynamoDbResultTestTrait;
@@ -31,9 +33,11 @@ use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\Select;
 use AsyncAws\DynamoDb\Input\QueryInput as DynamoDbQueryInput;
 use AsyncAws\DynamoDb\Input\ScanInput as DynamoDbScanInput;
+use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\QueryOutput;
 use AsyncAws\DynamoDb\Result\ScanOutput;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+use AsyncAws\DynamoDb\ValueObject\KeysAndAttributes;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -63,7 +67,7 @@ class ReaderClientTest extends TestCase
 
         $registry = $this->registry();
 
-        $this->reader = new ReaderClient($this->dynamo, $this->serializer, new FilterCompiler(), $registry);
+        $this->reader = $this->createReader($registry);
     }
 
     public function testSearchScanDeserializesEveryItem(): void
@@ -416,8 +420,8 @@ class ReaderClientTest extends TestCase
 
         $this->dynamo->expects(static::once())->method('getItem')->willReturn($output);
 
-        // deserialize([]) returns null for an absent item; the reader must not yield it.
-        $this->serializer->expects(static::once())->method('deserialize')->with($this->definition, [])->willReturn(null);
+        // An empty item answers no key, so there is nothing to deserialize and nothing to yield.
+        $this->serializer->expects(static::never())->method('deserialize');
 
         $result = iterator_to_array($this->reader->get(new GetInput([new Key(NormalEntity::class, 'missing')])), false);
 
@@ -450,25 +454,62 @@ class ReaderClientTest extends TestCase
         static::assertSame([$a, $b], $result);
     }
 
+    /**
+     * DynamoDB answers only part of a batch under throttling, so the keys it leaves over are asked for again as they are.
+     */
+    public function testGetAsksAgainForTheKeysABatchLeavesUnprocessed(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
+        $itemA = $this->item('a');
+        $itemB = $this->item('b');
+        $leftOver = [self::TABLE => new KeysAndAttributes(['Keys' => [$itemB], 'ConsistentRead' => false])];
+
+        $this->stubKeySerialization();
+
+        // An ArrayObject holder, so phpstan does not constant-fold what the callback records.
+        /** @var \ArrayObject<int, mixed> $requestItemsPerCall */
+        $requestItemsPerCall = new \ArrayObject();
+        $this->dynamo->expects(static::exactly(2))
+            ->method('batchGetItem')
+            ->willReturnCallback(
+                /** @param array{RequestItems: mixed} $input */
+                static function (array $input) use ($requestItemsPerCall, $itemA, $itemB, $leftOver): BatchGetItemOutput {
+                    $requestItemsPerCall->append($input['RequestItems']);
+
+                    return \count($requestItemsPerCall) === 1
+                        ? self::batchGetItemOutput([self::TABLE => [$itemA]], $leftOver)
+                        : self::batchGetItemOutput([self::TABLE => [$itemB]]);
+                },
+            );
+
+        $this->serializer->method('deserialize')->willReturnCallback(
+            static fn (EntityDefinition $definition, array $item): NormalEntity => $item === $itemA ? $a : $b,
+        );
+
+        $result = iterator_to_array(
+            $this->reader->get(new GetInput([new Key(NormalEntity::class, 'a'), new Key(NormalEntity::class, 'b')])),
+            false,
+        );
+
+        static::assertSame([$a, $b], $result);
+        static::assertSame($leftOver, $requestItemsPerCall[1]);
+    }
+
     public function testGetKeysSpanningTablesIssueOneBatchGetItemAcrossBothTables(): void
     {
         $normal = new NormalEntity()->setAutofilledId('a')->setRequired('req');
         $other = new OtherEntity()->setOtherId('o');
         $normalItem = $this->item('a');
-        $otherItem = $this->item('o');
+        $otherItem = ['otherId' => new AttributeValue(['S' => 'o'])];
 
         // A second entity, registered alongside `normal`, with its own physical table name.
         $otherDefinition = OtherEntity::createDefinition();
 
-        $reader = new ReaderClient(
-            $this->dynamo,
-            $this->serializer,
-            new FilterCompiler(),
-            new EntityDefinitionRegistry([
+        $reader = $this->createReader(new EntityDefinitionRegistry([
                 $this->definition->getName() => $this->definition,
                 $otherDefinition->getName() => $otherDefinition,
-            ]),
-        );
+            ]));
 
         $this->stubKeySerialization();
 
@@ -734,7 +775,15 @@ class ReaderClientTest extends TestCase
     {
         $definition = NormalEntity::createDefinition(indexes: ['someIndex' => new IndexSchema('someIndex', 'name')]);
 
-        return new ReaderClient($this->dynamo, $this->serializer, new FilterCompiler(), new EntityDefinitionRegistry([$definition->getName() => $definition]));
+        return $this->createReader(new EntityDefinitionRegistry([$definition->getName() => $definition]));
+    }
+
+    /**
+     * A reader over the mocked client, wired as `config/services.php` wires it.
+     */
+    private function createReader(EntityDefinitionRegistry $registry): ReaderClient
+    {
+        return new ReaderClient($this->dynamo, $this->serializer, new ReadRequestFactory($this->serializer, new FilterCompiler(), $registry));
     }
 
     /**
@@ -744,32 +793,19 @@ class ReaderClientTest extends TestCase
     private function stubKeySerialization(): void
     {
         $this->serializer->method('serializeKey')->willReturnCallback(
-            static fn (EntityDefinition $definition, Key $key): array => self::serializedKey($definition, $key)->getFields(),
+            static fn (EntityDefinition $definition, Key $key): SerializedKeyResult => SerializedKeyResult::fromItem($definition, self::serializedKey($definition, $key)->getFields()),
         );
-        $this->stubKeyHashing();
     }
 
     /**
-     * Stubs key serialization of an entity, plus the key hash {@see ReaderClient::refresh()} matches rows by.
+     * Stubs key serialization of an entity, whose hash {@see ReaderClient::refresh()} matches rows by.
      */
     private function stubEntityKeySerialization(): void
     {
         $this->serializer->method('serializeKey')->willReturnCallback(
-            static fn (EntityDefinition $definition, NormalEntity $entity): array => ['autofilledId' => new AttributeValue(['S' => $entity->getAutofilledId()])],
-        );
-        $this->stubKeyHashing();
-    }
-
-    /**
-     * Stubs the key hash {@see ReaderClient} tells keys apart by, and matches rows to their entities with.
-     */
-    private function stubKeyHashing(): void
-    {
-        $this->serializer->method('hashKey')->willReturnCallback(
-            static fn (EntityDefinition $definition, array $key): string => implode("\0", array_map(
-                static fn (string $field): string => (string) ($key[$field] ?? null)?->getS(),
-                $definition->getKeySchema()->getFields(),
-            )),
+            static fn (EntityDefinition $definition, NormalEntity $entity): SerializedKeyResult => SerializedKeyResult::fromItem($definition, [
+                'autofilledId' => new AttributeValue(['S' => $entity->getAutofilledId()]),
+            ]),
         );
     }
 
