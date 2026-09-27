@@ -15,16 +15,25 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\NormalizedEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Bundle\TwigBundle\TwigBundle;
+use Symfony\Bundle\WebProfilerBundle\WebProfilerBundle;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * The application the DynamoDB-backed suites run in: this bundle, the fixture entities, and a
  * DynamoDbClient pointed at a local DynamoDB rather than AWS.
+ *
+ * In `dev` it is also profiled the way the README sets an application up: AsyncAws sends through the traced
+ * `aws.base-client`, and the pages of {@see ProfiledController} are served next to the profiler's own.
  */
 class DynamoDbTestKernel extends BaseKernel
 {
@@ -45,6 +54,16 @@ class DynamoDbTestKernel extends BaseKernel
     ];
 
     /**
+     * The dev-only services on top of those
+     *
+     * @var list<string>
+     */
+    public const array DEV_PUBLIC_SERVICES = [
+        'profiler',
+        'services_resetter',
+    ];
+
+    /**
      * Logical name => physical table name.
      *
      * @var array<string, string>
@@ -55,9 +74,14 @@ class DynamoDbTestKernel extends BaseKernel
         'normalized' => 'phpunit-normalized',
     ];
 
-    public function __construct(private readonly string $endpoint)
-    {
-        parent::__construct('test', true);
+    /**
+     * @param 'test'|'dev' $environment
+     */
+    public function __construct(
+        private readonly string $endpoint,
+        string $environment = 'test',
+    ) {
+        parent::__construct($environment, true);
     }
 
     /**
@@ -67,21 +91,40 @@ class DynamoDbTestKernel extends BaseKernel
     {
         yield new FrameworkBundle();
         yield new ShopwareDynamodbDalBundle();
+
+        if ($this->environment === 'dev') {
+            yield new TwigBundle();
+            yield new WebProfilerBundle();
+        }
     }
 
     public function getCacheDir(): string
     {
-        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/cache', sys_get_temp_dir());
+        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/%s/cache', sys_get_temp_dir(), $this->environment);
     }
 
     public function getLogDir(): string
     {
-        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/log', sys_get_temp_dir());
+        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/%s/log', sys_get_temp_dir(), $this->environment);
     }
 
     public function getConfigDir(): string
     {
-        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/config', sys_get_temp_dir());
+        return \sprintf('%s/dynamodb-dal-bundle/dynamodb/%s/config', sys_get_temp_dir(), $this->environment);
+    }
+
+    protected function configureRoutes(RoutingConfigurator $routes): void
+    {
+        if ($this->environment !== 'dev') {
+            return;
+        }
+
+        $routes->import('@WebProfilerBundle/Resources/config/routing/wdt.php')->prefix('/_wdt');
+        $routes->import('@WebProfilerBundle/Resources/config/routing/profiler.php')->prefix('/_profiler');
+
+        foreach (['put', 'read', 'transact', 'rejected', 'fail', 'streamed', 'outside'] as $action) {
+            $routes->add($action, '/' . $action)->controller([ProfiledController::class, $action]);
+        }
     }
 
     protected function configureContainer(ContainerConfigurator $container, LoaderInterface $loader, ContainerBuilder $builder): void
@@ -94,11 +137,17 @@ class DynamoDbTestKernel extends BaseKernel
             ],
         ]);
 
+        $isDev = $this->environment === 'dev';
+
         $container->extension('framework', [
             'secret' => 'test',
             'test' => true,
             'http_method_override' => false,
             'php_errors' => ['log' => true],
+            ...($isDev ? [
+                'profiler' => ['enabled' => true, 'collect' => true],
+                'http_client' => ['scoped_clients' => ['aws.base-client' => ['scope' => '.*']]],
+            ] : []),
         ]);
 
         // Deliberately no `autoconfigure()`: the bundle has to pick the fixture field serializers
@@ -110,15 +159,26 @@ class DynamoDbTestKernel extends BaseKernel
         $services->load('Shopware\\DynamodbDalBundle\\Tests\\Integration\\Fixtures\\Entity\\', '../Fixtures/Entity/');
 
         $services->set(DynamoDbClient::class)
-            ->args([[
-                'endpoint' => $this->endpoint,
-                'region' => 'eu-central-1',
-                'accessKeyId' => 'phpunit',
-                'accessKeySecret' => 'phpunit',
-            ]])
+            ->args([
+                [
+                    'endpoint' => $this->endpoint,
+                    'region' => 'eu-central-1',
+                    'accessKeyId' => 'phpunit',
+                    'accessKeySecret' => 'phpunit',
+                ],
+                null,
+                $isDev ? service('aws.base-client') : null,
+            ])
             ->autowire(false);
 
-        foreach (self::PUBLIC_SERVICES as $id) {
+        if ($isDev) {
+            $services->set(ProfiledController::class)->tag('controller.service_arguments');
+
+            // An error page logs its exception, which would otherwise land in the test output
+            $services->set('logger', NullLogger::class);
+        }
+
+        foreach ($isDev ? [...self::PUBLIC_SERVICES, ...self::DEV_PUBLIC_SERVICES] : self::PUBLIC_SERVICES as $id) {
             $services->alias('test.' . $id, $id)->public();
         }
     }

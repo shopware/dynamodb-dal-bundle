@@ -42,7 +42,7 @@ abstract class DynamoDbTestCase extends TestCase
             return;
         }
 
-        self::$kernel = new DynamoDbTestKernel($endpoint);
+        self::$kernel = static::createKernel($endpoint);
         self::$kernel->boot();
 
         // Something answering on the port is not necessarily DynamoDB, so ask it for a table list
@@ -81,12 +81,22 @@ abstract class DynamoDbTestCase extends TestCase
         $this->truncateTables();
     }
 
-    protected function container(): ContainerInterface
+    protected static function createKernel(string $endpoint): DynamoDbTestKernel
+    {
+        return new DynamoDbTestKernel($endpoint);
+    }
+
+    protected function kernel(): DynamoDbTestKernel
     {
         $kernel = self::$kernel;
         static::assertNotNull($kernel);
 
-        return $kernel->getContainer();
+        return $kernel;
+    }
+
+    protected function container(): ContainerInterface
+    {
+        return $this->kernel()->getContainer();
     }
 
     protected function client(): Client

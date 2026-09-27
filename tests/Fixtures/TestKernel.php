@@ -9,9 +9,11 @@ use Shopware\DynamodbDalBundle\Client\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
-use Shopware\DynamodbDalBundle\Profiler\CallerStampingHttpClient;
+use Shopware\DynamodbDalBundle\Profiler\CallStampingHttpClient;
+use Shopware\DynamodbDalBundle\Profiler\DalCallTracer;
 use Shopware\DynamodbDalBundle\Profiler\DynamoDbDataCollector;
-use Shopware\DynamodbDalBundle\Profiler\TraceableSerializer;
+use Shopware\DynamodbDalBundle\Profiler\TraceableReaderClient;
+use Shopware\DynamodbDalBundle\Profiler\TraceableWriterClient;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use Shopware\DynamodbDalBundle\ShopwareDynamodbDalBundle;
 use Shopware\DynamodbDalBundle\Tests\Fixtures\Entity\TestEntity;
@@ -22,20 +24,16 @@ use Symfony\Bundle\WebProfilerBundle\WebProfilerBundle;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\HttpClient\MockHttpClient;
-use Symfony\Component\HttpClient\TraceableHttpClient;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-
-use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 /**
  * Minimal application the integration tests compile the bundle in: the framework bundle, this
  * bundle, a stubbed DynamoDB client and the fixture entity, loaded the way an application loads
  * its own `App\` services.
  *
- * In `dev` it also brings the web profiler and the `aws.base-client` scope the DAL profiler
- * integration hooks into, which the AsyncAws bundle provides in a real application.
+ * In `dev` it also brings the web profiler and the `aws.base-client` scoped client the DAL profiler
+ * hooks into, configured the way the README tells an application to.
  */
 class TestKernel extends BaseKernel
 {
@@ -63,8 +61,11 @@ class TestKernel extends BaseKernel
      */
     public const array DEV_PUBLIC_SERVICES = [
         DynamoDbDataCollector::class,
-        CallerStampingHttpClient::class,
-        TraceableSerializer::class,
+        DalCallTracer::class,
+        CallStampingHttpClient::class,
+        TraceableReaderClient::class,
+        TraceableWriterClient::class,
+        'aws.base-client',
         'twig',
     ];
 
@@ -117,6 +118,7 @@ class TestKernel extends BaseKernel
             'http_method_override' => false,
             'php_errors' => ['log' => true],
             'profiler' => ['enabled' => $isDev, 'collect' => false],
+            ...($isDev ? ['http_client' => ['scoped_clients' => ['aws.base-client' => ['scope' => '.*']]]] : []),
         ]);
 
         $services = $container->services()
@@ -129,14 +131,6 @@ class TestKernel extends BaseKernel
         $services->set(DynamoDbClient::class)
             ->args([['region' => 'eu-central-1', 'accessKeyId' => 'key', 'accessKeySecret' => 'secret']])
             ->autowire(false);
-
-        if ($isDev) {
-            // The scope the AsyncAws bundle's `http_client` builds on, which the DAL profiler decorates.
-            $services->set('aws.base-client', MockHttpClient::class)->autowire(false);
-            $services->set('.debug.aws.base-client', TraceableHttpClient::class)
-                ->args([service('aws.base-client')])
-                ->autowire(false);
-        }
 
         $publicServices = $isDev
             ? [...self::PUBLIC_SERVICES, ...self::DEV_PUBLIC_SERVICES]

@@ -40,9 +40,10 @@ In the `dev` environment, the bundle adds three console commands:
 | `dal:baseline:required-fields` | JSON listing each entity's required fields. Commit it and diff it in CI to catch a field becoming required while stored rows may lack it |
 | `dal:baseline:table-schema` | JSON with the key and index schema of the live tables, for the same kind of check |
 
-With `symfony/web-profiler-bundle` installed, the profiler gets a DynamoDB panel. It lists each DynamoDB call a
-request made, with its caller and duration, and the serializer timings. The panel reads the calls from Symfony's
-traced HTTP client, so AsyncAws has to send them through a client named `aws.base-client`:
+With `symfony/web-profiler-bundle` installed, the profiler gets a DynamoDB panel. It lists each call a request made
+into the DAL, with its caller, the time spent in it and the DynamoDB requests it sent. The time is the wall time
+inside the DAL, AsyncAws and the network included. The panel reads the requests from Symfony's traced HTTP client,
+so AsyncAws has to send them through a client named `aws.base-client` (default):
 
 ```yaml
 framework:
