@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
  * The stored attribute does not carry the DynamoDB type the field's serializer reads it as — an "S"
  * where a list was expected, say, or an attribute that is not there at all.
  */
-final class MissingAttributeValueException extends \RuntimeException implements DALException
+final class MissingAttributeValueException extends \RuntimeException implements DeserializationException
 {
     public function __construct(
         public readonly FieldDefinition $fieldDefinition,

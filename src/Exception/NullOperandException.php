@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
  * adds or deletes. DynamoDB has no null operand: absence is what `exists`/`not(exists)` ask about, and what
  * `Update::remove()` leaves.
  */
-final class NullOperandException extends \RuntimeException implements DALException
+final class NullOperandException extends \RuntimeException implements ExpressionException
 {
     public function __construct(public readonly FieldDefinition $fieldDefinition)
     {

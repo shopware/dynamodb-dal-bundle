@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
  * whether it was handed in to be written or to be filtered on.
  * Also thrown for a path the field's type cannot hold, such as an index into a map.
  */
-final class UnknownFieldException extends \RuntimeException implements DALException
+final class UnknownFieldException extends \RuntimeException implements ExpressionException
 {
     public function __construct(
         public readonly EntityDefinition $entityDefinition,

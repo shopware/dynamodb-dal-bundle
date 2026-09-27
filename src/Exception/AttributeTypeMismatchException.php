@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 /**
  * An expression uses a field as a type it is not stored as, such as `size()` of a number or `list_append()` to a map.
  */
-final class AttributeTypeMismatchException extends \RuntimeException implements DALException
+final class AttributeTypeMismatchException extends \RuntimeException implements ExpressionException
 {
     /**
      * @param string $field - the path or operand, such as `size(tags)`

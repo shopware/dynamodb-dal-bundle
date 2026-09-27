@@ -8,7 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
  * A field that may not be null has no value once the stored item has been deserialized and
  * denormalized — an item written before the field existed, most of the time.
  */
-final class FieldMissingDeserializedValueException extends \RuntimeException implements DALException
+final class FieldMissingDeserializedValueException extends \RuntimeException implements DeserializationException
 {
     public function __construct(public readonly FieldDefinition $fieldDefinition)
     {

@@ -12,7 +12,7 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
  *
  * The normalizer runs before this, so it did not fill the field in either.
  */
-final class FieldMissingSerializedValueException extends \RuntimeException implements DALException
+final class FieldMissingSerializedValueException extends \RuntimeException implements SerializationException
 {
     public function __construct(public readonly FieldDefinition $fieldDefinition)
     {
