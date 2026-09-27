@@ -133,11 +133,11 @@ class ClientTest extends DynamoDbTestCase
             $this->client()->put(new PutInput(RecordEntity::create(self::TENANT, $id, name: $id === 'a' ? null : 'match')));
         }
 
-        $query = new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), limit: 2);
+        $query = new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), limit: 2);
         static::assertSame(['a', 'b'], $this->sortedIds($this->client()->search($query)->toArray()));
 
         // A filter leaves DynamoDB's `Limit` unset, so the stream itself has to stop.
-        $filtered = new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), filter: Filter::equals('name', 'match'), limit: 2);
+        $filtered = new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), filter: Filter::equals('name', 'match'), limit: 2);
         static::assertSame(['b', 'c'], $this->sortedIds($this->client()->search($filtered)->toArray()));
     }
 
@@ -169,7 +169,7 @@ class ClientTest extends DynamoDbTestCase
             $this->client()->put(new PutInput(RecordEntity::create(self::TENANT, $id)));
         }
 
-        $page = $this->client()->search(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), limit: 5))->page();
+        $page = $this->client()->search(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), limit: 5))->page();
 
         static::assertCount(2, $page->items);
         static::assertNull($page->next);
@@ -183,7 +183,7 @@ class ClientTest extends DynamoDbTestCase
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             cursor: $cursor,
             limit: 2,
         );

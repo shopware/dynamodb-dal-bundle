@@ -15,9 +15,11 @@ use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
-use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
 use Shopware\DynamodbDalBundle\Serializer\SerializedResult;
@@ -141,7 +143,7 @@ class ReaderClientTest extends TestCase
 
         $query = new QueryInput(
             NormalEntity::class,
-            Filter::equals('autofilledId', 'a'),
+            Filter::keyFilter(Filter::equals('autofilledId', 'a')),
             filter: Filter::equals('name', 'foo'),
             consistentRead: true,
         );
@@ -163,9 +165,9 @@ class ReaderClientTest extends TestCase
             }))
             ->willReturn($output);
 
-        $query = new QueryInput(NormalEntity::class, Filter::equals('name', 'x'), index: 'someIndex', forward: false);
+        $query = new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('name', 'x')), index: 'someIndex', forward: false);
 
-        iterator_to_array($this->reader->search($query), false);
+        iterator_to_array($this->indexedReader()->search($query), false);
     }
 
     public function testSearchKeysEachEntityByItsRawStartKey(): void
@@ -215,7 +217,7 @@ class ReaderClientTest extends TestCase
 
         $cursor = new Cursor($this->item('cursor-id'), backward: true)->encode();
 
-        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $cursor)), false);
+        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'x')), cursor: $cursor)), false);
     }
 
     public function testSearchRequestsTheNextPageOnlyOnceTheStreamReachesIt(): void
@@ -242,7 +244,7 @@ class ReaderClientTest extends TestCase
         );
 
         $cursor = new Cursor($this->item('z'), backward: true)->encode();
-        $search = $this->reader->search(new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $cursor));
+        $search = $this->reader->search(new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'x')), cursor: $cursor));
 
         static::assertSame($a, $search->current());
         static::assertCount(1, $inputs, 'the next page must not be requested while the current one is read');
@@ -584,21 +586,155 @@ class ReaderClientTest extends TestCase
         $this->reader->refresh(new RefreshInput([]));
     }
 
-    /**
-     * DynamoDB refuses a query without a key condition, so one that checks nothing fails before the request.
-     */
-    public function testSearchRefusesAKeyConditionThatChecksNothing(): void
+    public function testSearchRefusesAnIndexTheDefinitionDoesNotDeclare(): void
     {
         $this->dynamo->expects(static::never())->method('query');
 
-        $this->expectException(ConditionEmptyException::class);
+        $this->expectException(UnknownIndexException::class);
 
-        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::equalsAny('autofilledId', []))));
+        iterator_to_array($this->reader->search(new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('name', 'x')), index: 'someIndex')));
+    }
+
+    public function testCountRefusesAnIndexTheDefinitionDoesNotDeclare(): void
+    {
+        $this->dynamo->expects(static::never())->method('query');
+
+        $this->expectException(UnknownIndexException::class);
+
+        $this->reader->count(new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('name', 'x')), index: 'someIndex'));
+    }
+
+    /**
+     * The key condition is checked against the key of the index queried, not the table's.
+     */
+    public function testSearchRefusesAKeyConditionOnTheTableKeyForAnIndexQuery(): void
+    {
+        $this->dynamo->expects(static::never())->method('query');
+
+        $this->expectException(InvalidKeyConditionException::class);
+        $this->expectExceptionMessage('index "someIndex"');
+
+        iterator_to_array($this->indexedReader()->search(new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'a')), index: 'someIndex')));
+    }
+
+    public function testGetReadsAKeyGivenTwiceOnce(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $b = new NormalEntity()->setAutofilledId('b')->setRequired('req');
+        $itemA = $this->item('a');
+        $itemB = $this->item('b');
+
+        $this->stubKeySerialization();
+
+        // BatchGetItem refuses a request that lists a key twice
+        $this->dynamo->expects(static::once())
+            ->method('batchGetItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertCount(2, $args['RequestItems'][self::TABLE]['Keys']);
+
+                return true;
+            }))
+            ->willReturn(self::batchGetItemOutput([self::TABLE => [$itemA, $itemB]]));
+
+        $this->serializer->method('deserialize')->willReturnCallback(
+            static fn (EntityDefinition $definition, array $item): NormalEntity => $item === $itemA ? $a : $b,
+        );
+
+        $result = iterator_to_array(
+            $this->reader->get(new GetInput([new Key(NormalEntity::class, 'a'), new Key(NormalEntity::class, 'b'), new Key(NormalEntity::class, 'a')])),
+            false,
+        );
+
+        static::assertSame([$a, $b], $result);
+    }
+
+    public function testGetOfOneKeyGivenTwiceIssuesOneGetItem(): void
+    {
+        $entity = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+
+        $this->stubKeySerialization();
+
+        $this->dynamo->expects(static::once())->method('getItem')->willReturn(self::getItemOutput($this->item('a')));
+        $this->dynamo->expects(static::never())->method('batchGetItem');
+        $this->serializer->expects(static::once())->method('deserialize')->willReturn($entity);
+
+        $result = iterator_to_array($this->reader->get(new GetInput([new Key(NormalEntity::class, 'a'), new Key(NormalEntity::class, 'a')])), false);
+
+        static::assertSame([$entity], $result);
+    }
+
+    /**
+     * The two copies would otherwise land in different requests of 100, and the entity come back twice.
+     */
+    public function testGetReadsAKeyOnceAcrossRequests(): void
+    {
+        $this->stubKeySerialization();
+
+        $keys = array_map(static fn (int $i): Key => new Key(NormalEntity::class, "id-{$i}"), range(0, 99));
+        $keys[] = new Key(NormalEntity::class, 'id-0');
+
+        $this->dynamo->expects(static::once())
+            ->method('batchGetItem')
+            ->with(static::callback(static function (array $args): bool {
+                static::assertCount(100, $args['RequestItems'][self::TABLE]['Keys']);
+
+                return true;
+            }))
+            ->willReturn(self::batchGetItemOutput([self::TABLE => []]));
+
+        iterator_to_array($this->reader->get(new GetInput($keys)), false);
+    }
+
+    public function testRefreshReadsTheRowOfSeveralInstancesWithOneKeyIntoEachOfThem(): void
+    {
+        $first = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $second = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $item = $this->item('a');
+
+        $this->stubEntityKeySerialization();
+
+        $this->dynamo->expects(static::once())->method('getItem')->willReturn(self::getItemOutput($item));
+        $this->dynamo->expects(static::never())->method('batchGetItem');
+
+        $deserialized = [];
+        $this->serializer->method('deserialize')->willReturnCallback(
+            static function (EntityDefinition $definition, array $row, ?AbstractEntity $entity) use (&$deserialized): ?AbstractEntity {
+                $deserialized[] = $entity;
+
+                return $entity;
+            },
+        );
+
+        $this->reader->refresh(new RefreshInput([$first, $second]));
+
+        static::assertSame([$first, $second], $deserialized);
+    }
+
+    public function testRefreshOfOneInstanceGivenTwiceReadsItOnce(): void
+    {
+        $entity = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+
+        $this->stubEntityKeySerialization();
+
+        $this->dynamo->expects(static::once())->method('getItem')->willReturn(self::getItemOutput($this->item('a')));
+        $this->serializer->expects(static::once())->method('deserialize')->willReturn($entity);
+
+        $this->reader->refresh(new RefreshInput([$entity, $entity]));
     }
 
     private function registry(): EntityDefinitionRegistry
     {
         return new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
+    }
+
+    /**
+     * A reader over a definition that declares `someIndex`, keyed by `name`.
+     */
+    private function indexedReader(): ReaderClient
+    {
+        $definition = NormalEntity::createDefinition(indexes: ['someIndex' => new IndexSchema('someIndex', 'name')]);
+
+        return new ReaderClient($this->dynamo, $this->serializer, new FilterCompiler(), new EntityDefinitionRegistry([$definition->getName() => $definition]));
     }
 
     /**
@@ -610,6 +746,7 @@ class ReaderClientTest extends TestCase
         $this->serializer->method('serializeKey')->willReturnCallback(
             static fn (EntityDefinition $definition, Key $key): array => self::serializedKey($definition, $key)->getFields(),
         );
+        $this->stubKeyHashing();
     }
 
     /**
@@ -620,8 +757,19 @@ class ReaderClientTest extends TestCase
         $this->serializer->method('serializeKey')->willReturnCallback(
             static fn (EntityDefinition $definition, NormalEntity $entity): array => ['autofilledId' => new AttributeValue(['S' => $entity->getAutofilledId()])],
         );
+        $this->stubKeyHashing();
+    }
+
+    /**
+     * Stubs the key hash {@see ReaderClient} tells keys apart by, and matches rows to their entities with.
+     */
+    private function stubKeyHashing(): void
+    {
         $this->serializer->method('hashKey')->willReturnCallback(
-            static fn (EntityDefinition $definition, array $key): string => (string) $key['autofilledId']->getS(),
+            static fn (EntityDefinition $definition, array $key): string => implode("\0", array_map(
+                static fn (string $field): string => (string) ($key[$field] ?? null)?->getS(),
+                $definition->getKeySchema()->getFields(),
+            )),
         );
     }
 

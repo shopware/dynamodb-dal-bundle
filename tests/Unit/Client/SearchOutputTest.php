@@ -293,7 +293,7 @@ class SearchOutputTest extends TestCase
      */
     private static function query(Cursor $cursor, int $limit): QueryInput
     {
-        return new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $cursor->encode(), limit: $limit);
+        return new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'x')), cursor: $cursor->encode(), limit: $limit);
     }
 
     /**

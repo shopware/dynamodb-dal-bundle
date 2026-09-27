@@ -41,7 +41,7 @@ final readonly class CompiledExpression
     }
 
     /**
-     * A filter compiled as a search's filter, a key condition or a write condition compiles it.
+     * A filter compiled as a search's filter, a query's key condition or a write's condition compiles it.
      *
      * @param EntityDefinition<AbstractEntity> $definition
      *

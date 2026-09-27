@@ -93,7 +93,7 @@ final class ArticleController extends AbstractController
         try {
             $page = $this->client->search(new QueryInput(
                 ArticleEntity::class,
-                Filter::equals('status', 'published'),
+                Filter::keyFilter(Filter::equals('status', 'published')),
                 index: 'statusCreatedAtIndex',
                 forward: false, // newest first
                 cursor: $cursor,
@@ -260,7 +260,7 @@ $items = [];
 foreach (['draft', 'published'] as $status) {
     $pages[$status] = $this->client->search(new QueryInput(
         ArticleEntity::class,
-        Filter::equals('status', $status),
+        Filter::keyFilter(Filter::equals('status', $status)),
         index: 'statusCreatedAtIndex',
         forward: false,
         cursor: $positions[$status] ?? null,
@@ -325,7 +325,7 @@ $client->method('search')->willReturnCallback(
 
 $query = new QueryInput(
     ArticleEntity::class,
-    Filter::equals('status', 'published'),
+    Filter::keyFilter(Filter::equals('status', 'published')),
     index: 'statusCreatedAtIndex',
     forward: false,
     limit: 1,

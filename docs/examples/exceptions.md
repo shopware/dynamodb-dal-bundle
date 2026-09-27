@@ -104,7 +104,8 @@ The bundle throws these before it sends a request. They implement `ExpressionExc
 | `UnknownFieldException` | A filter or update names a field the entity doesn't have. Also a path that the field's type has no place for, such as an index into a map or a name inside a list |
 | `NullOperandException` | A filter or condition compares with `null`. To match a missing attribute, use `Filter::notExists()` |
 | `AttributeTypeMismatchException` | A filter or update does something the field's stored type doesn't allow, such as `beginsWith()` on a list, `append()` to a map, or a comparison of two operands of different types. A field whose serializer declares no type is left to DynamoDB |
-| `ConditionEmptyException` | A write condition checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny([])`, or a key condition checks nothing, such as an empty `Filter::and()` |
+| `InvalidKeyConditionException` | A key filter names a field that is not the hash or range key of the table or index queried, has a range key where the key has none, or compares a key with a `Filter::size()` or `Filter::field()`. See [Querying](basics.md#querying) |
+| `ConditionEmptyException` | A write condition checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny([])` |
 | `UpdateEmptyException` | An update has nothing to write |
 | `UpdateDuplicatePathException` | An update gives one path two values, such as a field and a `setIfNotExists()` for the same path |
 
@@ -118,15 +119,7 @@ These belong to no group.
 | Exception | Thrown when |
 |---|---|
 | `UnknownEntityDefinitionException` | The entity class is not listed under `shopware_dynamodb_dal.entities` |
-| `UnknownFieldException` | A filter or update names a field the entity doesn't have. Also a path that the field's type has no place for, such as an index into a map or a name inside a list |
-| `WrongTypeException` | A value is not of the type the field's serializer takes, such as a string for an `int` field, or a step of `0.5` for `increment()` on one |
-| `NullOperandException` | A filter or condition compares with `null`. To match a missing attribute, use `Filter::notExists()` |
-| `AttributeTypeMismatchException` | A filter or update does something the field's stored type doesn't allow, such as `beginsWith()` on a list, `append()` to a map, or a comparison of two operands of different types. A field whose serializer declares no type is left to DynamoDB |
-| `FieldMissingSerializedValueException` | A put leaves a required field uninitialized or `null`, an update removes a field that is not nullable, or a key lacks a value |
-| `FieldSerializationException` | The field's serializer failed with an error that is not a `DALException`. `getPrevious()` holds the original error |
-| `ConditionEmptyException` | A key condition or a write condition checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny([])` |
-| `UpdateEmptyException` | An update has nothing to write |
-| `UpdateDuplicatePathException` | An update gives one path two values, such as a field and a `setIfNotExists()` for the same path |
+| `UnknownIndexException` | A query names an index that `#[Table]` doesn't declare |
 | `\LogicException` | An output is read a second time. Run the search or key read again instead |
 | `\InvalidArgumentException` | `Page::cursorAfter()` or `cursorBefore()` gets an entity that is not on that page |
 
@@ -144,10 +137,8 @@ an `AsyncAws\Core\Exception\Http\ClientException` whose `getAwsCode()` is `Valid
 | A batch that writes the same entity twice | [Batches](writes.md#batches) |
 | A transaction with more than one operation on the same entity | [Transactions](writes.md#transactions) |
 | `consistentRead: true` on a query of a global secondary index | [Querying](basics.md#querying) |
-| A query of an index the table doesn't have, such as a typo in `index:` | [Querying](basics.md#querying) |
-| A key condition that names a field outside the key, leaves out the partition key, or uses `or()`, `not()`, `equalsAny()` or `contains()` | [Querying](basics.md#querying) |
+| A query of an index that `#[Table]` declares, but the table doesn't have | [Querying](basics.md#querying) |
 | An `equalsAny()` with more than 100 values, or an expression over 4 KB or 300 operators | [Filters](basics.md#filters) |
-| A pagination token of an index that `#[Table]` doesn't declare | [Querying](basics.md#querying) |
 | A pagination token that was edited, but still passes the bundle's checks | [Listing a query](paginated-listing.md#listing-a-query) |
 | A pagination token from another partition of the same index | [Keeping filters in the links](paginated-listing.md#keeping-filters-in-the-links) |
 

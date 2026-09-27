@@ -156,7 +156,7 @@ $orders = $found[OrderEntity::class] ?? [];
 $customer = $found[CustomerEntity::class][0] ?? null;
 ```
 
-A `Key` holds the entity class, the partition key value and, for a table with a sort key, the sort key value. The
+A `Key` holds the entity class, the hash key value and, for a table with a range key, the range key value. The
 class names the table, so one call can read keys of several entity classes. Pass the values as PHP values, such as an
 enum case or a `DateTimeImmutable`. The bundle serializes them the same way it serializes the entity's fields.
 
@@ -186,6 +186,8 @@ $this->client->refresh(new RefreshInput([$order], consistentRead: true));
 - `find()` sends a `GetItem`.
 - `findMany()` sends `BatchGetItem` requests of 100 keys each. It requests the keys that DynamoDB leaves unprocessed
   again.
+- A key given more than once is read once. Its entity comes back once, and `refresh()` writes the row into every
+  instance with that key.
 
 ### Pitfalls
 
@@ -193,30 +195,28 @@ $this->client->refresh(new RefreshInput([$order], consistentRead: true));
   `toArray()`.
 - `findMany()` returns the entities in no particular order, and leaves out keys without a row. To pair the entities
   with their keys, index them yourself.
-- Pass each key only once. DynamoDB rejects a request of 100 keys that lists the same key twice. Where the two copies
-  land in different requests, the entity comes back twice.
 - `refresh()` leaves an entity whose row no longer exists as it is, without telling you.
 
 ## Querying
 
-A query reads one partition of the table or of an index. Its key condition requires the partition key to equal a
-value, and it may narrow the sort key.
+A query reads one partition of the table or of an index. Its key condition, a `Filter::keyFilter()`, compares the
+hash key with `equals()`, and may narrow the range key.
 
 ```php
 use App\Entity\OrderStatus;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 
-// All orders of one customer, in sort key order
+// All orders of one customer, in range key order
 $orders = $this->client->search(new QueryInput(
     OrderEntity::class,
-    Filter::equals('customerId', 'c-42'),
+    Filter::keyFilter(Filter::equals('customerId', 'c-42')),
 ))->toArray();
 
 // Paid orders of the last 30 days, newest first, from the index
 $orders = $this->client->search(new QueryInput(
     OrderEntity::class,
-    Filter::and(
+    Filter::keyFilter(
         Filter::equals('status', OrderStatus::Paid),
         Filter::greaterThanOrEquals('createdAt', new \DateTimeImmutable('-30 days')),
     ),
@@ -225,14 +225,15 @@ $orders = $this->client->search(new QueryInput(
 ))->toArray();
 ```
 
-On the sort key, a key condition accepts `equals`, `lessThan`, `lessThanOrEquals`, `greaterThan`,
-`greaterThanOrEquals`, `between` and `beginsWith`. Combine it with the partition key using `Filter::and()`. This
-restriction comes from DynamoDB. Any other criterion goes into `filter:`:
+`Filter::keyFilter()` takes the hash key as an `equals()`, and the range key, if any, as one `equals()`,
+`lessThan()`, `lessThanOrEquals()`, `greaterThan()`, `greaterThanOrEquals()`, `between()` or `beginsWith()`. A range key
+given as `null` drops out, for an optional criterion. That is all DynamoDB takes in a key condition, so any other
+criterion goes into `filter:`:
 
 ```php
 $orders = $this->client->search(new QueryInput(
     OrderEntity::class,
-    Filter::equals('customerId', 'c-42'),
+    Filter::keyFilter(Filter::equals('customerId', 'c-42')),
     filter: Filter::and(
         Filter::greaterThan('totalCents', 10_000),
         Filter::contains('tags', 'gift'),
@@ -243,9 +244,12 @@ $orders = $this->client->search(new QueryInput(
 
 [Filters](#filters) lists every criterion.
 
-`index:` names an index declared in `#[Table]`. `forward: false` reads the sort key in descending order. `limit:`
-stops the search after that many entities. A key condition has to check something: the bundle refuses one that
-checks nothing, such as `Filter::equalsAny('status', [])`, before the query is sent.
+`index:` names an index declared in `#[Table]`. `forward: false` reads the range key in descending order. `limit:`
+stops the search after that many entities.
+
+The bundle checks the query against the key of the table or index before it sends the query. It refuses an index
+that `#[Table]` doesn't declare, and a key filter whose fields are not the hash and range key of the table or
+index queried.
 
 ### How it works
 
@@ -257,11 +261,9 @@ checks nothing, such as `Filter::equalsAny('status', [])`, before the query is s
 ### Pitfalls
 
 - A filter that matches few rows reads many full pages to fill a `limit`, and each of them costs read capacity.
-- Declare every index you query in `#[Table]`. The bundle sends the index name as given. A typo fails at DynamoDB,
-  and an index missing from `#[Table]` returns its first page but breaks its [pagination tokens](paginated-listing.md).
+- The bundle checks against the key schema that `#[Table]` declares, not against the table. An index that `#[Table]`
+  declares but the table doesn't have fails at DynamoDB.
 - `consistentRead: true` only works on a query of the table. DynamoDB rejects it on a global secondary index.
-- The bundle doesn't check the key condition itself. A key condition that names a field outside the key, leaves out
-  the partition key, or uses `or()`, `not()`, `equalsAny()` or `contains()` fails at DynamoDB.
 
 ## Reading a result
 
@@ -309,7 +311,7 @@ foreach ($this->client->search(new ScanInput(OrderEntity::class, Filter::equals(
 ```php
 $open = $this->client->count(new QueryInput(
     OrderEntity::class,
-    Filter::equals('status', OrderStatus::Open),
+    Filter::keyFilter(Filter::equals('status', OrderStatus::Open)),
     index: 'statusCreatedAtIndex',
 ));
 ```
@@ -328,7 +330,8 @@ $open = $this->client->count(new QueryInput(
 ## Filters
 
 `Filter` builds the key condition of a query, the filter of a query or scan, and the
-[condition of a write](writes.md#conditional-writes). Each method returns a filter. The values are PHP values,
+[condition of a write](writes.md#conditional-writes). Each method returns a filter. A key condition takes a
+`keyFilter()` only, see [Querying](#querying). The values are PHP values,
 serialized by the field's serializer, so `Filter::equals('status', OrderStatus::Paid)` compares with the stored
 `'paid'`.
 
@@ -344,6 +347,7 @@ serialized by the field's serializer, so `Filter::equals('status', OrderStatus::
 | `exists($field)`, `notExists($field)` | `attribute_exists()`, `NOT attribute_exists()` | A field that is stored, or missing |
 | `isEmpty($field)`, `isNotEmpty($field)` | `NOT attribute_exists() OR size() = 0`, `size() > 0` | A string, list, map or set that is empty or missing, or the rest |
 | `and(...)`, `or(...)`, `not($filter)` | `AND`, `OR`, `NOT` | All, any, or none of the filters |
+| `keyFilter($hashKey, $rangeKey)` | `… = … AND …` | A query's key condition, see [Querying](#querying) |
 
 `null` is not a value. To match a missing attribute, use `Filter::notExists()`.
 
@@ -362,7 +366,7 @@ a criterion that is not given is `null`:
 // $criteria holds what the search form submitted
 $result = $this->client->search(new QueryInput(
     OrderEntity::class,
-    Filter::equals('customerId', 'c-42'),
+    Filter::keyFilter(Filter::equals('customerId', 'c-42')),
     filter: Filter::and(
         $criteria->minTotalCents !== null ? Filter::greaterThanOrEquals('totalCents', $criteria->minTotalCents) : null,
         Filter::containsAny('tags', $criteria->tags), // no tags check nothing
@@ -389,8 +393,7 @@ a `null` as well, and returns a new filter. The original filter stays unchanged.
 
 - A criterion without values checks nothing and drops out. As a search filter, `Filter::equalsAny('id', [])` then
   matches every entity, not none. The same holds for `containsAny()` and `containsAll()` without values, and for an
-  `and()` or `or()` whose criteria are all `null`. As a key condition or a write condition, the bundle refuses such a
-  filter instead.
+  `and()` or `or()` whose criteria are all `null`. As a write condition, the bundle refuses such a filter instead.
 - A negation matches entities that lack the attribute. `Filter::notEquals('status', …)` matches entities without a
   status, and `Filter::notEquals(Filter::size('tags'), 0)` matches entities without tags, which `isNotEmpty()` leaves
   out.

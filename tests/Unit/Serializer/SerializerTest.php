@@ -524,7 +524,7 @@ class SerializerTest extends TestCase
     }
 
     /**
-     * A composite key hashes both halves, so two rows sharing a partition key stay distinct.
+     * A composite key hashes both halves, so two rows sharing a hash key stay distinct.
      */
     public function testHashKeyCoversTheSortKeyToo(): void
     {

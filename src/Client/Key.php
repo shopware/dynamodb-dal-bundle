@@ -7,7 +7,7 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 
 /**
  * An item's primary key. The values are PHP values, serialized by the key fields' serializers like any other field.
- * The sort (range) value is ignored for a table without a sort key.
+ * The range value is ignored for a table without a range key.
  *
  * @template-covariant Entity of AbstractEntity
  */

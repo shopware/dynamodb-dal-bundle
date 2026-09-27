@@ -8,12 +8,15 @@ use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
+use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\ArchiveEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity\RecordStatus;
 
 /**
  * The read engine against real tables — how a key read splits into `GetItem` and `BatchGetItem`, how a
@@ -82,6 +85,65 @@ class ReaderClientTest extends DynamoDbTestCase
         static::assertCount(120, array_unique($this->sortedIds($entities)));
     }
 
+    /**
+     * `BatchGetItem` refuses a request that lists a key twice, so the reader sends each key once.
+     */
+    public function testGetReadsAKeyGivenTwiceOnce(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a'));
+        $this->seed(RecordEntity::create(self::TENANT, 'b'));
+
+        $entities = iterator_to_array($this->reader()->get(new GetInput([
+            new Key(RecordEntity::class, self::TENANT, 'a'),
+            new Key(RecordEntity::class, self::TENANT, 'b'),
+            new Key(RecordEntity::class, self::TENANT, 'a'),
+        ])), false);
+
+        static::assertSame(['a', 'b'], $this->sortedIds($entities));
+    }
+
+    /**
+     * Two copies of a key in different requests of 100 would each find the row, and return it twice.
+     */
+    public function testGetReadsAKeyGivenTwiceInDifferentRequestsOnce(): void
+    {
+        $keys = [];
+        for ($i = 0; $i < 100; ++$i) {
+            $id = \sprintf('id-%03d', $i);
+            $this->seed(RecordEntity::create(self::TENANT, $id));
+            $keys[] = new Key(RecordEntity::class, self::TENANT, $id);
+        }
+        $keys[] = new Key(RecordEntity::class, self::TENANT, 'id-000');
+
+        $entities = iterator_to_array($this->reader()->get(new GetInput($keys)), false);
+
+        static::assertCount(100, $entities);
+        static::assertCount(100, array_unique($this->sortedIds($entities)));
+    }
+
+    public function testRefreshReadsTheRowIntoEveryInstanceWithItsKey(): void
+    {
+        $this->seed(RecordEntity::create(self::TENANT, 'a', name: 'stored'));
+        $this->seed(RecordEntity::create(self::TENANT, 'b', name: 'stored'));
+
+        $first = RecordEntity::create(self::TENANT, 'a', name: 'stale');
+        $second = RecordEntity::create(self::TENANT, 'a', name: 'stale');
+        $other = RecordEntity::create(self::TENANT, 'b', name: 'stale');
+
+        $this->reader()->refresh(new RefreshInput([$first, $other, $second, $first]));
+
+        static::assertSame('stored', $first->name);
+        static::assertSame('stored', $second->name);
+        static::assertSame('stored', $other->name);
+    }
+
+    public function testSearchRefusesAnIndexTheEntityDoesNotDeclare(): void
+    {
+        static::expectException(UnknownIndexException::class);
+
+        iterator_to_array($this->reader()->search(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('status', RecordStatus::Open)), index: 'statusIndx')), false);
+    }
+
     public function testGetThrowsForAnUnregisteredEntityClass(): void
     {
         static::expectException(UnknownEntityDefinitionException::class);
@@ -137,7 +199,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
         $entities = iterator_to_array($this->reader()->search(new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             forward: false,
         )), false);
 
@@ -159,7 +221,7 @@ class ReaderClientTest extends DynamoDbTestCase
 
         $entities = iterator_to_array($this->reader()->search(new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
         )), false);
 
         static::assertCount(40, $entities);
@@ -173,7 +235,7 @@ class ReaderClientTest extends DynamoDbTestCase
         $this->seed(RecordEntity::create('tenant-2', 'd'));
 
         static::assertSame(4, $this->reader()->count(new ScanInput(RecordEntity::class)));
-        static::assertSame(3, $this->reader()->count(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT))));
+        static::assertSame(3, $this->reader()->count(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)))));
     }
 
     private function reader(): ReaderClient

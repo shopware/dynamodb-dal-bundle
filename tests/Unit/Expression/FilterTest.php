@@ -11,6 +11,7 @@ use Shopware\DynamodbDalBundle\Expression\Filter\ComparisonFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\KeyFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\FieldOperand;
@@ -29,6 +30,15 @@ class FilterTest extends TestCase
         static::assertEquals(new ComparisonFilter('a', Comparator::LessThan, 1), Filter::lessThan('a', 1));
         static::assertEquals(new ComparisonFilter('a', Comparator::LessThanOrEquals, 1), Filter::lessThanOrEquals('a', 1));
         static::assertEquals(new BetweenFilter('a', 1, 2), Filter::between('a', 1, 2));
+    }
+
+    public function testKeyFilterTakesTheHashKeyAndAnOptionalRangeKey(): void
+    {
+        $hashKey = Filter::equals('a', 1);
+        $rangeKey = Filter::beginsWith('b', 'pre');
+
+        static::assertEquals(new KeyFilter($hashKey, $rangeKey), Filter::keyFilter($hashKey, $rangeKey));
+        static::assertEquals(new KeyFilter($hashKey), Filter::keyFilter($hashKey, null));
     }
 
     public function testEqualsAnyForwardsValues(): void

@@ -35,7 +35,7 @@ class NormalizedEntityNormalizer extends AbstractNormalizer
         $context->setIfUnset('id', Uuid::v7());
         $context->setIfUnset('createdAt', new \DateTimeImmutable('@1700000000'));
 
-        // The partition key exists only in the stored row; it is composed from the two fields the
+        // The hash key exists only in the stored row; it is composed from the two fields the
         // call site does set.
         $tenantId = $context->get('tenantId') ?? '';
         $kind = $context->get('kind') ?? '';

@@ -3,14 +3,18 @@
 namespace Shopware\DynamodbDalBundle\Expression;
 
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
+use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
+use Shopware\DynamodbDalBundle\Expression\Filter\KeyFilter;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Compiles a {@see FilterInterface} into an {@see ExpressionCompiledResult}:
- * a search's filter, or the condition of a write or a query.
+ * a search's filter, the condition of a write, or a query's key condition.
  *
  * Value placeholders are unique per call, also against an {@see UpdateCompiler}'s, so results merge into one request.
  * Name placeholders are derived from the attribute, so every result agrees on them.
@@ -47,12 +51,11 @@ class FilterCompiler implements ResetInterface
     }
 
     /**
-     * Compiles conditions that have to check something, a write's condition or a query's key condition, into one that
-     * holds where all of them hold, joined as `Filter::and()` joins its children.
-     * 
-     * Without a condition, a write would go through unconditionally and a query would be refused, so each of them has
-     * to compile to something, and none can hide behind another, such as a caller's condition behind an update's check
-     * that its item exists.
+     * Compiles the conditions of a write, which have to check something, into one that holds where all of them hold,
+     * joined as `Filter::and()` joins its children.
+     *
+     * Without a condition, a write would go through unconditionally, so each of them has to compile to something, and
+     * none can hide behind another, such as a caller's condition behind an update's check that its item exists.
      *
      * @throws ConditionEmptyException if a condition compiles to nothing
      * @throws DALException if a condition names a field the entity does not have, or a value that does not serialize for it
@@ -70,11 +73,27 @@ class FilterCompiler implements ResetInterface
                 throw new ConditionEmptyException($definition);
             }
 
-            // A lone condition is never wrapped, as a key condition in parentheses may be refused
+            // A lone condition needs no parentheses
             $fragments[] = \count($conditions) > 1 && $context->isCompound ? "({$fragment})" : $fragment;
         }
 
         return new ExpressionCompiledResult(implode(' AND ', $fragments), $context->names, $context->values);
+    }
+
+    /**
+     * Compiles a query's key condition for the key of the table or index queried, which the {@see KeyFilter} checks
+     * its criteria against as it compiles.
+     *
+     * @param ?IndexSchema $index - the index queried, `null` for the table
+     *
+     * @throws InvalidKeyConditionException if DynamoDB would refuse the key condition
+     * @throws DALException if a key field's value does not serialize for it
+     */
+    public function keyCondition(EntityDefinition $definition, KeyFilter $keyFilter, ?IndexSchema $index = null): ExpressionCompiledResult
+    {
+        $context = $this->createContext($definition, $index ?? $definition->getKeySchema());
+
+        return new ExpressionCompiledResult($keyFilter->compile($context), $context->names, $context->values);
     }
 
     public function reset(): void
@@ -82,8 +101,11 @@ class FilterCompiler implements ResetInterface
         $this->sequence = 0;
     }
 
-    private function createContext(EntityDefinition $definition): FilterCompileContext
+    /**
+     * @param IndexSchema|KeySchema|null $keyCondition - the key a key condition is compiled for, `null` for a filter or a condition
+     */
+    private function createContext(EntityDefinition $definition, IndexSchema|KeySchema|null $keyCondition = null): FilterCompileContext
     {
-        return new FilterCompileContext($definition, self::PREFIX . dechex(++$this->sequence));
+        return new FilterCompileContext($definition, self::PREFIX . dechex(++$this->sequence), $keyCondition);
     }
 }

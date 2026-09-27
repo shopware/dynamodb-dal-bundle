@@ -34,7 +34,7 @@ than doubling them. Build the filter to compare with through `Filter`, as the co
 doesn't depend on the classes a filter is made of:
 
 ```php
-static::assertEquals(Filter::equals('customerId', 'c-42'), $query->keyCondition);
+static::assertEquals(Filter::keyFilter(Filter::equals('customerId', 'c-42')), $query->keyCondition);
 ```
 
 ## Results of a double

@@ -12,6 +12,7 @@ use Shopware\DynamodbDalBundle\Expression\Filter\ComparisonFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ContainsFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\EqualsAnyFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\ExistsFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\KeyFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\NotFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\OrFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\FieldOperand;
@@ -66,6 +67,8 @@ final class Filter
 
     /**
      * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     *
+     * @return ComparisonFilter<Comparator::Equals>
      */
     public static function equals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
@@ -85,6 +88,8 @@ final class Filter
 
     /**
      * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     *
+     * @return ComparisonFilter<Comparator::GreaterThan>
      */
     public static function greaterThan(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
@@ -93,6 +98,8 @@ final class Filter
 
     /**
      * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     *
+     * @return ComparisonFilter<Comparator::GreaterThanOrEquals>
      */
     public static function greaterThanOrEquals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
@@ -101,6 +108,8 @@ final class Filter
 
     /**
      * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     *
+     * @return ComparisonFilter<Comparator::LessThan>
      */
     public static function lessThan(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
@@ -109,6 +118,8 @@ final class Filter
 
     /**
      * @param mixed $value - a value, a {@see self::field()} or a {@see self::size()}
+     *
+     * @return ComparisonFilter<Comparator::LessThanOrEquals>
      */
     public static function lessThanOrEquals(string|SizeOperand $fieldName, mixed $value): ComparisonFilter
     {
@@ -122,6 +133,25 @@ final class Filter
     public static function between(string|SizeOperand $fieldName, mixed $fromValue, mixed $toValue): BetweenFilter
     {
         return new BetweenFilter($fieldName, $fromValue, $toValue);
+    }
+
+    /**
+     * A query's key condition: the hash key compared with {@see self::equals()}, and at most one comparison,
+     * {@see self::between()} or {@see self::beginsWith()} of the range key. A range key given as `null` drops out, for an optional criterion, and the query reads the whole partition:
+     *
+     * ```
+     * Filter::keyFilter(
+     *     Filter::equals('status', OrderStatus::Paid),
+     *     $since !== null ? Filter::greaterThanOrEquals('createdAt', $since) : null,
+     * )
+     * ```
+     *
+     * @param ComparisonFilter<Comparator::Equals> $hashKey
+     * @param ComparisonFilter<Comparator>|BetweenFilter|BeginsWithFilter|null $rangeKey
+     */
+    public static function keyFilter(ComparisonFilter $hashKey, ComparisonFilter|BetweenFilter|BeginsWithFilter|null $rangeKey = null): KeyFilter
+    {
+        return new KeyFilter($hashKey, $rangeKey);
     }
 
     /**
@@ -186,6 +216,8 @@ final class Filter
     /**
      * The opposite of {@see self::isEmpty()}. Shorthand for `Filter::greaterThan(Filter::size(...), 0)`, as
      * `Filter::notEquals(Filter::size(...), 0)` would match a missing field too.
+     *
+     * @return ComparisonFilter<Comparator::GreaterThan>
      */
     public static function isNotEmpty(string $fieldName): ComparisonFilter
     {

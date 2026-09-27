@@ -2,12 +2,20 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Expression;
 
+use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\BetweenFilter;
+use Shopware\DynamodbDalBundle\Expression\Filter\Comparator;
+use Shopware\DynamodbDalBundle\Expression\Filter\ComparisonFilter;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(FilterCompiler::class)]
@@ -60,8 +68,7 @@ class FilterCompilerTest extends TestCase
 
     public function testTopLevelAndDoesNotWrapInOuterParentheses(): void
     {
-        // A key condition compiles the same way, and DynamoDB only accepts one as
-        // `hashKey = :v [AND rangeKey <op> :v]`: an outer `(...)` fails with a ValidationException.
+        // A search filter is sent as it compiles, without parentheses around the whole of it.
         $result = $this->compiler->filter(
             NormalEntity::createDefinition(),
             Filter::and(
@@ -131,7 +138,7 @@ class FilterCompilerTest extends TestCase
     }
 
     /**
-     * A key condition may be refused in parentheses, so a lone condition is sent as it compiles.
+     * A lone condition needs no parentheses, so it is sent as it compiles.
      */
     public function testALoneConditionIsNeverWrapped(): void
     {
@@ -151,5 +158,70 @@ class FilterCompilerTest extends TestCase
         $this->expectException(ConditionEmptyException::class);
 
         $this->compiler->condition(NormalEntity::createDefinition(), Filter::exists('autofilledId'), Filter::and());
+    }
+
+    public function testAKeyConditionComparesTheHashKeyWithEquals(): void
+    {
+        $result = $this->compiler->keyCondition(NormalEntity::createDefinition(), Filter::keyFilter(Filter::equals('autofilledId', 'a')));
+
+        static::assertSame('#autofilledId = :f_1_0_autofilledId', $result->expression);
+    }
+
+    /**
+     * @return iterable<string, array{ComparisonFilter<Comparator>|BetweenFilter|BeginsWithFilter, string}>
+     */
+    public static function rangeKeyConditions(): iterable
+    {
+        yield 'equals' => [Filter::equals('required', 'r'), '#required = :f_1_1_required'];
+        yield 'lessThan' => [Filter::lessThan('required', 'r'), '#required < :f_1_1_required'];
+        yield 'lessThanOrEquals' => [Filter::lessThanOrEquals('required', 'r'), '#required <= :f_1_1_required'];
+        yield 'greaterThan' => [Filter::greaterThan('required', 'r'), '#required > :f_1_1_required'];
+        yield 'greaterThanOrEquals' => [Filter::greaterThanOrEquals('required', 'r'), '#required >= :f_1_1_required'];
+        yield 'between' => [Filter::between('required', 'a', 'z'), '#required BETWEEN :f_1_1_required AND :f_1_2_required'];
+        yield 'beginsWith' => [Filter::beginsWith('required', 'r'), 'begins_with(#required, :f_1_1)'];
+    }
+
+    /**
+     * DynamoDB may refuse a key condition in parentheses, so the two criteria go out as they are.
+     *
+     * @param ComparisonFilter<Comparator>|BetweenFilter|BeginsWithFilter $rangeKey
+     */
+    #[DataProvider('rangeKeyConditions')]
+    public function testAKeyConditionTakesOneCriterionOnTheRangeKey(ComparisonFilter|BetweenFilter|BeginsWithFilter $rangeKey, string $expected): void
+    {
+        $result = $this->compiler->keyCondition(self::indexedDefinition(), Filter::keyFilter(Filter::equals('name', 'n'), $rangeKey), self::index());
+
+        static::assertSame("#name = :f_1_0_name AND {$expected}", $result->expression);
+    }
+
+    public function testAKeyConditionIsCheckedAgainstTheKeyOfTheTable(): void
+    {
+        $this->expectException(InvalidKeyConditionException::class);
+        $this->expectExceptionMessage('the table of item "normal": "name" is not the hash key "autofilledId"');
+
+        $this->compiler->keyCondition(self::indexedDefinition(), Filter::keyFilter(Filter::equals('name', 'n')));
+    }
+
+    public function testAKeyConditionIsCheckedAgainstTheKeyOfTheIndexQueried(): void
+    {
+        $this->expectException(InvalidKeyConditionException::class);
+        $this->expectExceptionMessage('index "byName" of item "normal": "autofilledId" is not the hash key "name"');
+
+        $this->compiler->keyCondition(self::indexedDefinition(), Filter::keyFilter(Filter::equals('autofilledId', 'a')), self::index());
+    }
+
+    /**
+     * A definition that declares {@see index()}.
+     *
+     * @return EntityDefinition<NormalEntity>
+     */
+    private static function indexedDefinition(): EntityDefinition
+    {
+        return NormalEntity::createDefinition(indexes: ['byName' => self::index()]);
+    }
+
+    private static function index(): IndexSchema
+    {
+        return new IndexSchema('byName', 'name', 'required');
     }
 }

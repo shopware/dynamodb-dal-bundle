@@ -86,6 +86,7 @@ class DALExceptionTest extends TestCase
             ExpressionException::class => [
                 AttributeTypeMismatchException::class,
                 ConditionEmptyException::class,
+                InvalidKeyConditionException::class,
                 NullOperandException::class,
                 UnknownFieldException::class,
                 UpdateDuplicatePathException::class,
@@ -94,6 +95,7 @@ class DALExceptionTest extends TestCase
             DALException::class => [
                 InvalidCursorException::class,
                 UnknownEntityDefinitionException::class,
+                UnknownIndexException::class,
             ],
         ];
 

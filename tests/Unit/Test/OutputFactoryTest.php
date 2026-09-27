@@ -36,7 +36,7 @@ class OutputFactoryTest extends TestCase
     {
         [$a, $b] = self::entities('a', 'b');
         $start = new Cursor(['autofilledId' => new AttributeValue(['S' => 'start'])])->encode();
-        $query = new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'x'), cursor: $start, limit: 1);
+        $query = new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'x')), cursor: $start, limit: 1);
 
         $real = new SearchOutput((static function () use ($a, $b): \Generator {
             yield ['autofilledId' => new AttributeValue(['S' => 'a'])] => $a;

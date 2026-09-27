@@ -3,6 +3,9 @@
 namespace Shopware\DynamodbDalBundle\Expression;
 
 use Shopware\DynamodbDalBundle\Definition\AttributeType;
+use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
+use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\NullOperandException;
@@ -10,6 +13,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Filter\FieldOperand;
+use Shopware\DynamodbDalBundle\Expression\Filter\KeyFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\SizeOperand;
 
 /**
@@ -20,10 +24,23 @@ final class FilterCompileContext extends ExpressionCompileContext
 {
     /**
      * Whether the filter just compiled joins clauses with `AND` or `OR`, so its parent wraps it in `(...)`, as in
-     * `a AND (b OR c)`. A filter sets this rather than wrapping itself, as DynamoDB may refuse a key condition in
-     * parentheses.
+     * `a AND (b OR c)`. A filter sets this rather than wrapping itself, so that a filter or condition standing on its
+     * own is sent without parentheses.
      */
     public bool $isCompound = false;
+
+    /**
+     * @internal
+     *
+     * @param IndexSchema|KeySchema|null $keyCondition - @internal the key a {@see KeyFilter} checks itself against, `null` outside a key condition
+     */
+    public function __construct(
+        EntityDefinition $definition,
+        string $prefix,
+        public readonly IndexSchema|KeySchema|null $keyCondition = null,
+    ) {
+        parent::__construct($definition, $prefix);
+    }
 
     /**
      * One side of a comparison: `#path`, or `size(#path)` for a {@see SizeOperand}. `$types` restricts its type.

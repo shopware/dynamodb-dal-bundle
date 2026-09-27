@@ -175,7 +175,7 @@ class ClientTest extends TestCase
 
     public function testCountDelegatesToTheReader(): void
     {
-        $query = new QueryInput(NormalEntity::class, Filter::equals('autofilledId', 'a'));
+        $query = new QueryInput(NormalEntity::class, Filter::keyFilter(Filter::equals('autofilledId', 'a')));
 
         $this->reader->expects(static::once())
             ->method('count')
