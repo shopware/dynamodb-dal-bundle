@@ -803,6 +803,8 @@ class WriterClientTest extends TestCase
             ->willReturnCallback(static fn (EntityDefinition $d, mixed $key): array => [
                 'settings' => new AttributeValue(['S' => spl_object_hash((object) $key)]),
             ]);
+        $serializer->method('hashKey')
+            ->willReturnCallback(static fn (EntityDefinition $d, array $key): string => (string) $key['settings']->getS());
         $serializer->method('denormalize')->willReturnArgument(1);
 
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);

@@ -131,7 +131,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
 
         $live = static fn (): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             filter: Filter::notExists('deletedAt'),
         );
 
@@ -265,7 +265,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create('tenant-2', 'shared-id'));
 
         $found = $this->client()
-            ->search(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT)))
+            ->search(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT))))
             ->toArray();
 
         static::assertCount(1, $found);
@@ -280,7 +280,7 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
 
         $open = $this->client()->count(new QueryInput(
             RecordEntity::class,
-            Filter::equals('status', RecordStatus::Open),
+            Filter::keyFilter(Filter::equals('status', RecordStatus::Open)),
             index: 'statusIndex',
         ));
 

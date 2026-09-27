@@ -10,7 +10,7 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  * condition and a filter, share one pair of maps:
  *
  * ```
- * $keyResult = $compiler->condition($definition, $keyCondition);
+ * $keyResult = $compiler->keyCondition($definition, $keyFilter, $index);
  * $filterResult = $compiler->filter($definition, $filter);
  *
  * $client->query([

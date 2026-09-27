@@ -136,7 +136,7 @@ final readonly class OrderRepository
     public function forCustomer(string $customerId): array
     {
         return $this->client
-            ->search(new QueryInput(OrderEntity::class, Filter::equals('customerId', $customerId)))
+            ->search(new QueryInput(OrderEntity::class, Filter::keyFilter(Filter::equals('customerId', $customerId))))
             ->toArray();
     }
 }

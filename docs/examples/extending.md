@@ -359,12 +359,12 @@ final readonly class StoredAsFilter implements FilterInterface
 }
 ```
 
-It works anywhere a `Filter` does, including inside `Filter::and()` and in write conditions:
+It works in a search's `filter:` and in write conditions, including inside `Filter::and()`, `or()` and `not()`:
 
 ```php
 new QueryInput(
     OrderEntity::class,
-    Filter::equals('customerId', 'c-42'),
+    Filter::keyFilter(Filter::equals('customerId', 'c-42')),
     filter: Filter::and(Filter::equals('status', OrderStatus::Open), new StoredAsFilter('totalCents', AttributeType::String)),
 );
 ```
@@ -399,7 +399,7 @@ fragment joins several clauses with `AND` or `OR`, set `$context->isCompound = t
   for, such as an index into a map. It throws `AttributeTypeMismatchException` for a field stored as a type other than
   the ones named.
 - An enclosing `and()`, `or()` or `not()` wraps a compound fragment in parentheses, so the fragment keeps its meaning.
-  A whole key condition stays unwrapped, because DynamoDB may refuse a key condition in parentheses.
+  A fragment that stands on its own stays unwrapped.
 
 ### Pitfalls
 

@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Definition;
 
 /**
- * The partition (and optional sort) key of a table or index, addressed by entity field name.
+ * The hash key, and the optional range key, of a table or index, addressed by entity field name.
  */
 readonly class KeySchema
 {
@@ -14,7 +14,7 @@ readonly class KeySchema
     }
 
     /**
-     * The key field names, partition first, sort (if any) second.
+     * The key field names, the hash key first, the range key (if any) second.
      *
      * @return list<string>
      */

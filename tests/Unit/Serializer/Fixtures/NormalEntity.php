@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
@@ -69,11 +70,14 @@ class NormalEntity extends AbstractEntity
     }
 
     /**
+     * @param array<string, IndexSchema> $indexes - keyed by index name
+     *
      * @return EntityDefinition<self>
      */
     public static function createDefinition(
         AbstractNormalizer $normalizer = new NormalNormalizer(),
         AbstractFieldSerializer $fieldSerializer = new StringFieldSerializer(),
+        array $indexes = [],
     ): EntityDefinition {
         /** @var EntityDefinition<self> $definition */
         $definition = new EntityDefinition(
@@ -116,6 +120,7 @@ class NormalEntity extends AbstractEntity
                 ),
             ],
             new KeySchema('autofilledId'),
+            $indexes,
         );
 
         return $definition;

@@ -174,28 +174,28 @@ class DefinitionCompilerPassTest extends TestCase
 
     public function testUnknownTableHashKey(): void
     {
-        static::expectExceptionObject(new \LogicException('Entity ' . UnknownHashKeyEntity::class . ' declares table partition key "doesNotExist" which is not a #[Field] property'));
+        static::expectExceptionObject(new \LogicException('Entity ' . UnknownHashKeyEntity::class . ' declares table hash key "doesNotExist" which is not a #[Field] property'));
 
         $this->compileDefinition(UnknownHashKeyEntity::class);
     }
 
     public function testUnknownTableRangeKey(): void
     {
-        static::expectExceptionObject(new \LogicException('Entity ' . UnknownRangeKeyEntity::class . ' declares table sort key "doesNotExist" which is not a #[Field] property'));
+        static::expectExceptionObject(new \LogicException('Entity ' . UnknownRangeKeyEntity::class . ' declares table range key "doesNotExist" which is not a #[Field] property'));
 
         $this->compileDefinition(UnknownRangeKeyEntity::class);
     }
 
     public function testUnknownIndexHashKey(): void
     {
-        static::expectExceptionObject(new \LogicException('Entity ' . UnknownIndexHashKeyEntity::class . ' declares index \'phpunitIndex\' partition key "doesNotExist" which is not a #[Field] property'));
+        static::expectExceptionObject(new \LogicException('Entity ' . UnknownIndexHashKeyEntity::class . ' declares index \'phpunitIndex\' hash key "doesNotExist" which is not a #[Field] property'));
 
         $this->compileDefinition(UnknownIndexHashKeyEntity::class);
     }
 
     public function testUnknownIndexRangeKey(): void
     {
-        static::expectExceptionObject(new \LogicException('Entity ' . UnknownIndexRangeKeyEntity::class . ' declares index \'phpunitIndex\' sort key "doesNotExist" which is not a #[Field] property'));
+        static::expectExceptionObject(new \LogicException('Entity ' . UnknownIndexRangeKeyEntity::class . ' declares index \'phpunitIndex\' range key "doesNotExist" which is not a #[Field] property'));
 
         $this->compileDefinition(UnknownIndexRangeKeyEntity::class);
     }

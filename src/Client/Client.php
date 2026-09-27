@@ -18,7 +18,9 @@ use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
@@ -131,6 +133,8 @@ class Client
      * @param ScanInput<Entity>|QueryInput<Entity> $query
      *
      * @throws UnknownEntityDefinitionException once the output is read
+     * @throws UnknownIndexException once the output is read
+     * @throws InvalidKeyConditionException once the output is read
      * @throws InvalidCursorException once the output is read
      * @throws DALException once the output is read, if the query does not compile, or an item does not deserialize
      * @throws AsyncAwsException once the output is read, if a request to DynamoDB fails
@@ -148,6 +152,8 @@ class Client
      * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $query
      *
      * @throws UnknownEntityDefinitionException
+     * @throws UnknownIndexException
+     * @throws InvalidKeyConditionException
      * @throws DALException if the query does not compile
      * @throws AsyncAwsException if a request to DynamoDB fails
      */

@@ -9,11 +9,14 @@ use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
+use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
+use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
+use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\DynamoDbClient;
@@ -105,6 +108,8 @@ class ReaderClient
      * @param ScanInput<Entity>|QueryInput<Entity> $query
      *
      * @throws UnknownEntityDefinitionException
+     * @throws UnknownIndexException
+     * @throws InvalidKeyConditionException
      * @throws InvalidCursorException
      * @throws DALException if the query does not compile, or an item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails
@@ -114,12 +119,9 @@ class ReaderClient
     public function search(ScanInput|QueryInput $query): \Generator
     {
         $definition = $this->definitionRegistry->getByEntityClass($query->class);
+        $index = $this->index($definition, $query);
 
-        $keyFields = $definition->getKeySchema()->getFields();
-        if ($query instanceof QueryInput && $query->index !== null) {
-            $keyFields = [...$keyFields, ...$definition->getIndex($query->index)?->keySchema->getFields() ?? []];
-        }
-        $keyFields = array_fill_keys($keyFields, true);
+        $keyFields = array_fill_keys([...$definition->getKeySchema()->getFields(), ...$index?->keySchema->getFields() ?? []], true);
 
         $cursor = $query->cursor !== null ? Cursor::decode($query->cursor) : null;
         if ($cursor !== null && (array_diff_key($cursor->key, $keyFields) !== [] || array_diff_key($keyFields, $cursor->key) !== [])) {
@@ -130,7 +132,7 @@ class ReaderClient
             throw new InvalidCursorException('a scan cannot be read backward');
         }
 
-        $input = $this->createSearchInput($definition, $query, $cursor);
+        $input = $this->createSearchInput($definition, $query, $index, $cursor);
 
         if ($query->filter === null && $query->limit !== null) {
             // One past the limit, so page() can tell whether another page follows. DynamoDB filters after
@@ -166,18 +168,21 @@ class ReaderClient
      * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $query
      *
      * @throws UnknownEntityDefinitionException
+     * @throws UnknownIndexException
+     * @throws InvalidKeyConditionException
      * @throws DALException if the query does not compile
      * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function count(ScanInput|QueryInput $query): int
     {
         $definition = $this->definitionRegistry->getByEntityClass($query->class);
+        $index = $this->index($definition, $query);
 
         $count = 0;
         $startKey = null;
 
         do {
-            $input = $this->createSearchInput($definition, $query, $startKey);
+            $input = $this->createSearchInput($definition, $query, $index, $startKey);
             $input->setSelect(Select::COUNT);
 
             $output = $input instanceof DynamoDbScanInput ? $this->client->scan($input) : $this->client->query($input);
@@ -192,7 +197,8 @@ class ReaderClient
 
     /**
      * The shared read path of {@see get()} and {@see refresh()}: a single key is a `GetItem`, several are
-     * `BatchGetItem`s. Each row is deserialized into its request's target, or into a new entity if it has none.
+     * `BatchGetItem`s. A key given more than once is read once, since `BatchGetItem` refuses a request that lists it
+     * twice. Its row is deserialized into every target given for it, or into one new entity where it has none.
      *
      * @template Entity of AbstractEntity
      *
@@ -205,44 +211,51 @@ class ReaderClient
      */
     private function read(array $requests, bool $consistentRead): \Generator
     {
-        if (\count($requests) === 1) {
+        // Keyed by physical table, as BatchGetItem answers under it
+        $definitions = [];
+        // Every distinct key once, as [physicalTable, key hash, key map], flat, as the 100-key cap counts the keys of
+        // every table in a request
+        $pairs = [];
+        // BatchGetItem answers in no order and does not echo the request, so a row finds its targets by its key
+        /** @var array<string, array<string, list<Entity>>> $targets - physical table, then key hash */
+        $targets = [];
+        foreach ($requests as [$definition, $key, $target]) {
+            $table = $definition->getTable();
+            $hash = $this->serializer->hashKey($definition, $key);
+            $definitions[$table] = $definition;
+
+            if (!isset($targets[$table][$hash])) {
+                $pairs[] = [$table, $hash, $key];
+                $targets[$table][$hash] = [];
+            }
+
+            if ($target !== null && !\in_array($target, $targets[$table][$hash], true)) {
+                $targets[$table][$hash][] = $target;
+            }
+        }
+
+        $idx = 0;
+
+        if (\count($pairs) === 1) {
+            [$table, $hash, $key] = $pairs[0];
+
             $output = $this->client->getItem([
-                'TableName' => $requests[0][0]->getTable(),
-                'Key' => $requests[0][1],
+                'TableName' => $table,
+                'Key' => $key,
                 'ConsistentRead' => $consistentRead,
             ]);
 
-            $entity = $this->serializer->deserialize($requests[0][0], $output->getItem(), $requests[0][2]);
-
-            if ($entity !== null) {
-                yield 0 => $entity;
+            foreach ($this->deserializeInto($definitions[$table], $output->getItem(), $targets[$table][$hash]) as $entity) {
+                yield $idx++ => $entity;
             }
 
             return;
         }
 
-        // Keyed by physical table, as BatchGetItem answers under it
-        $definitions = [];
-        // [physicalTable, key map] pairs, flat, as the 100-key cap counts the keys of every table in a request
-        $pairs = [];
-        // BatchGetItem answers in no order and does not echo the request, so a row finds its target by its key
-        /** @var array<string, array<string, Entity>> $targets - physical table, then key */
-        $targets = [];
-        foreach ($requests as [$definition, $key, $target]) {
-            $table = $definition->getTable();
-            $definitions[$table] = $definition;
-            $pairs[] = [$table, $key];
-
-            if ($target !== null) {
-                $targets[$table][$this->serializer->hashKey($definition, $key)] = $target;
-            }
-        }
-
-        $idx = 0;
         foreach (array_chunk($pairs, self::BATCH_GET_LIMIT) as $chunk) {
             /** @var array<string, array{Keys: list<array<string, AttributeValue>>, ConsistentRead: bool}> $requestItems */
             $requestItems = [];
-            foreach ($chunk as [$physicalTable, $keyFields]) {
+            foreach ($chunk as [$physicalTable, , $keyFields]) {
                 $requestItems[$physicalTable] ??= ['Keys' => [], 'ConsistentRead' => $consistentRead];
                 $requestItems[$physicalTable]['Keys'][] = $keyFields;
             }
@@ -256,10 +269,9 @@ class ReaderClient
                 // definition its keys were built from.
                 foreach ($definitions as $physicalTable => $definition) {
                     foreach ($responses[$physicalTable] ?? [] as $item) {
-                        $target = $targets !== [] ? $targets[$physicalTable][$this->serializer->hashKey($definition, $item)] ?? null : null;
+                        $rowTargets = $targets[$physicalTable][$this->serializer->hashKey($definition, $item)] ?? [];
 
-                        $entity = $this->serializer->deserialize($definition, $item, $target);
-                        if ($entity !== null) {
+                        foreach ($this->deserializeInto($definition, $item, $rowTargets) as $entity) {
                             yield $idx++ => $entity;
                         }
                     }
@@ -271,15 +283,56 @@ class ReaderClient
     }
 
     /**
+     * Deserializes a row into each of its targets, or into one new entity where it has none.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param EntityDefinition<Entity> $definition
+     * @param array<string, AttributeValue> $item - empty where no row has the key
+     * @param list<Entity> $targets
+     *
+     * @throws DALException if the item does not deserialize
+     *
+     * @return \Generator<int, Entity>
+     */
+    private function deserializeInto(EntityDefinition $definition, array $item, array $targets): \Generator
+    {
+        foreach ($targets === [] ? [null] : $targets as $target) {
+            $entity = $this->serializer->deserialize($definition, $item, $target);
+            if ($entity !== null) {
+                yield $entity;
+            }
+        }
+    }
+
+    /**
+     * The index a query names, as `#[Table]` declares it; `null` for a scan and a query of the table.
+     *
+     * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $search
+     *
+     * @throws UnknownIndexException
+     */
+    private function index(EntityDefinition $definition, ScanInput|QueryInput $search): ?IndexSchema
+    {
+        if (!$search instanceof QueryInput || $search->index === null) {
+            return null;
+        }
+
+        return $definition->getIndex($search->index) ?? throw new UnknownIndexException($definition, $search->index);
+    }
+
+    /**
      * Builds (but does not run) the async-aws `query`/`scan` input; only a {@see QueryInput} adds the key
      * condition, sort direction and index name.
      *
      * @param ScanInput<AbstractEntity>|QueryInput<AbstractEntity> $search
+     * @param ?IndexSchema $index - the index a query names, as {@see index()} looks it up
      * @param Cursor|array<string, AttributeValue>|null $start - a resume position; a backward {@see Cursor} flips the sort direction
      *
+     * @throws InvalidKeyConditionException
      * @throws DALException if the filter or key condition does not compile
      */
-    private function createSearchInput(EntityDefinition $definition, ScanInput|QueryInput $search, Cursor|array|null $start = null): DynamoDbQueryInput|DynamoDbScanInput
+    private function createSearchInput(EntityDefinition $definition, ScanInput|QueryInput $search, ?IndexSchema $index, Cursor|array|null $start = null): DynamoDbQueryInput|DynamoDbScanInput
     {
         $backward = $start instanceof Cursor && $start->backward;
         $exclusiveStartKey = $start instanceof Cursor ? $start->key : $start;
@@ -287,7 +340,7 @@ class ReaderClient
         $filterResult = $search->filter !== null ? $this->filterCompiler->filter($definition, $search->filter) : new ExpressionCompiledResult();
 
         if ($search instanceof QueryInput) {
-            $keyResult = $this->filterCompiler->condition($definition, $search->keyCondition);
+            $keyResult = $this->filterCompiler->keyCondition($definition, $search->keyCondition, $index);
             $filterResult = $filterResult->merge($keyResult);
 
             $input = new DynamoDbQueryInput();

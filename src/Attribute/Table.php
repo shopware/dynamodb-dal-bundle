@@ -12,8 +12,8 @@ class Table
 {
     /**
      * @param string $name - The entity's logical name, which the registry, the console commands and exception messages know it by
-     * @param string $hashKey - Entity field name of the table partition (hash) key
-     * @param string|null $rangeKey - Entity field name of the table sort (range) key, or null for a partition-only table
+     * @param string $hashKey - Entity field name of the table hash key
+     * @param string|null $rangeKey - Entity field name of the table range key, or null for a table keyed by its hash key alone
      * @param string|null $normalizer - Class name of a normalizer extending {@see \Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer}, registered as a service under that class name; null for none
      * @param list<IndexSchema> $indexes - Global secondary indexes declared on this table
      */

@@ -9,7 +9,7 @@ use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 
 /**
  * An entity carrying one of each shape {@see \Shopware\DynamodbDalBundle\DefinitionBuilder} compiles:
- * a key schema with a sort key, an index, a scalar field and a nested collection field.
+ * a key schema with a range key, an index, a scalar field and a nested collection field.
  */
 #[Table(
     name: 'catalog',

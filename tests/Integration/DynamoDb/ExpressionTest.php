@@ -269,7 +269,7 @@ class ExpressionTest extends DynamoDbTestCase
         $this->seed(RecordEntity::create('tenant-2', 'c', RecordStatus::Open, new \DateTimeImmutable('@300')));
         $this->seed(RecordEntity::create(self::TENANT, 'd', RecordStatus::Done, new \DateTimeImmutable('@400')));
 
-        $found = $this->query(new QueryInput(RecordEntity::class, Filter::equals('status', RecordStatus::Open), index: 'statusIndex'));
+        $found = $this->query(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('status', RecordStatus::Open)), index: 'statusIndex'));
 
         // The index partitions by status, not by tenant, so it crosses the base table's partitions.
         static::assertSame(['a', 'b', 'c'], $found);
@@ -283,7 +283,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         static::assertSame(['c', 'b', 'a'], $this->query(new QueryInput(
             RecordEntity::class,
-            Filter::equals('status', RecordStatus::Open),
+            Filter::keyFilter(Filter::equals('status', RecordStatus::Open)),
             index: 'statusIndex',
             forward: false,
         ), sorted: false));
@@ -297,7 +297,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         static::assertSame(['b', 'c'], $this->query(new QueryInput(
             RecordEntity::class,
-            Filter::and(
+            Filter::keyFilter(
                 Filter::equals('status', RecordStatus::Open),
                 Filter::greaterThanOrEquals('createdAt', new \DateTimeImmutable('@200')),
             ),
@@ -313,7 +313,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('status', RecordStatus::Open),
+            Filter::keyFilter(Filter::equals('status', RecordStatus::Open)),
             index: 'statusIndex',
             cursor: $cursor,
             limit: 2,
@@ -350,7 +350,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             filter: Filter::equals('name', 'match'),
             cursor: $cursor,
             limit: 2,
@@ -373,7 +373,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             cursor: $cursor,
             limit: 2,
         );
@@ -414,7 +414,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         $query = static fn (?string $cursor): QueryInput => new QueryInput(
             RecordEntity::class,
-            Filter::equals('status', RecordStatus::Open),
+            Filter::keyFilter(Filter::equals('status', RecordStatus::Open)),
             index: 'statusIndex',
             filter: Filter::equals('name', 'match'),
             forward: false,
@@ -451,7 +451,7 @@ class ExpressionTest extends DynamoDbTestCase
             foreach ([RecordStatus::Open, RecordStatus::Done] as $status) {
                 $pages[$status->value] = $this->client()->search(new QueryInput(
                     RecordEntity::class,
-                    Filter::equals('status', $status),
+                    Filter::keyFilter(Filter::equals('status', $status)),
                     index: 'statusIndex',
                     forward: false,
                     cursor: $positions[$status->value] ?? null,
@@ -546,7 +546,7 @@ class ExpressionTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, \sprintf('id-%02d', $i)));
         }
 
-        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), cursor: $cursor, limit: 2);
+        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), cursor: $cursor, limit: 2);
         $first = $this->client()->search($query(null))->page();
         $second = $this->client()->search($query($first->next))->page();
         static::assertSame(['id-02', 'id-03'], $this->ids($second->items));
@@ -571,7 +571,7 @@ class ExpressionTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, \sprintf('id-%02d', $i)));
         }
 
-        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), cursor: $cursor, limit: 2);
+        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), cursor: $cursor, limit: 2);
         $first = $this->client()->search($query(null))->page();
         $second = $this->client()->search($query($first->next))->page();
         static::assertSame(['id-02'], $this->ids($second->items));
@@ -592,14 +592,14 @@ class ExpressionTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, $id, RecordStatus::Open, new \DateTimeImmutable('@100')));
         }
 
-        $first = $this->client()->search(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), limit: 1))->page();
+        $first = $this->client()->search(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), limit: 1))->page();
         static::assertNotNull($first->next);
 
         // The token carries only the table key; resuming on the index would need the index key as well.
         $this->expectException(InvalidCursorException::class);
         $this->client()->search(new QueryInput(
             RecordEntity::class,
-            Filter::equals('status', RecordStatus::Open),
+            Filter::keyFilter(Filter::equals('status', RecordStatus::Open)),
             index: 'statusIndex',
             cursor: $first->next,
             limit: 1,
@@ -619,7 +619,7 @@ class ExpressionTest extends DynamoDbTestCase
             }
         }
 
-        $query = static fn (string $tenant, ?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::equals('tenantId', $tenant), cursor: $cursor, limit: 1);
+        $query = static fn (string $tenant, ?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', $tenant)), cursor: $cursor, limit: 1);
         $first = $this->client()->search($query(self::TENANT, null))->page();
         $second = $this->client()->search($query(self::TENANT, $first->next))->page();
 
@@ -639,13 +639,13 @@ class ExpressionTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, \sprintf('id-%02d', $i)));
         }
 
-        $first = $this->client()->search(new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), limit: 1))->page();
+        $first = $this->client()->search(new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), limit: 1))->page();
 
         // The token resumes after `id-00`, below the sort-key range the key condition asks for: DynamoDB refuses it.
         $this->expectException(ClientException::class);
         $this->client()->search(new QueryInput(
             RecordEntity::class,
-            Filter::and(Filter::equals('tenantId', self::TENANT), Filter::between('id', 'id-03', 'id-05')),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT), Filter::between('id', 'id-03', 'id-05')),
             cursor: $first->next,
             limit: 2,
         ))->page();
@@ -657,7 +657,7 @@ class ExpressionTest extends DynamoDbTestCase
             $this->seed(RecordEntity::create(self::TENANT, $id));
         }
 
-        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::equals('tenantId', self::TENANT), cursor: $cursor, limit: 1);
+        $query = static fn (?string $cursor): QueryInput => new QueryInput(RecordEntity::class, Filter::keyFilter(Filter::equals('tenantId', self::TENANT)), cursor: $cursor, limit: 1);
         $first = $this->client()->search($query(null))->page();
         $second = $this->client()->search($query($first->next))->page();
         static::assertNotNull($second->previous);
@@ -675,7 +675,7 @@ class ExpressionTest extends DynamoDbTestCase
 
         static::assertSame(['a'], $this->query(new QueryInput(
             RecordEntity::class,
-            Filter::equals('tenantId', self::TENANT),
+            Filter::keyFilter(Filter::equals('tenantId', self::TENANT)),
             filter: Filter::equals('name', 'match'),
         )));
     }

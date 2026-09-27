@@ -101,8 +101,8 @@ final readonly class DefinitionBuilder
     }
 
     /**
-     * Every declared key field — the table partition and sort key, plus each index's
-     * partition and sort key — must be a {@see Field} property of the entity. A cursor
+     * Every declared key field — the table hash and range key, plus each index's
+     * hash and range key — must be a {@see Field} property of the entity. A cursor
      * or key condition built on a field that does not exist is a programming error that
      * should fail the build, not surface as a malformed `ExclusiveStartKey` at runtime.
      *
@@ -117,9 +117,9 @@ final readonly class DefinitionBuilder
             }
         }
 
-        $tableKeyFields = [['table partition key', $table->hashKey]];
+        $tableKeyFields = [['table hash key', $table->hashKey]];
         if ($table->rangeKey !== null) {
-            $tableKeyFields[] = ['table sort key', $table->rangeKey];
+            $tableKeyFields[] = ['table range key', $table->rangeKey];
         }
 
         foreach ($tableKeyFields as [$label, $field]) {
@@ -135,9 +135,9 @@ final readonly class DefinitionBuilder
 
         $keyFields = [];
         foreach ($table->indexes as $index) {
-            $keyFields[] = ["index '{$index->name}' partition key", $index->keySchema->hashKey];
+            $keyFields[] = ["index '{$index->name}' hash key", $index->keySchema->hashKey];
             if ($index->keySchema->rangeKey !== null) {
-                $keyFields[] = ["index '{$index->name}' sort key", $index->keySchema->rangeKey];
+                $keyFields[] = ["index '{$index->name}' range key", $index->keySchema->rangeKey];
             }
         }
 
