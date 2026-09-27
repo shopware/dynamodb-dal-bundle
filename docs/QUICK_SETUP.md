@@ -68,7 +68,7 @@ class OrderEntity extends AbstractEntity
 }
 ```
 
-List every entity in the bundle configuration, together with the table its items live in:
+List every entity in the bundle configuration, together with the table it is stored in:
 
 ```yaml
 # config/packages/shopware_dynamodb_dal.yaml
@@ -142,4 +142,4 @@ final readonly class OrderRepository
 }
 ```
 
-Next, [Basics](examples/basics.md) covers reading by key, queries, scans, counts, puts and deletes.
+Next, [Basics](examples/basics.md) covers reading by key, queries, scans, counts, filters, puts and deletes.

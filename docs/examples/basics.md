@@ -4,12 +4,13 @@
   - [The entity](#the-entity)
   - [Reading by key](#reading-by-key)
   - [Querying](#querying)
-  - [Scanning and counting](#scanning-and-counting)
   - [Reading a result](#reading-a-result)
+  - [Scanning and counting](#scanning-and-counting)
+  - [Filters](#filters)
   - [Putting and deleting](#putting-and-deleting)
 
-This example stores a shop's orders. Each customer's orders share one partition, and an index lists orders
-by status. Every snippet runs in a service that has the `Client` injected:
+This example stores a shop's orders. Each customer's orders share one partition, and an index lists orders by
+status. Every snippet runs in a service that has the `Client` injected:
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Client;
@@ -20,8 +21,10 @@ public function __construct(
 }
 ```
 
-Every input names the entity class it works on, so no call takes one: an entity is one, a `Key` names its class,
-and a search takes it as its first argument.
+No `Client` method takes the entity class as an argument of its own. Every input carries it: an entity is an instance
+of its class, a `Key` names its class, and a search takes the class as its first argument.
+
+[Exceptions](exceptions.md) lists what each call can throw.
 
 ## The entity
 
@@ -65,6 +68,9 @@ class OrderEntity extends AbstractEntity
     public \DateTimeImmutable $createdAt;
 
     #[Field]
+    public ?\DateTimeImmutable $updatedAt = null;
+
+    #[Field]
     public int $totalCents;
 
     #[Field]
@@ -91,17 +97,46 @@ shopware_dynamodb_dal:
         App\Entity\OrderEntity: '%env(DYNAMODB_TABLE_ORDER)%'
 ```
 
-- `#[Field]` makes a property a field. The property has to be typed, and `public` or `protected`.
-- Every key named in `#[Table]` or an `IndexSchema` has to be a field. The table's own key fields must not
-  be nullable.
-- DynamoDB has no null, so a `null` value is not stored. When a stored row lacks a field, the entity gets
-  the field's default. If the field has no default and is not nullable, the read fails with
-  `FieldMissingDeserializedValueException`. A field you add to an entity that already has rows therefore
-  needs a default or a nullable type. `dal:baseline:required-fields` catches this in CI.
-- `list<T>` fields are stored as DynamoDB lists and `array<string, T>` fields as maps. Filters and updates
-  can reach into them by path, such as `meta.carrier` or `tags[0]`.
-- `AbstractEntity` has a final constructor without arguments, because the bundle creates entities
-  when it reads them. Add a static factory if you want one.
+`#[Field]` makes a property a field. The property has to be typed, and `public` or `protected`. It can be neither
+`readonly` nor `private(set)`, because the bundle assigns the fields when it reads an entity.
+
+Every key named in `#[Table]` or an `IndexSchema` has to be a field. The table's own key fields must not be nullable.
+A table holds the entities of one class only.
+
+`list<T>` fields are stored as DynamoDB lists, and `array<string, T>` fields as maps. Filters and updates can reach
+into them by path, such as `meta.carrier` or `tags[0]`. [Quick setup](../QUICK_SETUP.md#defining-an-entity) lists how
+every PHP type is stored.
+
+`AbstractEntity` has a final constructor without arguments, because the bundle creates entities when it reads them.
+Add a static factory if you want one.
+
+### How it works
+
+- DynamoDB has no null for a field, so a `null` value is not stored.
+- When a stored row lacks a field, the entity gets `null` if the field is nullable, and the field's default
+  otherwise. If the field has neither, and the entity's [normalizer](extending.md#a-normalizer) doesn't fill it in,
+  the read fails.
+- A field is stored under its property name.
+
+### Pitfalls
+
+> [!WARNING]
+> A field you add to an entity whose table already has rows needs a default or a nullable type. Otherwise every read
+> of an old row fails. `dal:baseline:required-fields` catches this in CI.
+
+- A default is only filled in when the entity is read. The stored row still lacks the field, so it matches no filter
+  or key condition on it, and it is missing from any index keyed on it, until a put writes the row again.
+- Renaming a property renames the attribute. Old rows read the field as missing, and the next put of such an entity
+  erases the value stored under the old name.
+- Changing how a field is stored, such as its type or an array's `@var` docblock, makes every old row fail to read.
+- An `array` without a `@var` type is stored as a JSON string, not as a list or map.
+- `@var list<string>|null` and `@var list<string> $tags` fail the container build. A nullable list needs a docblock
+  without `null`.
+- Removing a case from an enum makes every row that stores it fail to read.
+- A `DateTimeImmutable` is stored in whole seconds, and read back in UTC.
+- An int-backed enum is stored as a string, so a range filter on it compares text: `10` sorts before `9`.
+- Every index a search reads has to project all attributes. An index that projects `KEYS_ONLY` or `INCLUDE` returns
+  rows that don't deserialize.
 
 ## Reading by key
 
@@ -110,6 +145,7 @@ use Shopware\DynamodbDalBundle\Client\Key;
 
 $order = $this->client->find(new Key(OrderEntity::class, 'c-42', 'o-1001')); // ?OrderEntity
 
+// CustomerEntity is another entity, keyed by the customer ID alone
 $found = $this->client->findMany([
     new Key(OrderEntity::class, 'c-42', 'o-1001'),
     new Key(OrderEntity::class, 'c-42', 'o-1002'),
@@ -120,22 +156,24 @@ $orders = $found[OrderEntity::class] ?? [];
 $customer = $found[CustomerEntity::class][0] ?? null;
 ```
 
-A `Key` holds the entity class, the partition key value and, for a table with a sort key, the sort key value.
-The class names the table, so one call can read keys of several entity classes. Pass the values as PHP values,
-such as an enum case or a `DateTimeImmutable`; the bundle serializes them the same way it serializes the entity's
-fields.
+A `Key` holds the entity class, the partition key value and, for a table with a sort key, the sort key value. The
+class names the table, so one call can read keys of several entity classes. Pass the values as PHP values, such as an
+enum case or a `DateTimeImmutable`. The bundle serializes them the same way it serializes the entity's fields.
 
-- `find()` reads one key with `GetItem`, and returns the entity or `null`.
-- `findMany()` reads several with `BatchGetItem`, 100 keys per request, and requests the keys DynamoDB leaves
-  unprocessed again. It returns a `GetOutput`, which streams its results as a search does, see
-  [Reading a result](#reading-a-result). They come in no particular order, and keys without a row are left out.
-- `grouped()` returns every found entity, keyed by class, `forEntity()` those of one class, and `toArray()` all of
-  them as a list. An output can be read once, so take everything you need from one of them.
-- `consistentRead: true` makes either read strongly consistent.
-- `findMany()` is shorthand for `get()` with a `GetInput`, which `withKey()` and `withConsistentRead()` build up.
+`find()` reads one key and returns the entity, or `null`. `findMany()` reads several keys and returns a `GetOutput`,
+which streams its entities as a search does (see [Reading a result](#reading-a-result)):
 
-`refresh()` reads entities you already hold again, by their own key, and writes the stored values back into
-the same instances. An entity whose row no longer exists is left as it is.
+| Method | Returns |
+|---|---|
+| `grouped()` | Every entity found, keyed by class |
+| `forEntity($class)` | The entities found of one class |
+| `toArray()` | Every entity found, as one list |
+
+`consistentRead: true` makes `find()` and `findMany()` strongly consistent. `findMany()` is shorthand for `get()`
+with a `GetInput`, which `withKey()` and `withConsistentRead()` build up.
+
+`refresh()` reads entities you already hold again, by their own key, and writes the stored values into the same
+instances:
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
@@ -143,10 +181,26 @@ use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 $this->client->refresh(new RefreshInput([$order], consistentRead: true));
 ```
 
+### How it works
+
+- `find()` sends a `GetItem`.
+- `findMany()` sends `BatchGetItem` requests of 100 keys each. It requests the keys that DynamoDB leaves unprocessed
+  again.
+
+### Pitfalls
+
+- An output can be read only once, so take everything you need from one call of `grouped()`, `forEntity()` or
+  `toArray()`.
+- `findMany()` returns the entities in no particular order, and leaves out keys without a row. To pair the entities
+  with their keys, index them yourself.
+- Pass each key only once. DynamoDB rejects a request of 100 keys that lists the same key twice. Where the two copies
+  land in different requests, the entity comes back twice.
+- `refresh()` leaves an entity whose row no longer exists as it is, without telling you.
+
 ## Querying
 
-A query reads one partition of the table or of an index. Its key condition requires the partition key to
-equal a value, and it may narrow the sort key.
+A query reads one partition of the table or of an index. Its key condition requires the partition key to equal a
+value, and it may narrow the sort key.
 
 ```php
 use App\Entity\OrderStatus;
@@ -172,9 +226,8 @@ $orders = $this->client->search(new QueryInput(
 ```
 
 On the sort key, a key condition accepts `equals`, `lessThan`, `lessThanOrEquals`, `greaterThan`,
-`greaterThanOrEquals`, `between` and `beginsWith`. Combine it with the partition key using `Filter::and()`.
-This restriction comes from DynamoDB. Any other criterion goes into `filter:`. DynamoDB applies the filter
-after it has read the items, so a filter reduces the data returned but not the read capacity consumed.
+`greaterThanOrEquals`, `between` and `beginsWith`. Combine it with the partition key using `Filter::and()`. This
+restriction comes from DynamoDB. Any other criterion goes into `filter:`:
 
 ```php
 $orders = $this->client->search(new QueryInput(
@@ -188,50 +241,55 @@ $orders = $this->client->search(new QueryInput(
 ))->toArray();
 ```
 
-- Values are PHP values, serialized by the field's serializer. `null` is refused with
-  `NullOperandException`; to match a missing attribute, use `Filter::notExists()`.
-- The prefix of `beginsWith()` and the substring `contains()` looks for in a string are a part of the stored
-  string, not values of the field, so `Filter::beginsWith('id', '0190')` works on a `Uuid` field, and
-  `Filter::contains('payload', 'needle')` searches a JSON-encoded field.
-- `Filter` also provides `equalsAny` (DynamoDB's `IN`), `containsAny`, `containsAll`, `or`, `not`, `notEquals`,
-  `notEqualsAny`, `notContains` and `notExists`.
-- `Filter::isEmpty('tags')` matches a string, list, map or set that is empty or missing, whatever the entity reads
-  back as empty or `null`. `Filter::isNotEmpty('tags')` matches the rest.
-- A comparison with a missing attribute is false, and its negation true. `Filter::notEquals('status', …)` matches
-  items without a status, and `Filter::notEquals(Filter::size('tags'), 0)` items without tags, which
-  `isNotEmpty()` leaves out.
-- The comparisons take `Filter::size()` in place of the field, and `Filter::field()` or `Filter::size()` in place of
-  a value:
+[Filters](#filters) lists every criterion.
 
-  ```php
-  Filter::lessThan(Filter::size('tags'), 10);                     // fewer than 10 tags
-  Filter::greaterThan('updatedAt', Filter::field('createdAt'));   // changed since it was created
-  ```
+`index:` names an index declared in `#[Table]`. `forward: false` reads the sort key in descending order. `limit:`
+stops the search after that many entities. A key condition has to check something: the bundle refuses one that
+checks nothing, such as `Filter::equalsAny('status', [])`, before the query is sent.
 
-- A filter that DynamoDB would reject or never match throws before the request: `AttributeTypeMismatchException` for
-  `size()` of a number, `beginsWith()` on a list, `contains()` on a map, an ordering comparison of a list, or two
-  operands of different types, and `UnknownFieldException` for an index into a map or a name inside a list. A field
-  whose serializer declares no type is left to DynamoDB, see [A field type of your own](extending.md#a-field-type-of-your-own).
-- `consistentRead: true` only works on a base-table query. DynamoDB rejects it on a global secondary index.
-- A key condition that checks nothing, such as `Filter::equalsAny()` without values, throws
-  `ConditionEmptyException` before the query is sent. As a `filter:`, it matches everything.
+### How it works
 
-`Filter::and()` and `Filter::or()` leave out a `null`, and without anything left they match everything. That makes
-them suitable for criteria from a search form, where a criterion that is not given is `null`:
+- DynamoDB applies `filter:` after it has read the rows. A filter reduces what the query returns, but not the read
+  capacity it consumes.
+- Without a filter, the bundle passes `limit` on to DynamoDB. With a filter, every request reads a full page of up to
+  1 MB, because DynamoDB applies its own limit before the filter.
 
-```php
-$result = $this->client->search(new QueryInput(
-    OrderEntity::class,
-    Filter::equals('customerId', 'c-42'),
-    filter: Filter::and(
-        $criteria->minTotalCents !== null ? Filter::greaterThanOrEquals('totalCents', $criteria->minTotalCents) : null,
-        Filter::containsAny('tags', $criteria->tags), // no tags check nothing
-    ),
-));
-```
+### Pitfalls
 
-`->with()` returns a filter with criteria added, `null` left out again, and leaves the filter it was called on as it
-is, to add to a filter built elsewhere.
+- A filter that matches few rows reads many full pages to fill a `limit`, and each of them costs read capacity.
+- Declare every index you query in `#[Table]`. The bundle sends the index name as given. A typo fails at DynamoDB,
+  and an index missing from `#[Table]` returns its first page but breaks its [pagination tokens](paginated-listing.md).
+- `consistentRead: true` only works on a query of the table. DynamoDB rejects it on a global secondary index.
+- The bundle doesn't check the key condition itself. A key condition that names a field outside the key, leaves out
+  the partition key, or uses `or()`, `not()`, `equalsAny()` or `contains()` fails at DynamoDB.
+
+## Reading a result
+
+`search()` returns a `SearchOutput`, and `findMany()` and `get()` return a `GetOutput`. Both stream their entities,
+and both can be read once, in one of these ways:
+
+| Method | Output | Returns |
+|---|---|---|
+| `foreach` | Both | Streams the entities |
+| `toArray()` | Both | The entities as a list |
+| `first()` | Both | The first entity, or `null` |
+| `page()` | `SearchOutput` | The entities, with tokens for the next and previous page. See [Paginated listing](paginated-listing.md) |
+| `forEntity()`, `grouped()` | `GetOutput` | The entities of one class, or all of them keyed by class |
+
+With a `limit` on the input, each of these returns at most that many entities.
+
+### How it works
+
+- An output fetches DynamoDB's pages as you iterate, so even a large scan never has to fit in memory. A key read
+  streams the same way, one `BatchGetItem` of 100 keys at a time.
+- With a `limit`, the output stops reading DynamoDB's pages once it has enough entities.
+- Nothing is read until the output is. That is also when a key, a query or a request fails.
+
+### Pitfalls
+
+- A second read of an output throws a `\LogicException`. Run the search or key read again instead.
+- An exception of the read is thrown when the output is read, not when `search()` or `findMany()` returns. Put the
+  `try` around the read. See [When a read throws](exceptions.md#when-a-read-throws).
 
 ## Scanning and counting
 
@@ -245,8 +303,8 @@ foreach ($this->client->search(new ScanInput(OrderEntity::class, Filter::equals(
 }
 ```
 
-`count()` takes the same inputs and counts matches with `Select=COUNT` across all pages, ignoring `limit`.
-No items are transferred, but DynamoDB still reads every item the query or scan covers.
+`count()` takes the same inputs, and counts the matches with `Select=COUNT` across all pages. It ignores `limit` and
+`cursor`.
 
 ```php
 $open = $this->client->count(new QueryInput(
@@ -256,22 +314,91 @@ $open = $this->client->count(new QueryInput(
 ));
 ```
 
-## Reading a result
+### How it works
 
-`search()` returns a `SearchOutput` that streams its matches. It fetches DynamoDB's pages as you iterate, so
-even a large scan never has to fit in memory. `findMany()` and `get()` return a `GetOutput` that streams the same
-way, one `BatchGetItem` of 100 keys at a time. Nothing is read until the output is, and that is also when a key,
-a query or a request fails. An output can be read once, in one of these ways:
+- A scan reads the table in one sequential pass. It can't scan an index, and it can't run in parallel segments.
+- `count()` transfers no entities. DynamoDB still reads every row the query or scan covers, whether the filter
+  matches it or not.
 
-- `foreach` streams the matches
-- `toArray()` returns the matches as a list
-- `first()` returns the first match, or `null`
-- `page()`, on a search, returns the matches with tokens for the next and previous page. See
-  [Paginated listing](paginated-listing.md).
-- `forEntity()` and `grouped()`, on a key read, return the entities of one class, or all of them by class
+### Pitfalls
 
-With a `limit` on the input, each of these returns at most that many matches and stops reading DynamoDB's
-pages once it has them. A second read throws a `LogicException`; run the search or key read again instead.
+- A scan costs the read capacity of the whole table, whatever its filter matches.
+- A listing that shows a page and a total reads its rows twice: once for the page, and once for `count()`.
+
+## Filters
+
+`Filter` builds the key condition of a query, the filter of a query or scan, and the
+[condition of a write](writes.md#conditional-writes). Each method returns a filter. The values are PHP values,
+serialized by the field's serializer, so `Filter::equals('status', OrderStatus::Paid)` compares with the stored
+`'paid'`.
+
+| Method | DynamoDB | Matches |
+|---|---|---|
+| `equals($field, $value)`, `notEquals(...)` | `=`, `NOT … =` | The value, or anything else |
+| `lessThan`, `lessThanOrEquals`, `greaterThan`, `greaterThanOrEquals` | `<`, `<=`, `>`, `>=` | An ordered comparison with the value |
+| `between($field, $from, $to)` | `BETWEEN … AND …` | A value in the range, both ends included |
+| `equalsAny($field, [...])`, `notEqualsAny(...)` | `IN (…)`, `NOT … IN (…)` | One of the values, or none of them |
+| `beginsWith($field, $prefix)` | `begins_with()` | A string that starts with the prefix |
+| `contains($field, $value)`, `notContains(...)` | `contains()` | A string that contains the substring, or a list or set that contains the element |
+| `containsAny($field, [...])`, `containsAll($field, [...])` | `contains() OR …`, `contains() AND …` | A field that contains any, or all, of the values |
+| `exists($field)`, `notExists($field)` | `attribute_exists()`, `NOT attribute_exists()` | A field that is stored, or missing |
+| `isEmpty($field)`, `isNotEmpty($field)` | `NOT attribute_exists() OR size() = 0`, `size() > 0` | A string, list, map or set that is empty or missing, or the rest |
+| `and(...)`, `or(...)`, `not($filter)` | `AND`, `OR`, `NOT` | All, any, or none of the filters |
+
+`null` is not a value. To match a missing attribute, use `Filter::notExists()`.
+
+The comparisons take `Filter::size()` in place of the field, and `Filter::field()` or `Filter::size()` in place of a
+value. Both sides have to be stored as the same type:
+
+```php
+Filter::lessThan(Filter::size('tags'), 10);                     // fewer than 10 tags
+Filter::greaterThan('updatedAt', Filter::field('createdAt'));   // changed after it was created
+```
+
+`Filter::and()` and `Filter::or()` leave out a `null`. That makes them suitable for criteria from a search form, where
+a criterion that is not given is `null`:
+
+```php
+// $criteria holds what the search form submitted
+$result = $this->client->search(new QueryInput(
+    OrderEntity::class,
+    Filter::equals('customerId', 'c-42'),
+    filter: Filter::and(
+        $criteria->minTotalCents !== null ? Filter::greaterThanOrEquals('totalCents', $criteria->minTotalCents) : null,
+        Filter::containsAny('tags', $criteria->tags), // no tags check nothing
+    ),
+));
+```
+
+The filters that `and()` and `or()` return have a `with()`, to add criteria to a filter built elsewhere. It leaves out
+a `null` as well, and returns a new filter. The original filter stays unchanged.
+
+### How it works
+
+- The prefix of `beginsWith()` and the substring of `contains()` on a string are not values of the field. They are
+  part of the stored string, so `Filter::beginsWith('id', '0190')` works on a `Uuid` field, and `contains()` can
+  search a field stored as JSON.
+- The bundle checks what a filter does with a field against the type the field is stored as. Where DynamoDB would
+  reject the filter or never match it, the bundle throws before the request. Examples are `size()` of a number,
+  `beginsWith()` on a list, `contains()` on a map, an ordered comparison of a list, and two operands of different
+  types. A field whose serializer declares no type is left to DynamoDB, see
+  [A field type of your own](extending.md#a-field-type-of-your-own).
+- A comparison with a missing attribute is false, and its negation is true.
+
+### Pitfalls
+
+- A criterion without values checks nothing and drops out. As a search filter, `Filter::equalsAny('id', [])` then
+  matches every entity, not none. The same holds for `containsAny()` and `containsAll()` without values, and for an
+  `and()` or `or()` whose criteria are all `null`. As a key condition or a write condition, the bundle refuses such a
+  filter instead.
+- A negation matches entities that lack the attribute. `Filter::notEquals('status', …)` matches entities without a
+  status, and `Filter::notEquals(Filter::size('tags'), 0)` matches entities without tags, which `isNotEmpty()` leaves
+  out.
+- A prefix or substring has to match the stored form. An enum is stored by its value. A JSON field escapes slashes
+  and non-ASCII characters, so a `contains()` of `'ü'` never matches a stored `ü`.
+- DynamoDB limits `equalsAny()` to 100 values, and an expression to 4 KB and 300 operators. `containsAny()` and
+  `containsAll()` expand to one `contains()` per value, so they reach those limits sooner, at around 120 values on a
+  short field name. A filter past the limits fails at DynamoDB.
 
 ## Putting and deleting
 
@@ -292,11 +419,24 @@ $this->client->delete(new DeleteInput($order));
 $this->client->delete(new DeleteInput(new Key(OrderEntity::class, 'c-42', 'o-1002')));
 ```
 
-- A put creates the item or replaces it entirely. Fields that are `null` are left out of the item.
-- An uninitialized required field fails the put with `FieldMissingSerializedValueException`
-  before anything is sent to DynamoDB.
-- A normalizer can generate values during a put, such as an ID or a timestamp. These are written back to the
+A put writes the entity as a whole: it creates the row, or replaces the stored row entirely. Every field that is
+neither nullable nor has a default has to be set before the put. A delete takes the entity or its `Key`.
+
+`put()` and `delete()` write one entity each. To write many, change only some fields, add conditions or write
+atomically, see [Updates, conditions and transactions](writes.md).
+
+### How it works
+
+- Fields that are `null` are left out of the row.
+- A normalizer can generate values during a put, such as an ID or a timestamp. The bundle writes them back to the
   entity afterwards. See [A normalizer](extending.md#a-normalizer).
-- Deleting an item that does not exist is not an error.
-- `put()` and `delete()` write one item each. To write many, change only some fields, add conditions or write
-  atomically, see [Updates, conditions and transactions](writes.md).
+- Deleting an entity that doesn't exist is not an error.
+
+### Pitfalls
+
+- A put erases every attribute of the row that the entity doesn't declare. The bundle skips such an attribute when it
+  reads the row, and the next put leaves it out. During a rolling deploy, an older instance that reads and puts an
+  entity erases the fields a newer version added.
+- Two writers that each read an entity, change it and put it overwrite each other's changes. Use an
+  [update](writes.md#partial-updates), which writes only the fields it names, or a
+  [condition](writes.md#conditional-writes).

@@ -1,6 +1,7 @@
 # Updates, conditions and transactions
 
 - [Updates, conditions and transactions](#updates-conditions-and-transactions)
+  - [Choosing a write](#choosing-a-write)
   - [Partial updates](#partial-updates)
   - [Nested updates](#nested-updates)
   - [Update expressions](#update-expressions)
@@ -9,12 +10,24 @@
   - [Batches](#batches)
   - [Transactions](#transactions)
 
-These snippets build on the `OrderEntity` and the injected `Client` from [Basics](basics.md).
+These snippets build on the `OrderEntity` and the injected `Client` from [Basics](basics.md). The batch and
+transaction snippets also use a `ReservationEntity`, keyed by the order ID alone. [Exceptions](exceptions.md) lists
+what each write can throw.
+
+## Choosing a write
+
+| Method | Writes | All or nothing | Takes a condition |
+|---|---|---|---|
+| `put()` | One whole entity, creating or replacing its row. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
+| `update()` | Some fields of one entity that is already stored | Yes | Yes |
+| `delete()` | Removes one entity. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
+| `batchWrite()` | Many puts and deletes | No | No |
+| `transactWrite()` | Puts, updates and deletes of several entities | Up to 100 operations | Yes |
 
 ## Partial updates
 
-A put replaces the whole item. An `UpdateInput` writes only the fields it names, so it doesn't need the rest of
-the item and doesn't overwrite concurrent changes to other fields.
+A put replaces the whole row. An `UpdateInput` writes only the fields it names. It doesn't need the rest of the entity,
+and it doesn't overwrite concurrent changes to other fields.
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
@@ -26,17 +39,23 @@ $this->client->update(new UpdateInput(
     ['status' => OrderStatus::Paid, 'note' => null],
 ));
 
-// By entity: its key addresses the item, and the entity is updated as well
+// By entity: its key addresses the row, and the entity is updated as well
 $this->client->update(new UpdateInput($order, ['status' => OrderStatus::Paid]));
 ```
 
-- `null` removes the attribute. Only nullable fields accept `null`.
-- A field name the entity does not have fails with `UnknownFieldException`.
-- Unlike DynamoDB's `UpdateItem`, an update never creates a row. If no row has the key, the update fails the same way a failed [condition](#conditional-writes) does. Use a put to create a row.
+The fields are an array keyed by field name. `null` removes the field's attribute from the row, so only a nullable
+field accepts `null`.
+
+### Pitfalls
+
+- An update never creates a row, unlike DynamoDB's `UpdateItem`. If no row has the key, the update fails the same
+  way a failed [condition](#conditional-writes) does. Use a put to create the row.
+- An update cannot change the table's key fields, here `customerId` and `id`. DynamoDB rejects it. To move an entity to
+  another key, put it under the new key and delete the old one in the same [transaction](#transactions).
 
 ## Nested updates
 
-A path writes one map entry or one list element and leaves the rest of the attribute unchanged:
+A path writes one map entry or one list element. The rest of the attribute stays as it is.
 
 ```php
 $this->client->update(new UpdateInput($order, [
@@ -46,34 +65,34 @@ $this->client->update(new UpdateInput($order, [
 ]));
 ```
 
-- The attribute a path descends into has to exist. If the item has no `meta` map, DynamoDB rejects the whole
-  update. A put stores a map field whose default is `[]` as an empty map, so paths into it work on every item
-  written by a put.
-- A map key may contain any character except `.`, `[` and `]`.
-- A condition can check the entry it writes, for example `Filter::equals('meta.carrier', 'ups')`.
+A map key may contain any character except `.`, `[` and `]`. A [condition](#conditional-writes) can check the entry
+the update writes, for example `Filter::equals('meta.carrier', 'ups')`.
+
+### Pitfalls
+
+- The attribute a path descends into has to exist. If the row has no `meta` map, DynamoDB rejects the whole update.
+- A put stores a map field whose default is `[]` as an empty map, so paths into it work on every row a put wrote.
+  A row written before the field was added to the entity has no map, and a path into it fails there.
+- An index past the end of a list doesn't write at that index. DynamoDB appends the value to the list instead, so
+  `tags[9]` on a list of two elements writes `tags[2]`.
+- `null` removes a list element, and the elements after it move up by one. `['tags[1]' => null]` on
+  `['a', 'b', 'c']` leaves `['a', 'c']`.
 
 ## Update expressions
 
-An array of fields only sets and removes values you already know. `Update` builds an expression whose actions
-DynamoDB evaluates against the stored item, so two writers that count or append at the same time both land. Each
-method returns a whole expression, and `Update::with()` combines several, as `Filter::and()` combines filters. A basic
-update sets the values you already know in one `setFields()`, next to the actions:
+An array of fields sets and removes values you already know. `Update` adds actions that DynamoDB evaluates against
+the stored row, such as counting or appending. When two writers count or append at the same time, both changes land.
+
+Each `Update` method returns a whole expression, so a single action needs nothing else:
 
 ```php
 use Shopware\DynamodbDalBundle\Expression\Update;
 
-$this->client->update(new UpdateInput(
-    $order,
-    // same as Update::setFields(...)
-    ['status' => OrderStatus::Paid, 'meta.channel' => 'web'],
-));
-
-// A single one needs no with()
 $this->client->update(new UpdateInput($order, Update::increment('totalCents', 499)));
 ```
 
-A complex one names each path on its own. `set()` and `remove()` do what `setFields()` does for one path, and
-`setIfNotExists()` writes a value only where none is stored yet:
+`Update::with()` combines several expressions, as `Filter::and()` combines filters. `set()` and `remove()` each write
+one path, as an array of fields does, so they can be combined with actions:
 
 ```php
 $this->client->update(new UpdateInput(
@@ -90,48 +109,63 @@ $this->client->update(new UpdateInput(
 
 | Method | DynamoDB | Writes |
 |---|---|---|
-| `set($path, $value)`, `remove($path)`, `setFields([...])` | `SET #p = :v`, `REMOVE #p` | The value, or removes it for `null`, like an array of fields |
-| `setIfNotExists($path, $value)` | `SET #p = if_not_exists(#p, :v)` | The value, unless the path holds one already. `null` writes nothing |
+| `set($path, $value)`, `remove($path)`, `setFields([...])` | `SET #p = :v`, `REMOVE #p` | The value, or removes the attribute for `null`, like an array of fields |
+| `setIfNotExists($path, $value)` | `SET #p = if_not_exists(#p, :v)` | The value, unless the path already holds one. `null` writes nothing |
 | `increment($path, $by = 1)`, `decrement($path, $by = 1)` | `ADD #p :by` | The stored number plus or minus the step. A missing number counts as 0 |
-| `append($path, [...])`, `prepend($path, [...])` | `SET #p = list_append(…)` | The stored list with the values at its end or start. A missing list counts as empty. No values write nothing |
+| `append($path, [...])`, `prepend($path, [...])` | `SET #p = list_append(…)` | The stored list with the values added at its end or start. A missing list counts as empty. No values write nothing |
 | `addToSet($path, $elements)` | `ADD #p :v` | The stored set with the elements added. A missing set is created |
 | `removeFromSet($path, $elements)` | `DELETE #p :v` | The stored set without the elements |
-| `with(...)` | | Everything the expressions and actions it combines write |
+| `with(...)` | | Everything the combined expressions and actions write |
 
-- `with()` takes expressions and [actions of your own](extending.md#an-update-action-of-your-own), nested as deep as
-  you like. A path set by several takes the last value.
-- An expression's own `with()` extends it into a new one, e.g. `$update->with(Update::remove('note'))`, and
-  leaves it as it is.
-- An array of fields given to `UpdateInput` is shorthand for `Update::setFields([...])`.
-- Every path may address a map entry or list element, as `meta.channel` does above. The attribute it descends into
-  has to exist, as for [nested updates](#nested-updates).
-- Operands go through the field's serializer, so `increment()` on an `int` field refuses a step of `0.5`. The
-  bundle has no set type of its own, so `addToSet()` and `removeFromSet()` take a value of a set type that a
-  [field serializer of yours](extending.md#a-field-type-of-your-own) stores as one.
-- The entity's normalizer sees the fields that are set or removed, as it does for a put. In the same call it sees
-  the value of a `setIfNotExists()` and the elements of an `append()` or `prepend()` under their path, as if they
-  were set, and whatever it leaves there is what the action writes. It sees the value offered, not the one
-  DynamoDB keeps, and never the operand of another action: a step to count by, or elements to add to or remove
-  from a set, are no value of the field.
-- An update that has nothing to write throws `UpdateEmptyException` before any request is sent.
-- A path given two values, as a field and the value of a `setIfNotExists()` or `append()`, or as the values of two
-  of them, throws `UpdateDuplicatePathException` before any request is sent. The normalizer takes one value per
-  path, so one of them would be lost.
-- DynamoDB rejects any other update whose paths overlap, such as `set('totalCents', 0)` together with
-  `increment('totalCents')`, or `increment('totalCents')` twice.
+An array of fields given to `UpdateInput` is shorthand for `Update::setFields([...])`. Anything else DynamoDB's update
+syntax allows can be [an action of your own](extending.md#an-update-action-of-your-own).
 
-Anything else DynamoDB's update syntax allows can be [an action of your own](extending.md#an-update-action-of-your-own).
+`with()` takes such actions too, and expressions nested as deep as you like. If several `set()` or `setFields()`
+calls name the same path, the last value wins. An expression's own `with()` returns a new expression with more added,
+such as `$update->with(Update::remove('note'))`. The original expression stays unchanged.
+
+Every path may address a map entry or a list element, as `meta.channel` does above. The rules of
+[nested updates](#nested-updates) apply.
+
+The bundle has no set type of its own. `addToSet()` and `removeFromSet()` take a value of a set type that a
+[field serializer of yours](extending.md#a-field-type-of-your-own) stores as a DynamoDB set.
+
+Each path can take only one value per update. The bundle refuses, before sending, an update that gives one path two
+values, such as a field and a `setIfNotExists()` for the same path. It also refuses an update that has nothing to
+write.
+
+### How it works
+
+- Every operand goes through the field's serializer, like a value of the field. An `increment()` on an `int` field
+  therefore refuses a step of `0.5`.
+- The entity's [normalizer](extending.md#a-normalizer) sees what the update stores as given, each under its path: the
+  fields it sets or removes, the value of a `setIfNotExists()`, and the elements of an `append()` or `prepend()`.
+  Whatever the normalizer leaves there is what the update writes.
+- The normalizer never sees the step of an `increment()` or the elements of a set, because they are not values of
+  the field.
+- `removeFromSet()` of a set's last elements removes the attribute, because DynamoDB stores no empty sets.
+
+### Pitfalls
+
+- The bundle only refuses a path that is given two values. DynamoDB rejects every other overlap of paths in one
+  update, for example:
+  - `set('totalCents', 0)` together with `increment('totalCents')`
+  - `increment('totalCents')` twice
+  - `['meta' => [], 'meta.carrier' => 'dhl']`
+- The normalizer sees the value that `setIfNotExists()` offers, not the value DynamoDB keeps. If the path already
+  holds a value, the stored value stays, even though the normalizer saw the new one.
+- DynamoDB rejects `addToSet()` with an empty set.
 
 ## Keeping the entity in sync
 
-When an `UpdateInput` addresses an entity rather than a `Key`, its `refresh` argument, a `Refresh` case, controls
-what happens to that entity:
+When an `UpdateInput` addresses an entity rather than a `Key`, its `refresh` argument decides how the entity takes on
+what the update wrote:
 
 | `refresh` | Single update | Update in a transaction |
 |---|---|---|
-| `Refresh::Full` (default) | The entity gets the whole stored item back from the update (`ReturnValues=ALL_NEW`) | The written fields are applied to the entity. If a written field is a nested path, or the update has an action, the item is read back with a strongly consistent read |
-| `Refresh::WithoutReadBack` | Same as `Refresh::Full` | The fields written as a whole are applied to the entity; nested paths and actions are not |
-| `Refresh::None` | The entity is left untouched | The entity is left untouched |
+| `Refresh::Full` (default) | The entity takes the whole stored row | The entity takes the written fields. If the update writes a nested path or has an action, the bundle reads the entity back |
+| `Refresh::WithoutReadBack` | Same as `Refresh::Full` | The entity takes the fields written as a whole. Nested paths and actions are not applied |
+| `Refresh::None` | The entity stays as it is | The entity stays as it is |
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
@@ -139,11 +173,31 @@ use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 $this->client->update(new UpdateInput($order, Update::increment('totalCents', 499), refresh: Refresh::None));
 ```
 
+In a transaction, use `Refresh::WithoutReadBack` to save the read when the entity doesn't need the values DynamoDB
+computes. Use `Refresh::None` when the code doesn't use the entity after the write.
+
+### How it works
+
+- A single update asks DynamoDB to return the stored row (`ReturnValues=ALL_NEW`). That costs no extra read, so
+  `Refresh::Full` and `Refresh::WithoutReadBack` behave the same.
+- A transaction returns no rows. The bundle applies the fields it wrote to the entity itself, including the fields
+  the normalizer added.
+- DynamoDB computes the result of a nested path or an action, so the bundle cannot know it. `Refresh::Full` reads the
+  entity back with a strongly consistent read after the transaction.
+
+### Pitfalls
+
+- With `Refresh::WithoutReadBack`, an entity updated in a transaction keeps its old values for nested paths and
+  actions. After `Update::increment('totalCents', 499)`, `$order->totalCents` still holds the old total.
+- The entity is brought up to date after DynamoDB has stored the write. If the stored row doesn't deserialize, for
+  example because it lacks a field that has since become required, the call throws although the update is stored.
+  Retrying it repeats the write, so an `increment()` counts twice. `Refresh::None` skips that step.
+
 ## Conditional writes
 
-Every write input takes a condition, built with the same `Filter` as a search. DynamoDB checks the condition
-against the stored item and refuses the write if it doesn't hold. An update always checks that the item exists,
-and its own condition is added to that check.
+Every write input takes a condition, built with the same `Filter` as a search. DynamoDB checks the condition against
+the stored row and refuses the write if it doesn't hold. An update always checks that the row exists, and adds its
+own condition to that check.
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
@@ -164,11 +218,8 @@ $this->client->update(new UpdateInput(
 $this->client->delete(new DeleteInput($order, Filter::equals('status', OrderStatus::Cancelled)));
 ```
 
-- A write whose condition fails throws AsyncAws's `ConditionalCheckFailedException`. In a
-  [transaction](#transactions), it cancels the whole transaction instead.
-- A condition that checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny()` without values,
-  throws `ConditionEmptyException` before any request is sent. Sent as it is, it would let the write through
-  unconditionally. To write without a condition, pass none.
+A write whose condition fails throws AsyncAws's `ConditionalCheckFailedException`. In a [transaction](#transactions),
+a failed condition cancels the whole transaction instead.
 
 For optimistic locking, add a version field to the entity and require the version you read:
 
@@ -191,10 +242,20 @@ try {
 }
 ```
 
+### Pitfalls
+
+- Where no row is stored, DynamoDB checks a put's or a delete's condition against a row without attributes. A
+  comparison is then false, and its negation true. The delete of a cancelled order above therefore throws for an
+  order that doesn't exist, although a delete without a condition would not.
+- A condition built from optional criteria can end up checking nothing, such as a `Filter::and()` whose criteria are
+  all `null`. As a search filter, that matches everything. As a write condition, the bundle refuses it before
+  sending, because DynamoDB would apply the write unconditionally. To write without a condition, pass none.
+
 ## Batches
 
-`batchWrite()` writes many puts and deletes, across entity classes, with `BatchWriteItem`. A `BatchWriteInput` takes
-the entities to put, and the keys or entities to delete:
+`batchWrite()` writes many puts and deletes, across entity classes, with `BatchWriteItem`. A batch cannot be
+conditional, so a `BatchWriteInput` takes entities and keys rather than inputs with a condition: the entities to put,
+and the keys or entities to delete.
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
@@ -207,14 +268,25 @@ $this->client->batchWrite(
 );
 ```
 
-- `withPut()` and `withDelete()` return the batch with more entities or keys added, to build one up.
-- A batch is sent 25 operations per request, however many entity classes they span. Operations DynamoDB leaves
-  unprocessed are sent again.
-- A batch is not atomic: a failed request leaves the requests before it written.
-- A batch cannot be conditional, so it takes entities and keys rather than inputs with a condition. For
-  conditions, or to write atomically, use a [transaction](#transactions).
-- DynamoDB refuses a batch that writes the same item twice.
-- After the batch succeeds, puts are applied back to their entities, as for a single put.
+`withPut()` and `withDelete()` return a new batch with more entities or keys added, to build one up. For conditions,
+or to write all or nothing, use a [transaction](#transactions).
+
+### How it works
+
+- The bundle sends every put before every delete, whatever order they were added in.
+- It sends 25 operations per request, however many entity classes they span. It sends the operations that DynamoDB
+  leaves unprocessed again.
+- After the batch succeeds, each put is applied back to its entity, as for a single put.
+
+### Pitfalls
+
+> [!WARNING]
+> A batch is not atomic. If a request fails, the requests before it stay written.
+
+- Don't write the same entity twice in one batch. If both operations land in the same request of 25, DynamoDB rejects
+  that request, after the requests before it were written. If they land in different requests, both go through and
+  the later one wins. An entity that is put and deleted therefore ends up deleted, although the PHP object takes the
+  values of the put.
 
 ## Transactions
 
@@ -232,15 +304,27 @@ $this->client->transactWrite(
 );
 ```
 
-- Operations are sent in the order they are given. `with()` returns the transaction with more operations added
-  after them, to build one up.
-- DynamoDB allows up to 100 operations per transaction. A larger input is split into several transactions of
-  100 operations, and each of those is atomic only on its own.
-- If a transaction is cancelled only because another transaction conflicted with it, it is retried with a
-  growing delay, for up to three attempts in total. Any other cancellation, such as a failed condition, is thrown as
-  `TransactionCanceledException`. Its `getCancellationReasons()` holds one reason per operation, in the order the
-  operations were given, and tells which one failed and why.
-- DynamoDB refuses a transaction that includes more than one operation on the same item.
+The operations are sent in the order they are given. `with()` returns a new transaction with more operations added
+after them, to build one up.
+
+A cancelled transaction throws `TransactionCanceledException`. Its `getCancellationReasons()` holds one reason per
+operation, in the order the operations were given. Each reason tells whether its operation failed, and why.
+
+### How it works
+
+- If DynamoDB cancels a transaction only because another transaction conflicted with it, the bundle retries it with a
+  growing delay, for up to three attempts in total. Any other cancellation, such as a failed condition, is thrown
+  right away.
+- After the transaction succeeds, puts and updates keyed by an entity are applied to their entities, as
+  [Keeping the entity in sync](#keeping-the-entity-in-sync) describes.
+
+### Pitfalls
+
+> [!WARNING]
+> DynamoDB allows up to 100 operations per transaction. The bundle splits a larger input into several transactions of
+> 100 operations, and each of them is atomic only on its own. If a later one fails, the earlier ones stay written,
+> but their entities keep their old values, because entities are brought up to date only after every transaction
+> succeeded.
+
+- DynamoDB refuses a transaction that includes more than one operation on the same entity.
 - A transaction costs twice the write capacity of the same writes sent on their own or in a batch.
-- After the transaction succeeds, puts and entity-keyed updates are applied to their entities, as described
-  above.
