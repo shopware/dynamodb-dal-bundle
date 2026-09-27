@@ -34,6 +34,12 @@ parameters:
             tooWideThrowType: true
 
     ignoreErrors:
+        # The profiler's decorators extend the reader and writer they decorate, and hand every call to the inner one
+        -
+            identifier: constructor.missingParentCall
+            paths:
+                - src/Profiler/TraceableReaderClient.php
+                - src/Profiler/TraceableWriterClient.php
         # @throws documents the API. The container build, the commands and the profiler are not API
         -
             identifier: missingType.checkedException

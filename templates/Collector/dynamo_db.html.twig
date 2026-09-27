@@ -1,10 +1,9 @@
 {% extends '@WebProfiler/Profiler/layout.html.twig' %}
 
-{% block toolbar %}
-    {% set dynamo_count = collector.totalDynamoCount %}
-    {% set total_time = collector.totalTime %}
+{% import _self as helper %}
 
-    {% if dynamo_count > 0 %}
+{% block toolbar %}
+    {% if collector.callCount > 0 or collector.requestCount > 0 %}
         {% set icon %}
             <span class="icon">
                 <svg xmlns="http://www.w3.org/2000/svg" data-icon-name="icon-tabler-database" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -14,34 +13,26 @@
                     <path d="M4 12v6a8 3 0 0 0 16 0v-6"/>
                 </svg>
             </span>
-            <span class="sf-toolbar-value">{{ dynamo_count }}</span>
+            <span class="sf-toolbar-value">{{ collector.callCount }}</span>
             <span class="sf-toolbar-info-piece-additional-detail">
                 <span class="sf-toolbar-label">in</span>
-                <span class="sf-toolbar-value">{{ '%0.2f'|format(total_time) }}</span>
+                <span class="sf-toolbar-value">{{ '%0.2f'|format(collector.duration) }}</span>
                 <span class="sf-toolbar-label">ms</span>
             </span>
         {% endset %}
 
         {% set text %}
             <div class="sf-toolbar-info-piece">
-                <b>DynamoDB calls</b>
-                <span>{{ dynamo_count }}</span>
+                <b>DAL calls</b>
+                <span>{{ collector.callCount }}</span>
             </div>
             <div class="sf-toolbar-info-piece">
-                <b>DynamoDB time</b>
-                <span>{{ '%0.2f'|format(collector.totalDynamoTime) }} ms</span>
+                <b>DynamoDB requests</b>
+                <span>{{ collector.tracingRequests ? collector.requestCount : 'not traced' }}</span>
             </div>
             <div class="sf-toolbar-info-piece">
-                <b>Serializer calls</b>
-                <span>{{ collector.totalSerializerCount }}</span>
-            </div>
-            <div class="sf-toolbar-info-piece">
-                <b>Serializer time</b>
-                <span>{{ '%0.2f'|format(collector.totalSerializerTime) }} ms</span>
-            </div>
-            <div class="sf-toolbar-info-piece">
-                <b>Total DAL time</b>
-                <span>{{ '%0.2f'|format(total_time) }} ms</span>
+                <b>DAL time</b>
+                <span>{{ '%0.2f'|format(collector.duration) }} ms</span>
             </div>
         {% endset %}
 
@@ -50,7 +41,7 @@
 {% endblock %}
 
 {% block menu %}
-    <span class="label {{ collector.totalDynamoCount == 0 ? 'disabled' }}">
+    <span class="label {{ collector.callCount == 0 and collector.requestCount == 0 ? 'disabled' }}">
         <span class="icon">
             <svg xmlns="http://www.w3.org/2000/svg" data-icon-name="icon-tabler-database" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -60,10 +51,10 @@
             </svg>
         </span>
         <strong>DynamoDB</strong>
-        {% if collector.totalDynamoCount > 0 %}
+        {% if collector.callCount > 0 %}
             <span class="count">
-                <span>{{ collector.totalDynamoCount }}</span>
-                <span>{{ '%0.0f'|format(collector.totalTime) }} ms</span>
+                <span>{{ collector.callCount }}</span>
+                <span>{{ '%0.0f'|format(collector.duration) }} ms</span>
             </span>
         {% endif %}
     </span>
@@ -95,170 +86,196 @@
         .dynamo-db-details[open] > summary::before {
             transform: rotate(90deg);
         }
-        .dynamo-db-op-row > td {
+        .dynamo-db-row > td {
             border-bottom: 0;
             padding-bottom: 0.25em;
         }
-        .dynamo-db-payload-row > td {
+        .dynamo-db-detail-row > td {
             border-top: 0;
             padding-top: 0;
+        }
+        .dynamo-db-muted {
+            opacity: 0.6;
         }
     </style>
 
     <h2>DynamoDB</h2>
 
-    {% if collector.totalDynamoCount == 0 %}
+    {% if not collector.tracingRequests %}
+        <div class="alert alert-warning">
+            DynamoDB requests are not traced. Route AsyncAws through an HTTP client named <code>aws.base-client</code> to see them.
+        </div>
+    {% endif %}
+
+    {% if collector.callCount == 0 and collector.requestCount == 0 %}
         <div class="empty">
-            <p>No DynamoDB operations were recorded for this request.</p>
+            <p>No DAL calls were made in this request.</p>
         </div>
     {% else %}
         <div class="metrics">
             <div class="metric">
-                <span class="value">{{ collector.totalDynamoCount }}</span>
-                <span class="label">DynamoDB ops</span>
+                <span class="value">{{ collector.callCount }}</span>
+                <span class="label">DAL calls</span>
             </div>
+            {% if collector.tracingRequests %}
+                <div class="metric">
+                    <span class="value">{{ collector.requestCount }}</span>
+                    <span class="label">DynamoDB requests</span>
+                </div>
+            {% endif %}
             <div class="metric">
-                <span class="value">{{ '%0.2f'|format(collector.totalDynamoTime) }} <span class="unit">ms</span></span>
-                <span class="label">DynamoDB time</span>
-            </div>
-            <div class="metric">
-                <span class="value">{{ collector.totalSerializerCount }}</span>
-                <span class="label">Serializer calls</span>
-            </div>
-            <div class="metric">
-                <span class="value">{{ '%0.2f'|format(collector.totalSerializerTime) }} <span class="unit">ms</span></span>
-                <span class="label">Serializer time</span>
-            </div>
-            <div class="metric">
-                <span class="value">{{ '%0.2f'|format(collector.totalTime) }} <span class="unit">ms</span></span>
-                <span class="label">Total DAL time</span>
+                <span class="value">{{ '%0.2f'|format(collector.duration) }} <span class="unit">ms</span></span>
+                <span class="label">DAL time</span>
             </div>
         </div>
 
-        <h3>Per caller</h3>
         <p class="help">
-            Total time per method that called into the DAL — DynamoDB API time plus serializer time spent inside the same method.
+            DAL time is the wall time spent inside the DAL: compiling, serializing, AsyncAws and the network.
+            A key read or search counts while it fetches and converts its items, not while the application handles them.
+            The first call of a request also opens the connection to DynamoDB.
         </p>
+
+        <h3>Per caller</h3>
         <table>
             <thead>
                 <tr>
                     <th>Caller</th>
-                    <th class="num">DynamoDB calls</th>
-                    <th class="num">DynamoDB time</th>
-                    <th class="num">Serializer calls</th>
-                    <th class="num">Serializer time</th>
-                    <th class="num">Total time</th>
+                    <th class="num">DAL calls</th>
+                    {% if collector.tracingRequests %}
+                        <th class="num">DynamoDB requests</th>
+                    {% endif %}
+                    <th class="num">DAL time</th>
                 </tr>
             </thead>
             <tbody>
-                {% for stats in collector.byCaller %}
-                    {% set caller_class = stats.caller_class ?? 'unknown' %}
-                    {% set caller_method = stats.caller_method ?? 'unknown' %}
+                {% for caller in collector.byCaller %}
                     <tr>
-                        <td>
-                            <code title="{{ caller_class }}">{{ caller_class|split('\\')|last }}::{{ caller_method }}</code>
-                        </td>
-                        <td class="num">{{ stats.dynamo_count|default(0) }}</td>
-                        <td class="num">{{ '%0.2f'|format(stats.dynamo_time|default(0)) }} ms</td>
-                        <td class="num">{{ stats.serializer_count|default(0) }}</td>
-                        <td class="num">{{ '%0.2f'|format(stats.serializer_time|default(0)) }} ms</td>
-                        <td class="num"><strong>{{ '%0.2f'|format(stats.total_time) }} ms</strong></td>
+                        <td>{{ helper.caller(caller) }}</td>
+                        <td class="num">{{ caller.call_count }}</td>
+                        {% if collector.tracingRequests %}
+                            <td class="num">{{ caller.request_count }}</td>
+                        {% endif %}
+                        <td class="num"><strong>{{ '%0.2f'|format(caller.duration_ms) }} ms</strong></td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
 
-        <h3>DynamoDB operations</h3>
+        <h3>DAL calls</h3>
+        {% set columns = collector.tracingRequests ? 5 : 4 %}
         <table>
             <thead>
                 <tr>
                     <th>#</th>
-                    <th>Operation</th>
-                    <th>Table</th>
-                    <th>Index</th>
-                    <th class="num">Items</th>
-                    <th class="num">Duration</th>
+                    <th>Call</th>
+                    {% if collector.tracingRequests %}
+                        <th class="num">Requests</th>
+                    {% endif %}
+                    <th class="num">Time</th>
                     <th>Caller</th>
                 </tr>
             </thead>
             <tbody>
-                {% for op in collector.dynamoOperations %}
-                    <tr class="dynamo-db-op-row">
+                {% for call in collector.calls %}
+                    <tr class="dynamo-db-row">
                         <td>{{ loop.index }}</td>
-                        <td><strong>{{ op.operation }}</strong></td>
-                        <td><code>{{ op.table ?? '—' }}</code></td>
-                        <td>{{ op.index ?? '—' }}</td>
-                        <td class="num">{{ op.item_count is null ? '—' : op.item_count }}</td>
-                        <td class="num">{{ '%0.2f'|format(op.duration_ms) }} ms</td>
                         <td>
-                            {% if op.caller_class %}
-                                <code title="{{ op.caller_class }}">{{ op.caller_class|split('\\')|last }}::{{ op.caller_method }}</code>
-                                {% if op.caller_file %}
-                                    <br>
-                                    <small>{{ op.caller_file|file_link(op.caller_line) }}:{{ op.caller_line }}</small>
-                                {% endif %}
-                            {% else %}
-                                <em>unknown</em>
+                            <strong>{{ call.method }}</strong>
+                            <span class="dynamo-db-muted" title="{{ call.entities|join(', ') }}">{{ call.entities|map(entity => entity|split('\\')|last)|join(', ') }}</span>
+                        </td>
+                        {% if collector.tracingRequests %}
+                            <td class="num">{{ call.requests|length }}</td>
+                        {% endif %}
+                        <td class="num">{{ '%0.2f'|format(call.duration_ms) }} ms</td>
+                        <td>
+                            {{ helper.caller(call) }}
+                            {% if call.caller_file %}
+                                <br>
+                                <small>{{ call.caller_file|file_link(call.caller_line) }}:{{ call.caller_line }}</small>
                             {% endif %}
                         </td>
                     </tr>
-                    {% if op.error %}
-                        <tr class="dynamo-db-payload-row">
-                            <td colspan="7" class="status-error">
-                                <strong>Error:</strong> {{ op.error }}
+                    {% if call.failure %}
+                        <tr class="dynamo-db-detail-row">
+                            <td colspan="{{ columns }}" class="status-error">
+                                <strong title="{{ call.failure.class }}">{{ call.failure.class|split('\\')|last }}:</strong> {{ call.failure.message }}
                             </td>
                         </tr>
                     {% endif %}
-                    <tr class="dynamo-db-payload-row">
-                        <td colspan="7">
-                            <details class="dynamo-db-details">
-                                <summary>Request payload</summary>
-                                {{ profiler_dump(op.request, maxDepth=4) }}
-                            </details>
-                        </td>
-                    </tr>
+                    {% if call.requests is not empty %}
+                        <tr class="dynamo-db-detail-row">
+                            <td colspan="{{ columns }}">
+                                <details class="dynamo-db-details">
+                                    <summary>{{ call.requests|length }} DynamoDB {{ call.requests|length == 1 ? 'request' : 'requests' }}</summary>
+                                    {{ helper.requests(call.requests) }}
+                                </details>
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
 
-        {% if collector.serializerOperations|length > 0 %}
-            <h3>Serializer calls</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Operation</th>
-                        <th>Entity</th>
-                        <th class="num">Duration</th>
-                        <th>Caller</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for op in collector.serializerOperations %}
-                        <tr>
-                            <td>{{ loop.index }}</td>
-                            <td>
-                                {{ op.operation }}
-                                {% if op.normalizer_operation is defined %}
-                                    <span style="opacity: 0.6;">({{ op.normalizer_operation }})</span>
-                                {% endif %}
-                                {% if op.operation == 'deserialize' %}
-                                    <span title="Includes AsyncAws response decoding (json_decode + AttributeValue object construction)" style="cursor: help; opacity: 0.6;">ⓘ</span>
-                                {% endif %}
-                            </td>
-                            <td><code title="{{ op.entity_class }}">{{ op.entity_name }}</code></td>
-                            <td class="num">{{ '%0.2f'|format(op.duration_ms) }} ms</td>
-                            <td>
-                                {% if op.caller_class %}
-                                    <code title="{{ op.caller_class }}">{{ op.caller_class|split('\\')|last }}::{{ op.caller_method }}</code>
-                                {% else %}
-                                    <em>unknown</em>
-                                {% endif %}
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        {% if collector.outsideRequests is not empty %}
+            <h3>DynamoDB requests outside the DAL</h3>
+            <p class="help">Requests the application sent through AsyncAws directly. Their time is not DAL time.</p>
+            {{ helper.requests(collector.outsideRequests) }}
         {% endif %}
     {% endif %}
 {% endblock %}
+
+{% macro caller(row) %}
+    {% if row.caller_class %}
+        <code title="{{ row.caller_class }}">{{ row.caller_class|split('\\')|last }}::{{ row.caller_method }}</code>
+    {% elseif row.caller_method %}
+        <code>{{ row.caller_method }}()</code>
+    {% else %}
+        <em>unknown</em>
+    {% endif %}
+{% endmacro %}
+
+{% macro requests(requests) %}
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Operation</th>
+                <th>Table</th>
+                <th>Index</th>
+                <th class="num">Items</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for request in requests %}
+                <tr class="dynamo-db-row">
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ request.operation }}</strong></td>
+                    <td><code>{{ request.table ?? '—' }}</code></td>
+                    <td>{{ request.index ?? '—' }}</td>
+                    <td class="num">
+                        {% if request.counted is not null %}
+                            {{ request.counted }} <span class="dynamo-db-muted">counted</span>
+                        {% else %}
+                            {{ request.items ?? '—' }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if request.error %}
+                    <tr class="dynamo-db-detail-row">
+                        <td colspan="5" class="status-error">
+                            <strong>Error:</strong> {{ request.error }}
+                        </td>
+                    </tr>
+                {% endif %}
+                <tr class="dynamo-db-detail-row">
+                    <td colspan="5">
+                        <details class="dynamo-db-details">
+                            <summary>Request payload</summary>
+                            {{ profiler_dump(request.payload, maxDepth=4) }}
+                        </details>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endmacro %}

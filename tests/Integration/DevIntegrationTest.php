@@ -4,10 +4,13 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
-use Shopware\DynamodbDalBundle\Profiler\CallerStampingHttpClient;
+use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Profiler\CallStampingHttpClient;
+use Shopware\DynamodbDalBundle\Profiler\DalCallTracer;
 use Shopware\DynamodbDalBundle\Profiler\DynamoDbDataCollector;
-use Shopware\DynamodbDalBundle\Profiler\TraceableSerializer;
-use Shopware\DynamodbDalBundle\Serializer\Serializer;
+use Shopware\DynamodbDalBundle\Profiler\TraceableReaderClient;
+use Shopware\DynamodbDalBundle\Profiler\TraceableWriterClient;
 use Shopware\DynamodbDalBundle\Tests\Fixtures\TestKernel;
 use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 use Twig\Environment;
@@ -49,14 +52,16 @@ class DevIntegrationTest extends TestCase
         static::assertNotNull($container);
 
         static::assertInstanceOf(DynamoDbDataCollector::class, $container->get('test.' . DynamoDbDataCollector::class));
-        static::assertInstanceOf(CallerStampingHttpClient::class, $container->get('test.' . CallerStampingHttpClient::class));
-        static::assertInstanceOf(TraceableSerializer::class, $container->get('test.' . TraceableSerializer::class));
+        $tracer = $container->get('test.' . DalCallTracer::class);
+        static::assertInstanceOf(DalCallTracer::class, $tracer);
+        static::assertTrue($tracer->isTracingRequests());
 
-        // The decorator has to take the Serializer service id over, or nothing is traced.
-        static::assertInstanceOf(
-            TraceableSerializer::class,
-            $container->get('test.' . Serializer::class),
-        );
+        // The decorators have to take the reader and writer service ids over, or nothing is traced
+        static::assertInstanceOf(TraceableReaderClient::class, $container->get('test.' . ReaderClient::class));
+        static::assertInstanceOf(TraceableWriterClient::class, $container->get('test.' . WriterClient::class));
+
+        // The stamping client has to sit outside the traced one, or the stamps never reach the trace
+        static::assertInstanceOf(CallStampingHttpClient::class, $container->get('test.aws.base-client'));
     }
 
     public function testCollectorTemplateResolvesInsideTheBundle(): void

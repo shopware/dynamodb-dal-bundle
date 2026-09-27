@@ -7,18 +7,17 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 use Symfony\Contracts\HttpClient\ResponseStreamInterface;
 
 /**
- * Decorates the client AsyncAws reaches DynamoDB through, outside the TraceableHttpClient layer, to
- * stamp requests with the call site that entered the DAL. The traced options carry this through to
- * {@see DynamoDbDataCollector}, which can't otherwise recover the call stack at late-collect time.
+ * Decorates the client AsyncAws reaches DynamoDB through, outside the TraceableHttpClient layer, to stamp every
+ * DynamoDB request. The traced options carry the stamp, by which {@see DalCallTracer} files the request under the
+ * DAL call that sent it.
  *
  * @internal
- *
- * @codeCoverageIgnore
  */
-final class CallerStampingHttpClient implements HttpClientInterface
+final class CallStampingHttpClient implements HttpClientInterface
 {
     public function __construct(
         private HttpClientInterface $inner,
+        private readonly DalCallTracer $tracer,
     ) {
     }
 
@@ -28,13 +27,12 @@ final class CallerStampingHttpClient implements HttpClientInterface
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
         $headers = $options['headers'] ?? [];
-        if (is_iterable($headers) && str_starts_with(DynamoDbCall::target($headers) ?? '', 'DynamoDB_')) {
-            $caller = DynamoDbCall::caller();
-            if ($caller !== null) {
-                $extra = \is_array($options['extra'] ?? null) ? $options['extra'] : [];
-                $extra['dynamo_caller'] = $caller;
-                $options['extra'] = $extra;
-            }
+        $stamp = is_iterable($headers) && DynamoDbRequest::isDynamoDb($headers) ? $this->tracer->stamp() : null;
+
+        if ($stamp !== null) {
+            $extra = \is_array($options['extra'] ?? null) ? $options['extra'] : [];
+            $extra[DynamoDbRequest::STAMP] = $stamp;
+            $options['extra'] = $extra;
         }
 
         return $this->inner->request($method, $url, $options);
