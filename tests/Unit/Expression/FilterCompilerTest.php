@@ -6,6 +6,8 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
+use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
+use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\Filter\AndFilter;
 use Shopware\DynamodbDalBundle\Expression\Filter\BeginsWithFilter;
@@ -148,6 +150,42 @@ class FilterCompilerTest extends TestCase
         );
 
         static::assertSame('#autofilledId = :f_1_0_autofilledId AND #name = :f_1_1_name', $result->expression);
+    }
+
+    /**
+     * A filter of your own that joins clauses wraps itself, so its `OR` cannot bind to an update's check that its item
+     * exists. Standing alone, it goes out without the pair.
+     */
+    public function testAConditionOfYourOwnKeepsItsMeaningBesideAnother(): void
+    {
+        $custom = new class implements FilterInterface {
+            public function compile(ExpressionCompileContext $context): string
+            {
+                return "({$context->path('name')} = {$context->fieldValue('name', 'a')} OR attribute_exists({$context->path('required')}))";
+            }
+        };
+
+        $alone = $this->compiler->condition(NormalEntity::createDefinition(), $custom);
+        $beside = $this->compiler->condition(NormalEntity::createDefinition(), Filter::exists('autofilledId'), $custom);
+
+        static::assertSame('#name = :f_1_0_name OR attribute_exists(#required)', $alone->expression);
+        static::assertSame('attribute_exists(#autofilledId) AND (#name = :f_2_0_name OR attribute_exists(#required))', $beside->expression);
+    }
+
+    /**
+     * Only a pair that encloses the whole expression is dropped, not the first of two.
+     */
+    public function testParenthesesThatDoNotEncloseTheWholeFilterStay(): void
+    {
+        $result = $this->compiler->filter(NormalEntity::createDefinition(), Filter::or(
+            Filter::and(Filter::equals('name', 'a'), Filter::equals('required', 'b')),
+            Filter::and(Filter::equals('name', 'c'), Filter::equals('required', 'd')),
+        ));
+
+        static::assertSame(
+            '(#name = :f_1_0_name AND #required = :f_1_1_required) OR (#name = :f_1_2_name AND #required = :f_1_3_required)',
+            $result->expression,
+        );
     }
 
     /**

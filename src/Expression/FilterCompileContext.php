@@ -23,13 +23,6 @@ use Shopware\DynamodbDalBundle\Expression\Filter\SizeOperand;
 final class FilterCompileContext extends ExpressionCompileContext
 {
     /**
-     * Whether the filter just compiled joins clauses with `AND` or `OR`, so its parent wraps it in `(...)`, as in
-     * `a AND (b OR c)`. A filter sets this rather than wrapping itself, so that a filter or condition standing on its
-     * own is sent without parentheses.
-     */
-    public bool $isCompound = false;
-
-    /**
      * @internal
      *
      * @param IndexSchema|KeySchema|null $keyCondition - @internal the key a {@see KeyFilter} checks itself against, `null` outside a key condition

@@ -47,12 +47,13 @@ class FilterCompiler implements ResetInterface
             return new ExpressionCompiledResult();
         }
 
-        return new ExpressionCompiledResult($compiled, $context->names, $context->values);
+        return new ExpressionCompiledResult(self::unwrap($compiled), $context->names, $context->values);
     }
 
     /**
      * Compiles the conditions of a write, which have to check something, into one that holds where all of them hold,
-     * joined as `Filter::and()` joins its children.
+     * joined as `Filter::and()` joins its children. A condition that joins clauses comes in parentheses, so its `OR`
+     * cannot bind to a neighbour, such as an update's check that its item exists.
      *
      * Without a condition, a write would go through unconditionally, so each of them has to compile to something, and
      * none can hide behind another, such as a caller's condition behind an update's check that its item exists.
@@ -67,17 +68,15 @@ class FilterCompiler implements ResetInterface
 
         $fragments = [];
         foreach ($conditions as $filter) {
-            $context->isCompound = false;
             $fragment = $filter->compile($context);
             if ($fragment === null || trim($fragment) === '') {
                 throw new ConditionEmptyException($definition);
             }
 
-            // A lone condition needs no parentheses
-            $fragments[] = \count($conditions) > 1 && $context->isCompound ? "({$fragment})" : $fragment;
+            $fragments[] = $fragment;
         }
 
-        return new ExpressionCompiledResult(implode(' AND ', $fragments), $context->names, $context->values);
+        return new ExpressionCompiledResult(self::unwrap(implode(' AND ', $fragments)), $context->names, $context->values);
     }
 
     /**
@@ -93,12 +92,40 @@ class FilterCompiler implements ResetInterface
     {
         $context = $this->createContext($definition, $index ?? $definition->getKeySchema());
 
-        return new ExpressionCompiledResult($keyFilter->compile($context), $context->names, $context->values);
+        return new ExpressionCompiledResult(self::unwrap($keyFilter->compile($context)), $context->names, $context->values);
     }
 
     public function reset(): void
     {
         $this->sequence = 0;
+    }
+
+    /**
+     * Drops the parentheses that a filter joining clauses wraps itself in, where they enclose the whole expression.
+     * Sent on its own, it has nothing to be kept apart from, and DynamoDB may refuse a key condition in parentheses.
+     * Names and values are placeholders, so every parenthesis in an expression belongs to its structure.
+     */
+    private static function unwrap(string $expression): string
+    {
+        while (str_starts_with($expression, '(') && str_ends_with($expression, ')')) {
+            // The first parenthesis has to close at the very end, unlike the one of `(a) OR (b)`
+            $depth = 0;
+            for ($i = 0, $last = \strlen($expression) - 1; $i < $last; ++$i) {
+                $depth += match ($expression[$i]) {
+                    '(' => 1,
+                    ')' => -1,
+                    default => 0,
+                };
+
+                if ($depth === 0) {
+                    return $expression;
+                }
+            }
+
+            $expression = substr($expression, 1, -1);
+        }
+
+        return $expression;
     }
 
     /**

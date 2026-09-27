@@ -2,11 +2,22 @@
 
 - [Custom types, normalizers, filters and update actions](#custom-types-normalizers-filters-and-update-actions)
   - [A field type of your own](#a-field-type-of-your-own)
+    - [How it works](#how-it-works)
+    - [Pitfalls](#pitfalls)
   - [A `JsonSerializable` value object](#a-jsonserializable-value-object)
+    - [Pitfalls](#pitfalls-1)
   - [A normalizer](#a-normalizer)
+    - [How it works](#how-it-works-1)
+    - [Pitfalls](#pitfalls-2)
   - [A filter of your own](#a-filter-of-your-own)
+    - [How it works](#how-it-works-2)
+    - [Pitfalls](#pitfalls-3)
   - [An update action of your own](#an-update-action-of-your-own)
+    - [How it works](#how-it-works-3)
+    - [Pitfalls](#pitfalls-4)
   - [An update action the normalizer sees](#an-update-action-the-normalizer-sees)
+    - [How it works](#how-it-works-4)
+    - [Pitfalls](#pitfalls-5)
 
 The bundle has four extension points:
 
@@ -387,24 +398,33 @@ A filter can also compile one of the bundle's filters, which does the same:
 return Filter::lessThanOrEquals(Filter::size($this->fieldName), $this->max)->compile($context);
 ```
 
-`FilterCompileContext` extends `ExpressionCompileContext`, the context an update action gets, with `operand()`,
-`comparand()` and `isCompound`.
+`FilterCompileContext` extends `ExpressionCompileContext`, the context an update action gets, with `operand()` and
+`comparand()`.
 
 Return `null` to add nothing, for example for an optional criterion. Register no names or values in that case. If the
-fragment joins several clauses with `AND` or `OR`, set `$context->isCompound = true` after writing it.
+fragment joins several clauses with `AND` or `OR`, wrap it in parentheses, as `Filter::and()` and `Filter::or()` do:
+
+```php
+$status = $context->path('status');
+
+return "({$status} = {$context->fieldValue('status', $this->status)} OR attribute_not_exists({$status}))";
+```
 
 ### How it works
 
 - `path()` throws `UnknownFieldException` for a field the entity doesn't have, or for a path the field has no place
   for, such as an index into a map. It throws `AttributeTypeMismatchException` for a field stored as a type other than
   the ones named.
-- An enclosing `and()`, `or()` or `not()` wraps a compound fragment in parentheses, so the fragment keeps its meaning.
-  A fragment that stands on its own stays unwrapped.
+- The bundle drops the parentheses that enclose a whole filter, condition or key condition. A filter that stands on
+  its own goes out without them.
 
 ### Pitfalls
 
 - Build every placeholder through the context. `FieldDefinition::getExpressionAttributeName()` and
   `getExpressionValueName()` return placeholders that the request never defines, and DynamoDB rejects them.
+- A fragment that joins clauses without parentheses binds to what surrounds it. Next to an update's check that the row
+  exists, `a OR b` goes out as `attribute_exists(#id) AND a OR b`. DynamoDB reads that as
+  `(attribute_exists(#id) AND a) OR b`, so the update can create a row that did not exist.
 
 ## An update action of your own
 

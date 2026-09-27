@@ -32,25 +32,16 @@ final readonly class AndFilter implements FilterInterface
     {
         $compiled = [];
         foreach ($this->filters as $filter) {
-            $context->isCompound = false;
             $fragment = $filter->compile($context);
-            if ($fragment === null) {
-                continue;
+            if ($fragment !== null) {
+                $compiled[] = $fragment;
             }
-
-            if ($context->isCompound) {
-                $fragment = "({$fragment})";
-            }
-
-            $compiled[] = $fragment;
         }
-
-        $context->isCompound = \count($compiled) > 1;
 
         return match (\count($compiled)) {
             0 => null,
             1 => $compiled[0],
-            default => implode(' AND ', $compiled),
+            default => '(' . implode(' AND ', $compiled) . ')',
         };
     }
 }
