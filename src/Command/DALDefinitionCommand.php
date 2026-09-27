@@ -3,10 +3,9 @@
 namespace Shopware\DynamodbDalBundle\Command;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
-use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Interact;
@@ -233,10 +232,11 @@ readonly class DALDefinitionCommand
                 $field->hasDefaultValue() ? $this->describeValue($field->getDefaultValue()) : '-',
                 implode(', ', $keyRoles[$fieldName] ?? []) ?: '-',
                 $this->getShortClassName($field->getSerializer()::class),
+                $field->getAttributeType()->value ?? '-',
             ];
         }
 
-        $io->table(['field', 'type', 'nullable', 'default', 'key', 'serializer'], $rows);
+        $io->table(['field', 'type', 'nullable', 'default', 'key', 'serializer', 'stored as'], $rows);
     }
 
     /**
@@ -266,7 +266,7 @@ readonly class DALDefinitionCommand
     /**
      * Renders the compiled type of a field, recursing into the value definitions of map and list
      * fields. A {@see FieldDefinition} keeps only the PHP type — `array` for both a map and a list —
-     * so the container is named after the serializer the compiler picked for that level, which is the
+     * so the container is named after the type its serializer stores that level as, which is the
      * only place the `@var` shape survives.
      */
     private function describeType(FieldDefinition $field): string
@@ -279,10 +279,9 @@ readonly class DALDefinitionCommand
             return $type;
         }
 
-        $serializer = $field->getSerializer();
-        $container = match (true) {
-            $serializer instanceof ListFieldSerializer => 'list',
-            $serializer instanceof MapFieldSerializer => 'map',
+        $container = match ($field->getAttributeType()) {
+            AttributeType::List => 'list',
+            AttributeType::Map => 'map',
             default => $type,
         };
 

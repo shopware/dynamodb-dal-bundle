@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
@@ -52,6 +53,17 @@ abstract class AbstractFieldSerializer
      * @return ValueType
      */
     abstract public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed;
+
+    /**
+     * The DynamoDB type {@see serialize()} stores the field as, which expressions check against, such as a string
+     * for `begins_with()` or a list for `list_append()`. `null`, the default, leaves those checks to DynamoDB.
+     *
+     * @param FieldDefinition<AbstractEntity, TargetType> $definition
+     */
+    public function getAttributeType(FieldDefinition $definition): ?AttributeType
+    {
+        return null;
+    }
 
     /**
      * Where inside a collection a failure happened, as a document path DynamoDB addresses an element by:

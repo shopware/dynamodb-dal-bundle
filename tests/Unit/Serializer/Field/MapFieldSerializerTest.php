@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
@@ -335,6 +336,11 @@ class MapFieldSerializerTest extends TestCase
         $result = $this->serializer->deserialize($definition, $attribute);
 
         static::assertSame(['outer' => ['inner' => 'v'], 'other' => ['k' => 'x']], $result);
+    }
+
+    public function testDeclaresItStoresTheFieldAsAMap(): void
+    {
+        static::assertSame(AttributeType::Map, $this->serializer->getAttributeType($this->createMapDefinition()));
     }
 
     /**

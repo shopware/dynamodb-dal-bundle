@@ -190,30 +190,48 @@ $orders = $this->client->search(new QueryInput(
 
 - Values are PHP values, serialized by the field's serializer. `null` is refused with
   `NullOperandException`; to match a missing attribute, use `Filter::notExists()`.
-- `Filter` also provides `equalsAny` (DynamoDB's `IN`), `sizeEquals`, `or`, `not`, `notEquals`,
+- The prefix of `beginsWith()` and the substring `contains()` looks for in a string are a part of the stored
+  string, not values of the field, so `Filter::beginsWith('id', '0190')` works on a `Uuid` field, and
+  `Filter::contains('payload', 'needle')` searches a JSON-encoded field.
+- `Filter` also provides `equalsAny` (DynamoDB's `IN`), `containsAny`, `containsAll`, `or`, `not`, `notEquals`,
   `notEqualsAny`, `notContains` and `notExists`.
+- `Filter::isEmpty('tags')` matches a string, list, map or set that is empty or missing, whatever the entity reads
+  back as empty or `null`. `Filter::isNotEmpty('tags')` matches the rest.
+- A comparison with a missing attribute is false, and its negation true. `Filter::notEquals('status', …)` matches
+  items without a status, and `Filter::notEquals(Filter::size('tags'), 0)` items without tags, which
+  `isNotEmpty()` leaves out.
+- The comparisons take `Filter::size()` in place of the field, and `Filter::field()` or `Filter::size()` in place of
+  a value:
+
+  ```php
+  Filter::lessThan(Filter::size('tags'), 10);                     // fewer than 10 tags
+  Filter::greaterThan('updatedAt', Filter::field('createdAt'));   // changed since it was created
+  ```
+
+- A filter that DynamoDB would reject or never match throws before the request: `AttributeTypeMismatchException` for
+  `size()` of a number, `beginsWith()` on a list, `contains()` on a map, an ordering comparison of a list, or two
+  operands of different types, and `UnknownFieldException` for an index into a map or a name inside a list. A field
+  whose serializer declares no type is left to DynamoDB, see [A field type of your own](extending.md#a-field-type-of-your-own).
 - `consistentRead: true` only works on a base-table query. DynamoDB rejects it on a global secondary index.
 - A key condition that checks nothing, such as `Filter::equalsAny()` without values, throws
   `ConditionEmptyException` before the query is sent. As a `filter:`, it matches everything.
 
-`Filter::and()` without arguments matches everything, and `->with()` returns it with criteria added, leaving
-the filter it was called on as it is. That makes it suitable for criteria from a search form:
+`Filter::and()` and `Filter::or()` leave out a `null`, and without anything left they match everything. That makes
+them suitable for criteria from a search form, where a criterion that is not given is `null`:
 
 ```php
-$filter = Filter::and();
-if ($criteria->minTotalCents !== null) {
-    $filter = $filter->with(Filter::greaterThanOrEquals('totalCents', $criteria->minTotalCents));
-}
-if ($criteria->tag !== null) {
-    $filter = $filter->with(Filter::contains('tags', $criteria->tag));
-}
-
 $result = $this->client->search(new QueryInput(
     OrderEntity::class,
     Filter::equals('customerId', 'c-42'),
-    filter: $filter,
+    filter: Filter::and(
+        $criteria->minTotalCents !== null ? Filter::greaterThanOrEquals('totalCents', $criteria->minTotalCents) : null,
+        Filter::containsAny('tags', $criteria->tags), // no tags check nothing
+    ),
 ));
 ```
+
+`->with()` returns a filter with criteria added, `null` left out again, and leaves the filter it was called on as it
+is, to add to a filter built elsewhere.
 
 ## Scanning and counting
 

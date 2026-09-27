@@ -2,25 +2,28 @@
 
 namespace Shopware\DynamodbDalBundle\Expression;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
 use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
-use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\Contract\UpdateActionInterface;
+use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * What a filter or an update action compiles against, see {@see FilterInterface::compile()} and
- * {@see UpdateActionInterface::compile()}: it registers the paths and values an expression uses, and hands back the
- * placeholders to write in their place.
+ * What an update action compiles against, see {@see UpdateActionInterface::compile()}: it registers the paths and
+ * values an expression uses, and hands back the placeholders to write in their place.
+ * Filters get the {@see FilterCompileContext} subclass.
  */
 class ExpressionCompileContext
 {
     /**
-     * Collected by {@see value()} and {@see number()}; read by the compiler.
+     * Collected by {@see fieldValue()}, {@see elementValue()} and {@see literal()}; read by the compiler.
      *
      * @internal
      *
@@ -38,15 +41,6 @@ class ExpressionCompileContext
     public array $names = [];
 
     /**
-     * Whether the filter just compiled is a multi-clause boolean expression, as And/Or set it after `compile()`.
-     * A parent And/Or reads it to wrap that child in `(...)` for precedence, e.g. `a AND (b OR c)`, and the
-     * compiler to join a whole condition with another.
-     *
-     * Nothing wraps a whole expression, as DynamoDB may refuse a key condition in parentheses.
-     */
-    public bool $isCompound = false;
-
-    /**
      * @internal
      */
     public function __construct(
@@ -59,11 +53,16 @@ class ExpressionCompileContext
      * Registers the attribute names of the path, and returns the path as an expression spells it: `#settings.#currency`
      * for `settings.currency`. A name placeholder is derived from the name, so the same path always registers alike.
      *
+     * `$types` restricts the stored type, such as a list for `list_append()`.
+     * A field without a declared type always passes, see {@see AbstractFieldSerializer::getAttributeType()}.
+     *
      * @throws UnknownFieldException
+     * @throws AttributeTypeMismatchException
      */
-    public function path(string $fieldName): string
+    public function path(string $fieldName, AttributeType ...$types): string
     {
-        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
+        $path = FieldPath::parse($this->definition, $fieldName);
+        $this->assertType($fieldName, $path->definition->getAttributeType(), $types);
 
         $this->names = [...$this->names, ...$path->getExpressionAttributeNames()];
 
@@ -71,24 +70,68 @@ class ExpressionCompileContext
     }
 
     /**
+     * The definition the path ends on: the field, or the value definition of a nested path.
+     *
+     * @throws UnknownFieldException
+     */
+    public function fieldDefinition(string $fieldName): FieldDefinition
+    {
+        return FieldPath::parse($this->definition, $fieldName)->definition;
+    }
+
+    /**
      * Serializes the value with the (nested) field's serializer, and registers it under a unique `:{prefix}_{N}_{path}`
      * placeholder, which it returns.
-     *
-     * $useValueFieldDefinition is for DynamoDB functions that compare one collection element instead of the collection field itself.
      *
      * @throws UnknownFieldException
      * @throws NullOperandException
      * @throws DALException if the value does not serialize for the field
      */
-    public function value(string $fieldName, mixed $value, bool $useValueFieldDefinition = false): string
+    public function fieldValue(string $fieldName, mixed $value): string
     {
-        $path = FieldPath::tryParse($this->definition, $fieldName) ?? throw new UnknownFieldException($this->definition, $fieldName);
-        $field = $path->definition;
+        $path = FieldPath::parse($this->definition, $fieldName);
 
-        if ($useValueFieldDefinition) {
-            $field = $field->getValueFieldDefinition() ?? $field;
-        }
+        return $this->serialize($path, $path->definition, $value);
+    }
 
+    /**
+     * Like {@see fieldValue()}, but serializes the value as one element of the list or map field, such as the element
+     * `contains()` looks for. A field without a declared type passes, as in {@see path()}, and one without elements
+     * serializes the value as the field.
+     *
+     * @throws UnknownFieldException
+     * @throws AttributeTypeMismatchException for a field that is no list or map
+     * @throws NullOperandException
+     * @throws DALException if the value does not serialize for an element of the field
+     */
+    public function elementValue(string $fieldName, mixed $value): string
+    {
+        $path = FieldPath::parse($this->definition, $fieldName);
+        $this->assertType($fieldName, $path->definition->getAttributeType(), [AttributeType::List, AttributeType::Map]);
+
+        return $this->serialize($path, $path->definition->getValueFieldDefinition() ?? $path->definition, $value);
+    }
+
+    /**
+     * Registers the value as it is under a unique `:{prefix}_{N}` placeholder: a string as `S`, a number as `N`.
+     *
+     * For an operand that is not a value of a field, such as the prefix of `begins_with()` or the number a size is
+     * compared with.
+     */
+    public function literal(string|int|float $value): string
+    {
+        $placeholder = ":{$this->prefix}_" . \count($this->values);
+        $this->values[$placeholder] = AttributeValue::create(\is_string($value) ? ['S' => $value] : ['N' => (string) $value]);
+
+        return $placeholder;
+    }
+
+    /**
+     * @throws NullOperandException
+     * @throws DALException if the value does not serialize for the field
+     */
+    private function serialize(FieldPath $path, FieldDefinition $field, mixed $value): string
+    {
         if ($value === null) {
             throw new NullOperandException($field);
         }
@@ -110,16 +153,14 @@ class ExpressionCompileContext
     }
 
     /**
-     * Registers a raw number under a unique `:{prefix}_{N}` placeholder, bypassing the field serializer.
+     * @param array<AttributeType> $expected - none to accept any type
      *
-     * DynamoDB functions like `size()` evaluate to a number regardless of the compared attribute's
-     * own type (a map, list, string, …), so their operand cannot be serialized via that field.
+     * @throws AttributeTypeMismatchException
      */
-    public function number(int|float $value): string
+    private function assertType(string $field, ?AttributeType $actual, array $expected): void
     {
-        $placeholder = ":{$this->prefix}_" . \count($this->values);
-        $this->values[$placeholder] = AttributeValue::create(['N' => (string) $value]);
-
-        return $placeholder;
+        if ($actual !== null && $expected !== [] && !\in_array($actual, $expected, true)) {
+            throw new AttributeTypeMismatchException($this->definition, $field, $actual, array_values($expected));
+        }
     }
 }

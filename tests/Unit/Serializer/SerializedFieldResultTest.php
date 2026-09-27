@@ -42,9 +42,6 @@ class SerializedFieldResultTest extends TestCase
 
     private function parse(string $path): FieldPath
     {
-        $parsed = FieldPath::tryParse(MapDefinition::create(), $path);
-        static::assertNotNull($parsed);
-
-        return $parsed;
+        return FieldPath::parse(MapDefinition::create(), $path);
     }
 }

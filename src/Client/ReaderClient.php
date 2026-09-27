@@ -11,7 +11,7 @@ use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -37,7 +37,7 @@ class ReaderClient
     public function __construct(
         protected readonly DynamoDbClient $client,
         protected readonly Serializer $serializer,
-        protected readonly ExpressionCompiler $expressionCompiler,
+        protected readonly FilterCompiler $filterCompiler,
         protected readonly EntityDefinitionRegistry $definitionRegistry,
     ) {
     }
@@ -284,10 +284,10 @@ class ReaderClient
         $backward = $start instanceof Cursor && $start->backward;
         $exclusiveStartKey = $start instanceof Cursor ? $start->key : $start;
 
-        $filterResult = $search->filter !== null ? $this->expressionCompiler->compileFilter($definition, $search->filter) : new ExpressionCompiledResult();
+        $filterResult = $search->filter !== null ? $this->filterCompiler->filter($definition, $search->filter) : new ExpressionCompiledResult();
 
         if ($search instanceof QueryInput) {
-            $keyResult = $this->expressionCompiler->compileCondition($definition, $search->keyCondition);
+            $keyResult = $this->filterCompiler->condition($definition, $search->keyCondition);
             $filterResult = $filterResult->merge($keyResult);
 
             $input = new DynamoDbQueryInput();

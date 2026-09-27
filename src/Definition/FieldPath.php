@@ -2,6 +2,8 @@
 
 namespace Shopware\DynamodbDalBundle\Definition;
 
+use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+
 /**
  * A document path into an item — `name`, `settings.currency`, `entries[0].id`.
  *
@@ -32,13 +34,15 @@ final class FieldPath
     }
 
     /**
-     * Null for a path that does not address anything on this definition: one the grammar rejects, one
-     * whose first segment is not a field, or one that descends further than the field's type nests.
+     * Throws for a path that does not address anything on this definition: invalid syntax, an unknown field,
+     * nesting deeper than the field's type, or an index into a map or a key into a list.
+     *
+     * @throws UnknownFieldException
      */
-    public static function tryParse(EntityDefinition $definition, string $path): ?self
+    public static function parse(EntityDefinition $definition, string $path): self
     {
         if (preg_match(self::GRAMMAR, $path) !== 1) {
-            return null;
+            throw new UnknownFieldException($definition, $path);
         }
 
         preg_match_all(self::PATTERN, $path, $matches, \PREG_SET_ORDER);
@@ -51,21 +55,25 @@ final class FieldPath
 
         // The grammar already opens on an attribute, which has to be a string
         if (!\is_string($segments[0] ?? null) || $segments[0] === '') {
-            return null;
+            throw new UnknownFieldException($definition, $path);
         }
 
         $field = $definition->getFieldDefinition($segments[0]);
 
-        if ($field === null) {
-            return null;
-        }
-
         for ($i = 1, $count = \count($segments); $field !== null && $i < $count; ++$i) {
+            // Lists and maps are both `array`, so only the stored type tells whether an index or a key fits
+            $container = \is_int($segments[$i]) ? AttributeType::List : AttributeType::Map;
+            $type = $field->getAttributeType();
+            if ($type !== null && $type !== $container) {
+                throw new UnknownFieldException($definition, $path);
+            }
+
             $field = $field->getValueFieldDefinition();
         }
 
+        // An unknown root, or a segment deeper than the field's type nests
         if ($field === null) {
-            return null;
+            throw new UnknownFieldException($definition, $path);
         }
 
         return new self($field, $path, $segments);

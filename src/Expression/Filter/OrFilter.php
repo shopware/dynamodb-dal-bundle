@@ -3,7 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Expression\Filter;
 
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompileContext;
+use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
 
 final readonly class OrFilter implements FilterInterface
 {
@@ -12,17 +12,23 @@ final readonly class OrFilter implements FilterInterface
      */
     public array $filters;
 
-    public function __construct(FilterInterface ...$filters)
+    /**
+     * A `null` drops out, for an optional criterion.
+     */
+    public function __construct(?FilterInterface ...$filters)
     {
-        $this->filters = array_values($filters);
+        $this->filters = array_values(array_filter($filters, static fn (?FilterInterface $filter): bool => $filter !== null));
     }
 
-    public function with(FilterInterface ...$filters): self
+    /**
+     * A `null` drops out, for an optional criterion.
+     */
+    public function with(?FilterInterface ...$filters): self
     {
         return new self(...$this->filters, ...array_values($filters));
     }
 
-    public function compile(ExpressionCompileContext $context): ?string
+    public function compile(FilterCompileContext $context): ?string
     {
         $compiled = [];
         foreach ($this->filters as $filter) {

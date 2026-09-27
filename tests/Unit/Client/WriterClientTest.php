@@ -10,7 +10,8 @@ use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
@@ -55,7 +56,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * real DynamoDB: empty batches and transactions, the order a transaction sends its operations in, and the
  * batch-write retry loop (which only runs when the service returns UnprocessedItems). The DynamoDB client is
  * mocked; write results are produced with {@see ResultMockFactory} so their final `resolve()` works. A real
- * {@see NormalEntity} definition and {@see ExpressionCompiler} are used so condition filters compile for real.
+ * {@see NormalEntity} definition and {@see FilterCompiler} and {@see UpdateCompiler} are used so condition filters compile for real.
  */
 #[AllowMockObjectsWithoutExpectations]
 #[CoversClass(WriterClient::class)]
@@ -94,9 +95,10 @@ class WriterClientTest extends TestCase
         $this->writer = new WriterClient(
             $this->client,
             $this->serializer,
-            new ExpressionCompiler($this->serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($this->serializer),
             $registry,
-            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler($this->serializer), $registry),
+            new ReaderClient($this->client, $this->serializer, new FilterCompiler(), $registry),
         );
     }
 
@@ -347,7 +349,7 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::once())
             ->method('updateItem')
             ->with(static::callback(static function (array $args): bool {
-                static::assertSame('attribute_exists(#autofilledId) AND (#name = :ex_2_0_name OR #name = :ex_2_1_name)', $args['ConditionExpression'] ?? null);
+                static::assertSame('attribute_exists(#autofilledId) AND (#name = :f_1_0_name OR #name = :f_1_1_name)', $args['ConditionExpression'] ?? null);
 
                 return true;
             }))
@@ -431,10 +433,10 @@ class WriterClientTest extends TestCase
         $this->client->expects(static::once())
             ->method('updateItem')
             ->with(static::callback(static function (array $args): bool {
-                static::assertSame('SET #name = :ex_1_0_name', $args['UpdateExpression'] ?? null);
+                static::assertSame('SET #name = :u_1_0_name', $args['UpdateExpression'] ?? null);
                 static::assertSame('attribute_exists(#autofilledId)', $args['ConditionExpression'] ?? null);
                 static::assertSame(['#name' => 'name', '#autofilledId' => 'autofilledId'], $args['ExpressionAttributeNames'] ?? null);
-                static::assertEquals([':ex_1_0_name' => new AttributeValue(['S' => 'after'])], $args['ExpressionAttributeValues'] ?? null);
+                static::assertEquals([':u_1_0_name' => new AttributeValue(['S' => 'after'])], $args['ExpressionAttributeValues'] ?? null);
 
                 return true;
             }))
@@ -481,9 +483,10 @@ class WriterClientTest extends TestCase
         $writer = new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler($serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
         );
 
         $this->client->expects(static::once())
@@ -493,7 +496,7 @@ class WriterClientTest extends TestCase
                 static::assertNotNull($update);
                 static::assertSame(
                     PrefixingNormalizer::PREFIX . 'after',
-                    ($update->getExpressionAttributeValues()[':ex_1_0_name'] ?? null)?->getS(),
+                    ($update->getExpressionAttributeValues()[':u_1_0_name'] ?? null)?->getS(),
                 );
 
                 return true;
@@ -523,18 +526,19 @@ class WriterClientTest extends TestCase
         $writer = new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler($serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
         );
 
         $this->client->expects(static::once())
             ->method('updateItem')
             ->with(static::callback(static function (array $args): bool {
-                static::assertSame('SET #name = if_not_exists(#name, :ex_1_0_name)', $args['UpdateExpression'] ?? null);
+                static::assertSame('SET #name = if_not_exists(#name, :u_1_0_name)', $args['UpdateExpression'] ?? null);
                 static::assertSame(
                     PrefixingNormalizer::PREFIX . 'first',
-                    ($args['ExpressionAttributeValues'][':ex_1_0_name'] ?? null)?->getS(),
+                    ($args['ExpressionAttributeValues'][':u_1_0_name'] ?? null)?->getS(),
                 );
 
                 return true;
@@ -806,9 +810,10 @@ class WriterClientTest extends TestCase
         return new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler($serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
         );
     }
 
@@ -823,9 +828,10 @@ class WriterClientTest extends TestCase
         return new WriterClient(
             $this->client,
             $this->serializer,
-            new ExpressionCompiler($this->serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($this->serializer),
             $registry,
-            new ReaderClient($this->client, $this->serializer, new ExpressionCompiler($this->serializer), $registry),
+            new ReaderClient($this->client, $this->serializer, new FilterCompiler(), $registry),
         );
     }
 
@@ -841,9 +847,10 @@ class WriterClientTest extends TestCase
         return new WriterClient(
             $this->client,
             $serializer,
-            new ExpressionCompiler($serializer),
+            new FilterCompiler(),
+            new UpdateCompiler($serializer),
             $registry,
-            new ReaderClient($this->client, $serializer, new ExpressionCompiler($serializer), $registry),
+            new ReaderClient($this->client, $serializer, new FilterCompiler(), $registry),
         );
     }
 
@@ -869,8 +876,7 @@ class WriterClientTest extends TestCase
 
     private function serializedResult(NormalizerOperation $operation): SerializedResult
     {
-        $idPath = FieldPath::tryParse($this->definition, 'autofilledId');
-        static::assertNotNull($idPath);
+        $idPath = FieldPath::parse($this->definition, 'autofilledId');
 
         return new SerializedResult(
             ['autofilledId' => new SerializedFieldResult($idPath, new AttributeValue(['S' => self::SERIALIZED_ID]))],

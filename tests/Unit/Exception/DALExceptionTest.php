@@ -2,9 +2,11 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Exception;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
@@ -26,6 +28,7 @@ use PHPUnit\Framework\TestCase;
  * Each failure is its own class and says in its message what happened and where. The definition it
  * happened on stays on the exception, for a caller that wants more than the sentence.
  */
+#[CoversClass(AttributeTypeMismatchException::class)]
 #[CoversClass(FieldDeserializationException::class)]
 #[CoversClass(FieldMissingDeserializedValueException::class)]
 #[CoversClass(FieldMissingSerializedValueException::class)]
@@ -72,6 +75,25 @@ class DALExceptionTest extends TestCase
         static::assertSame('Unknown field "doesNotExist" in item "customer"', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame('doesNotExist', $exception->field);
+    }
+
+    public function testAttributeTypeMismatch(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $exception = new AttributeTypeMismatchException($entityDefinition, 'tags', AttributeType::List, [AttributeType::String]);
+
+        static::assertSame('"tags" in item "customer" is of type L, where S is expected', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame('tags', $exception->field);
+        static::assertSame(AttributeType::List, $exception->actualType);
+        static::assertSame([AttributeType::String], $exception->expectedTypes);
+    }
+
+    public function testAttributeTypeMismatchNamesEveryTypeThatWouldDo(): void
+    {
+        $exception = new AttributeTypeMismatchException($this->entityDefinition(), 'size(label)', AttributeType::Number, [AttributeType::String, AttributeType::Binary]);
+
+        static::assertSame('"size(label)" in item "customer" is of type N, where one of S, B is expected', $exception->getMessage());
     }
 
     public function testUpdateEmpty(): void

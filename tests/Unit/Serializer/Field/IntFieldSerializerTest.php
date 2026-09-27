@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -59,6 +60,11 @@ class IntFieldSerializerTest extends TestCase
         $this->expectExceptionMessage('for field "counter" in item "customer"');
 
         $this->serializer->deserialize($this->definition, $attribute);
+    }
+
+    public function testDeclaresItStoresTheFieldAsANumber(): void
+    {
+        static::assertSame(AttributeType::Number, $this->serializer->getAttributeType($this->createIntDefinition()));
     }
 
     private function createIntDefinition(): FieldDefinition

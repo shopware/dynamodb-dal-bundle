@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\OrderEntity;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -79,6 +80,11 @@ class BoolFieldSerializerTest extends TestCase
         $this->expectExceptionMessage('Missing expected DynamoDB attribute value of type "BOOL" for field "active" in item "order"');
 
         $this->serializer->deserialize($this->definition, $attribute);
+    }
+
+    public function testDeclaresItStoresTheFieldAsABoolean(): void
+    {
+        static::assertSame(AttributeType::Boolean, $this->serializer->getAttributeType($this->createFieldDefinition()));
     }
 
     private function createFieldDefinition(): FieldDefinition

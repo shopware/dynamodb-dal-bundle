@@ -6,7 +6,8 @@ use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\WriterClient;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Profiler\CallerStampingHttpClient;
 use Shopware\DynamodbDalBundle\Profiler\DynamoDbDataCollector;
@@ -50,7 +51,8 @@ class TestKernel extends BaseKernel
         ReaderClient::class,
         WriterClient::class,
         Serializer::class,
-        ExpressionCompiler::class,
+        FilterCompiler::class,
+        UpdateCompiler::class,
         EntityDefinitionRegistry::class,
     ];
 

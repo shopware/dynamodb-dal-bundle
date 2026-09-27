@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Field;
 
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
@@ -71,6 +72,11 @@ class FloatFieldSerializerTest extends TestCase
         $this->expectExceptionMessage('Missing expected DynamoDB attribute value of type "N" for field "amount" in item "normal"');
 
         $this->serializer->deserialize($definition, $attribute);
+    }
+
+    public function testDeclaresItStoresTheFieldAsANumber(): void
+    {
+        static::assertSame(AttributeType::Number, $this->serializer->getAttributeType($this->fieldDefinition()));
     }
 
     /**

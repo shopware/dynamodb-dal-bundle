@@ -29,8 +29,10 @@ $client->expects(static::once())
 new OrderRepository($client)->save($order);
 ```
 
-Inputs, keys and filters are plain values with public properties, so a test builds real ones and compares them,
-such as `$query->keyCondition instanceof EqualsFilter`, rather than doubling them.
+Inputs, keys and filters are plain values with public properties, so a test builds real ones and compares them
+rather than doubling them. Build the filter to compare with through `Filter`, as the code under test does, such as
+`static::assertEquals(Filter::equals('customerId', 'c-42'), $query->keyCondition)`, so the test does not depend on the
+classes a filter is made of.
 
 ## Results of a double
 
@@ -92,14 +94,15 @@ own compiles against the definition of an entity. `CompiledExpression` compiles 
 `resolved()` reads it back with every placeholder replaced by the name or value it stands for:
 
 ```php
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Test\CompiledExpression;
 use Shopware\DynamodbDalBundle\Test\EntityDefinitionFactory;
 
 $definition = EntityDefinitionFactory::create(OrderEntity::class);
 
 static::assertSame(
-    'size(tags) > 2',
-    CompiledExpression::ofFilter($definition, new SizeGreaterThanFilter('tags', 2))->resolved(),
+    'attribute_type(totalCents, "S")',
+    CompiledExpression::ofFilter($definition, new StoredAsFilter('totalCents', AttributeType::String))->resolved(),
 );
 static::assertSame(
     'SET meta.previousStatus = status',

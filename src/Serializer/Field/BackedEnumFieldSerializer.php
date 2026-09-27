@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -32,6 +33,11 @@ class BackedEnumFieldSerializer extends AbstractFieldSerializer
         }
 
         return true;
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::String;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue

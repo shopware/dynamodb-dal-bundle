@@ -5,7 +5,8 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Expression\ExpressionCompiler;
+use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
+use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
@@ -59,7 +60,8 @@ class BundleIntegrationTest extends TestCase
 
         static::assertInstanceOf(Client::class, $container->get('test.' . Client::class));
         static::assertInstanceOf(Serializer::class, $container->get('test.' . Serializer::class));
-        static::assertInstanceOf(ExpressionCompiler::class, $container->get('test.' . ExpressionCompiler::class));
+        static::assertInstanceOf(FilterCompiler::class, $container->get('test.' . FilterCompiler::class));
+        static::assertInstanceOf(UpdateCompiler::class, $container->get('test.' . UpdateCompiler::class));
     }
 
     public function testEntityDefinitionIsCompiledFromTheAttributes(): void
@@ -163,10 +165,10 @@ class BundleIntegrationTest extends TestCase
 
     public function testExpressionCompilesAgainstTheCompiledDefinition(): void
     {
-        $compiler = $this->container()->get('test.' . ExpressionCompiler::class);
-        static::assertInstanceOf(ExpressionCompiler::class, $compiler);
+        $compiler = $this->container()->get('test.' . FilterCompiler::class);
+        static::assertInstanceOf(FilterCompiler::class, $compiler);
 
-        $result = $compiler->compileFilter($this->definition(), Filter::and(
+        $result = $compiler->filter($this->definition(), Filter::and(
             Filter::equals('status', TestStatus::Open),
             Filter::or(
                 Filter::greaterThan('counter', 1),

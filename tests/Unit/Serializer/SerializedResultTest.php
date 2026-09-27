@@ -23,10 +23,10 @@ class SerializedResultTest extends TestCase
         $definition = $this->createEntityDefinition();
 
         $idField = new SerializedFieldResult(
-            $this->parse($definition, 'autofilledId'),
+            FieldPath::parse($definition, 'autofilledId'),
             new AttributeValue(['S' => '00000000-0000-0000-0000-000000000000']),
         );
-        $nameField = new SerializedFieldResult($this->parse($definition, 'name'), new AttributeValue(['S' => 'test']));
+        $nameField = new SerializedFieldResult(FieldPath::parse($definition, 'name'), new AttributeValue(['S' => 'test']));
 
         $result = new SerializedResult(
             ['autofilledId' => $idField, 'name' => $nameField],
@@ -54,17 +54,6 @@ class SerializedResultTest extends TestCase
 
         static::assertSame($fields, $result->getNormalizedFields());
         static::assertSame(NormalizerOperation::Update, $result->getOperation());
-    }
-
-    /**
-     * @param EntityDefinition<NormalEntity> $definition
-     */
-    private function parse(EntityDefinition $definition, string $path): FieldPath
-    {
-        $parsed = FieldPath::tryParse($definition, $path);
-        static::assertNotNull($parsed);
-
-        return $parsed;
     }
 
     private function createEntityDefinition(): EntityDefinition

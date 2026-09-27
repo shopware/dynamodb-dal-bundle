@@ -2,6 +2,7 @@
 
 namespace Shopware\DynamodbDalBundle\Serializer\Field;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -17,6 +18,11 @@ class BoolFieldSerializer extends AbstractFieldSerializer
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         return $type === 'bool';
+    }
+
+    public function getAttributeType(FieldDefinition $definition): AttributeType
+    {
+        return AttributeType::Boolean;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue

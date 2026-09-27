@@ -73,7 +73,7 @@ final readonly class CursorHistory
     }
 
     /**
-     * The named tokens of a {@see combine()}d position; `null` (page 1) has none.
+     * The named tokens of a {@see combine()} position; `null` (page 1) has none.
      *
      * @throws InvalidCursorException if the position was not combined
      *
