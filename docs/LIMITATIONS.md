@@ -83,8 +83,8 @@ code, but the bundle never calls it. A field has to be `public` or `protected`. 
 Property hooks run when the bundle assigns a field. A `set` hook runs on every read and write-back as well, so it
 sees stored values, not only those the application sets. A property with only a `get` hook, a virtual property,
 passes the container build, and a put writes the value that the hook returns. Every read of the entity then fails
-with an `\Error`, because the property cannot be assigned. A `#[Field]` property therefore has to be backed by a
-value.
+with a `FieldDeserializationException`, whose `getPrevious()` is an `\Error`, because the property cannot be
+assigned. A `#[Field]` property therefore has to be backed by a value.
 
 ### Entities don't reference each other
 

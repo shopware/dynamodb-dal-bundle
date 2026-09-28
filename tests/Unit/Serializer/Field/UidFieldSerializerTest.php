@@ -8,6 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\UidFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -54,6 +55,27 @@ class UidFieldSerializerTest extends TestCase
         static::assertEquals($expected, $attribute);
     }
 
+    /**
+     * A uid of another type would be stored as a value that no read of the field takes back as it was.
+     */
+    public function testSerializeRefusesAUidOfAnotherType(): void
+    {
+        $value = Uuid::v4();
+
+        $this->expectExceptionObject(new WrongTypeException($this->definition, UuidV7::class, $value));
+
+        $this->serializer->serialize($this->definition, $value);
+    }
+
+    public function testSerializeTakesAUidOfASubtypeOfTheField(): void
+    {
+        $value = Uuid::v7();
+
+        $attribute = $this->serializer->serialize($this->createUidDefinition(Uuid::class), $value);
+
+        static::assertSame($value->toString(), $attribute->getS());
+    }
+
     public function testDeserialize(): void
     {
         $expected = Uuid::v7();
@@ -94,9 +116,12 @@ class UidFieldSerializerTest extends TestCase
         static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createUidDefinition()));
     }
 
-    private function createUidDefinition(): FieldDefinition
+    /**
+     * @param class-string<AbstractUid> $type
+     */
+    private function createUidDefinition(string $type = UuidV7::class): FieldDefinition
     {
-        $definition = new FieldDefinition(self::FIELD_NAME, UuidV7::class, false, false, null, $this->serializer);
+        $definition = new FieldDefinition(self::FIELD_NAME, $type, false, false, null, $this->serializer);
         $definition->setEntityDefinition(new EntityDefinition(self::ENTITY_NAME, self::ENTITY_NAME, CustomerEntity::class, null, [], new KeySchema(self::FIELD_NAME)));
 
         return $definition;

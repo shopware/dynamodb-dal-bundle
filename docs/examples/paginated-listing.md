@@ -235,14 +235,16 @@ A search form, on the other hand, should *not* submit the cursor: new criteria s
 ### How it works
 
 - A token holds the key of the entity it resumes from, and the direction. It holds nothing about the criteria.
-- The bundle refuses a token from another table or index with `InvalidCursorException`.
+- The bundle refuses a token with `InvalidCursorException` when its key attributes are not those of the table or index
+  searched, or hold a value of another type.
 - DynamoDB refuses a token from another partition of the same index, such as a listing that switched from
   `published` to `draft`, with its own error.
 
 ### Pitfalls
 
-- A token from the same table or index with a different filter or sort direction is accepted. The search then
-  resumes from a position that means nothing to it, without an error.
+- A token from the same table or index with a different filter or sort direction is accepted. So is a token from
+  another table or index whose key attributes have the same names and types. The search then resumes from a
+  position that means nothing to it, without an error.
 
 ## A page merged from several queries
 

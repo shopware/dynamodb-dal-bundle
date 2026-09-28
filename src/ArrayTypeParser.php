@@ -18,9 +18,10 @@ final class ArrayTypeParser
     private const string MAP_REGEX = '/^array<.+>$/s';
 
     /**
-     * Group 1 is the key type, group 2 the value type.
+     * Group 1 is the key type, group 2 the value type. A key type holds no `<`, so the comma inside a nested map,
+     * as in array<array<string, int>>, is not taken for the one after the key.
      */
-    private const string ARRAY_KEY_VALUE_REGEX = '/^array<([^,]+),\s*(.+)>$/s';
+    private const string ARRAY_KEY_VALUE_REGEX = '/^array<([^,<]+),\s*(.+)>$/s';
 
     /**
      * Group 1 is the value type. It matches array<Key, Value> too, so try ARRAY_KEY_VALUE_REGEX first.
