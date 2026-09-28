@@ -83,6 +83,17 @@ class ArrayTypeParserTest extends TestCase
         static::assertSame('list<string>', ArrayTypeParser::extractValueType('array<list<string>>'));
     }
 
+    /**
+     * The comma of a nested map separates its own key and value type, not those of the outer one.
+     */
+    public function testExtractValueTypeOfANestedMap(): void
+    {
+        static::assertSame('array<string, int>', ArrayTypeParser::extractValueType('array<array<string, int>>'));
+        static::assertSame('list<array<string, int>>', ArrayTypeParser::extractValueType('array<list<array<string, int>>>'));
+        static::assertSame('array<string, int>', ArrayTypeParser::extractValueType('array<string, array<string, int>>'));
+        static::assertSame('array<string, int>', ArrayTypeParser::extractValueType('list<array<string, int>>'));
+    }
+
     public function testExtractValueTypeReturnsNullForNonListNonMap(): void
     {
         static::assertNull(ArrayTypeParser::extractValueType('string'));

@@ -7,10 +7,12 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
+use Shopware\DynamodbDalBundle\Exception\DenormalizationException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\NormalizationException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\DateTimeFieldSerializer;
@@ -350,6 +352,100 @@ class SerializerTest extends TestCase
             'autofilledId' => new AttributeValue(['S' => 'test-id']),
             'required' => new AttributeValue(['S' => 'test-required']),
         ]);
+    }
+
+    /**
+     * Whatever the normalizer throws is a DAL failure, so a caller catching one catches it too.
+     */
+    public function testAReadWrapsWhatTheNormalizerThrows(): void
+    {
+        $refused = new \DomainException('The normalizer refuses the row');
+        $definition = NormalEntity::createDefinition(new RecordingNormalizer(denormalize: static fn () => throw $refused));
+
+        try {
+            $this->serializer->deserialize($definition, [
+                'autofilledId' => new AttributeValue(['S' => 'test-id']),
+                'required' => new AttributeValue(['S' => 'test-required']),
+            ]);
+            static::fail('The normalizer refuses the row');
+        } catch (DenormalizationException $exception) {
+            static::assertSame($definition, $exception->entityDefinition);
+            static::assertSame($refused, $exception->getPrevious());
+        }
+    }
+
+    public function testAReadRethrowsADALExceptionOfTheNormalizerAsItIs(): void
+    {
+        $unknown = new UnknownFieldException($this->definition, 'other');
+        $definition = NormalEntity::createDefinition(new RecordingNormalizer(denormalize: static fn () => throw $unknown));
+
+        $this->expectExceptionObject($unknown);
+
+        $this->serializer->denormalize($definition, [], NormalizerOperation::Read);
+    }
+
+    /**
+     * The same holds before a write, where nothing is sent yet.
+     */
+    public function testAPutWrapsWhatTheNormalizerThrows(): void
+    {
+        $refused = new \DomainException('The normalizer refuses the entity');
+        $definition = NormalEntity::createDefinition(new RecordingNormalizer(normalize: static fn () => throw $refused));
+
+        try {
+            $this->serializer->serialize($definition, new NormalEntity()->setAutofilledId('test-id')->setRequired('test-required'), NormalizerOperation::Put);
+            static::fail('The normalizer refuses the entity');
+        } catch (NormalizationException $exception) {
+            static::assertSame($definition, $exception->entityDefinition);
+            static::assertSame($refused, $exception->getPrevious());
+        }
+    }
+
+    public function testAPutRethrowsADALExceptionOfTheNormalizerAsItIs(): void
+    {
+        $unknown = new UnknownFieldException($this->definition, 'other');
+        $definition = NormalEntity::createDefinition(new RecordingNormalizer(normalize: static fn () => throw $unknown));
+
+        $this->expectExceptionObject($unknown);
+
+        $this->serializer->normalize($definition, [], NormalizerOperation::Put);
+    }
+
+    /**
+     * A property that refuses its value, such as one the normalizer turned into another type, names the field.
+     */
+    public function testAReadWrapsAPropertyThatRefusesItsValue(): void
+    {
+        $definition = NormalEntity::createDefinition(new RecordingNormalizer(denormalize: static function (NormalizerContext $context): void {
+            $context->set('required', ['not', 'a', 'string']);
+        }));
+
+        try {
+            $this->serializer->deserialize($definition, [
+                'autofilledId' => new AttributeValue(['S' => 'test-id']),
+                'required' => new AttributeValue(['S' => 'test-required']),
+            ]);
+            static::fail('The property refuses an array');
+        } catch (FieldDeserializationException $exception) {
+            static::assertSame($definition->getFieldDefinition('required'), $exception->fieldDefinition);
+            static::assertInstanceOf(\TypeError::class, $exception->getPrevious());
+        }
+    }
+
+    /**
+     * Only the normalizer can have added a property that is no field, so it is blamed for one that refuses its value.
+     */
+    public function testAssignBlamesTheNormalizerForAPropertyThatIsNoField(): void
+    {
+        $definition = $this->keyedDefinition();
+
+        try {
+            $this->serializer->assign($definition, new NormalEntity(), ['required' => ['not', 'a', 'string']]);
+            static::fail('The property refuses an array');
+        } catch (DenormalizationException $exception) {
+            static::assertSame($definition, $exception->entityDefinition);
+            static::assertInstanceOf(\TypeError::class, $exception->getPrevious());
+        }
     }
 
     /**

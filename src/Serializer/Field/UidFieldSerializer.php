@@ -28,8 +28,10 @@ class UidFieldSerializer extends AbstractFieldSerializer
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
-        if (!$value instanceof AbstractUid) {
-            throw new WrongTypeException($definition, AbstractUid::class, $value);
+        // A uid of another type would store a value that no read of the field takes back as it was
+        $type = $definition->getType();
+        if (!$value instanceof $type) {
+            throw new WrongTypeException($definition, $type, $value);
         }
 
         return AttributeValue::create(['S' => $value->toString()]);

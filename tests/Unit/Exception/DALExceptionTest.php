@@ -10,6 +10,7 @@ use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\DenormalizationException;
 use Shopware\DynamodbDalBundle\Exception\DeserializationException;
 use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
 use Shopware\DynamodbDalBundle\Exception\EntityOutOfSyncException;
@@ -21,6 +22,7 @@ use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\NormalizationException;
 use Shopware\DynamodbDalBundle\Exception\NullOperandException;
 use Shopware\DynamodbDalBundle\Exception\SerializationException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
@@ -39,6 +41,7 @@ use PHPUnit\Framework\TestCase;
  * happened on stays on the exception, for a caller that wants more than the sentence.
  */
 #[CoversClass(AttributeTypeMismatchException::class)]
+#[CoversClass(DenormalizationException::class)]
 #[CoversClass(DuplicateKeyException::class)]
 #[CoversClass(EntityOutOfSyncException::class)]
 #[CoversClass(FieldDeserializationException::class)]
@@ -46,6 +49,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(FieldMissingSerializedValueException::class)]
 #[CoversClass(FieldSerializationException::class)]
 #[CoversClass(MissingAttributeValueException::class)]
+#[CoversClass(NormalizationException::class)]
 #[CoversClass(NullOperandException::class)]
 #[CoversClass(UnknownEntityDefinitionException::class)]
 #[CoversClass(UnknownFieldException::class)]
@@ -81,11 +85,13 @@ class DALExceptionTest extends TestCase
             SerializationException::class => [
                 FieldMissingSerializedValueException::class,
                 FieldSerializationException::class,
+                NormalizationException::class,
                 // A normalizer that sets a field the entity does not declare
                 UnknownFieldException::class,
                 WrongTypeException::class,
             ],
             DeserializationException::class => [
+                DenormalizationException::class,
                 // A stored write whose entity could not take its row, most of the time because the row does not fit it
                 EntityOutOfSyncException::class,
                 FieldDeserializationException::class,
@@ -174,6 +180,31 @@ class DALExceptionTest extends TestCase
         static::assertSame('A batch write or transaction names the same key of item "customer" twice', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame($key, $exception->key);
+    }
+
+    /**
+     * The normalizer's failure is kept, as its own classes are no DAL failure.
+     */
+    public function testDenormalization(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $previous = new \DomainException('Unknown currency');
+        $exception = new DenormalizationException($entityDefinition, $previous);
+
+        static::assertSame('The normalizer of item "customer" could not denormalize its fields', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($previous, $exception->getPrevious());
+    }
+
+    public function testNormalization(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $previous = new \DomainException('Unknown currency');
+        $exception = new NormalizationException($entityDefinition, $previous);
+
+        static::assertSame('The normalizer of item "customer" could not normalize its fields', $exception->getMessage());
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($previous, $exception->getPrevious());
     }
 
     /**

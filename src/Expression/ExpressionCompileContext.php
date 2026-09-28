@@ -121,7 +121,26 @@ class ExpressionCompileContext
     public function literal(string|int|float $value): string
     {
         $placeholder = ":{$this->prefix}_" . \count($this->values);
-        $this->values[$placeholder] = AttributeValue::create(\is_string($value) ? ['S' => $value] : ['N' => (string) $value]);
+        $this->values[$placeholder] = AttributeValue::create(match (true) {
+            \is_string($value) => ['S' => $value],
+            // The digits a float field stores, as both follow `serialize_precision`; a cast to string rounds to `precision`
+            \is_float($value) => ['N' => var_export($value, true)],
+            default => ['N' => (string) $value],
+        });
+
+        return $placeholder;
+    }
+
+    /**
+     * Registers the bytes under a unique `:{prefix}_{N}` placeholder as a binary (`B`), which {@see literal()} cannot
+     * tell from a string.
+     *
+     * For an operand that is not a value of a field, such as the member `contains()` looks for in a binary set.
+     */
+    public function binaryLiteral(string $bytes): string
+    {
+        $placeholder = ":{$this->prefix}_" . \count($this->values);
+        $this->values[$placeholder] = AttributeValue::create(['B' => $bytes]);
 
         return $placeholder;
     }

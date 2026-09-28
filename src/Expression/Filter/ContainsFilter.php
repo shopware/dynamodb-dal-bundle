@@ -10,6 +10,7 @@ use Shopware\DynamodbDalBundle\Expression\FilterCompileContext;
  * Matches a string that contains a substring, or a list or set that contains an element.
  *
  * On a string field, a PHP string is sent as is, so it also finds a substring of a JSON field.
+ * On a set, a PHP string or number of the set's type is sent as the member, and a string as its bytes for a binary set.
  * Any other value is serialized by the field, such as an enum by its value.
  * On a list, the value is serialized as one element.
  */
@@ -37,6 +38,7 @@ final readonly class ContainsFilter implements FilterInterface
         $operand = match (true) {
             \is_string($this->value) && ($type === AttributeType::String || $type === AttributeType::StringSet) => $context->literal($this->value),
             (\is_int($this->value) || \is_float($this->value)) && $type === AttributeType::NumberSet => $context->literal($this->value),
+            \is_string($this->value) && $type === AttributeType::BinarySet => $context->binaryLiteral($this->value),
             // DynamoDB contains(listField, value) expects `value` to be one list element.
             $field->getValueFieldDefinition() !== null => $context->elementValue($this->fieldName, $this->value),
             default => $context->fieldValue($this->fieldName, $this->value),

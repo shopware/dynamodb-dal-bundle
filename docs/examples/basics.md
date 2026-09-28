@@ -112,7 +112,7 @@ Add a static factory if you want one.
 
 ### How it works
 
-- DynamoDB has no null for a field, so a `null` value is not stored.
+- A `null` value is not stored as DynamoDB's `NULL`. A put leaves the field out of the row, and an update removes it.
 - When a stored row lacks a field, the entity gets `null` if the field is nullable, and the field's default
   otherwise. If the field has neither, and the entity's [normalizer](extending.md#a-normalizer) doesn't fill it in,
   the read fails.

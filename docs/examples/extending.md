@@ -162,7 +162,8 @@ public function denormalize(NormalizerContext $context): void
 
 ### Pitfalls
 
-- Without either, every write succeeds, but every read fails with a `\TypeError`, which is not a `DALException`.
+- Without either, every write succeeds, but every read fails with a `FieldDeserializationException`, whose
+  `getPrevious()` is a `\TypeError`.
 - Elements of a list or map of such a type read back as arrays too. The property is an `array`, so nothing fails, but
   the normalizer still has to convert the elements.
 

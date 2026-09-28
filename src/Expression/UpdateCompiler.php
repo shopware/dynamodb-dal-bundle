@@ -75,6 +75,7 @@ class UpdateCompiler implements ResetInterface
      * adds becomes a field, and one it drops is not written.
      *
      * @throws UpdateDuplicatePathException
+     * @throws DALException if the normalizer fails
      */
     private function normalizeUpdate(EntityDefinition $definition, UpdateExpression $update): UpdateExpression
     {

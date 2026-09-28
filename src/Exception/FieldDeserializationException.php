@@ -6,7 +6,8 @@ use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 
 /**
- * A field's serializer could not turn a stored DynamoDB attribute back into a value
+ * A field's serializer could not turn a stored DynamoDB attribute back into a value, or the entity's property refused
+ * that value
  */
 final class FieldDeserializationException extends \RuntimeException implements DeserializationException
 {
