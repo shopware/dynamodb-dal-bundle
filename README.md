@@ -28,6 +28,8 @@ write it.
 - [Custom types, normalizers, filters and update actions](docs/examples/extending.md)
 - [Testing](docs/examples/testing.md): doubles of the client, and tests of filters, update actions and normalizers of your own
 - [Exceptions](docs/examples/exceptions.md): which exceptions to catch, and what each one means
+- [Limitations](docs/LIMITATIONS.md): what the entity model rules out, such as subclasses of an entity, and values
+  that PHP and DynamoDB don't share, such as a float's precision and range
 - [Architecture decisions](docs/adr/)
 
 ## Development tooling
