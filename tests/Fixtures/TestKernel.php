@@ -4,8 +4,8 @@ namespace Shopware\DynamodbDalBundle\Tests\Fixtures;
 
 use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
-use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;

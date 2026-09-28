@@ -4,8 +4,10 @@ namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use AsyncAws\DynamoDb\DynamoDbClient;
 use Shopware\DynamodbDalBundle\Client\Client;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
-use Shopware\DynamodbDalBundle\Client\WriterClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReadRequestFactory;
+use Shopware\DynamodbDalBundle\Client\Write\WriteRequestFactory;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
@@ -35,11 +37,25 @@ return static function (ContainerConfigurator $container): void {
         ->args([service(Serializer::class)])
         ->tag('kernel.reset', ['method' => 'reset']);
 
+    $services->set(ReadRequestFactory::class)
+        ->args([
+            service(Serializer::class),
+            service(FilterCompiler::class),
+            service(EntityDefinitionRegistry::class),
+        ]);
+
     $services->set(ReaderClient::class)
         ->args([
             service(DynamoDbClient::class),
             service(Serializer::class),
+            service(ReadRequestFactory::class),
+        ]);
+
+    $services->set(WriteRequestFactory::class)
+        ->args([
+            service(Serializer::class),
             service(FilterCompiler::class),
+            service(UpdateCompiler::class),
             service(EntityDefinitionRegistry::class),
         ]);
 
@@ -47,9 +63,7 @@ return static function (ContainerConfigurator $container): void {
         ->args([
             service(DynamoDbClient::class),
             service(Serializer::class),
-            service(FilterCompiler::class),
-            service(UpdateCompiler::class),
-            service(EntityDefinitionRegistry::class),
+            service(WriteRequestFactory::class),
             service(ReaderClient::class),
         ]);
 

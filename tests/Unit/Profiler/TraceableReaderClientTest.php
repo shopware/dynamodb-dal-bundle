@@ -5,7 +5,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Profiler;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
-use Shopware\DynamodbDalBundle\Client\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
 use Shopware\DynamodbDalBundle\Profiler\DalCall;
 use Shopware\DynamodbDalBundle\Profiler\DalCallTracer;
 use Shopware\DynamodbDalBundle\Profiler\TraceableReaderClient;

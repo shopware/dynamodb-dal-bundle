@@ -74,8 +74,8 @@ final readonly class Cursor
     }
 
     /**
-     * A DynamoDB key attribute is always a single `S`, `N` or `B`; anything else is refused rather than
-     * passed on to DynamoDB.
+     * A DynamoDB key attribute is always a single `S`, `N` or `B`, never empty, and a number is one; anything else is
+     * refused rather than passed on to DynamoDB. A number is read as PHP reads it, as the field serializers do.
      *
      * @param array<array-key, mixed> $scalar
      *
@@ -96,6 +96,14 @@ final readonly class Cursor
             if ($value === false) {
                 throw new InvalidCursorException(\sprintf('key attribute "%s" is not valid base64', $name));
             }
+        }
+
+        if ($value === '') {
+            throw new InvalidCursorException(\sprintf('key attribute "%s" is empty', $name));
+        }
+
+        if ($type === 'N' && !is_numeric($value)) {
+            throw new InvalidCursorException(\sprintf('key attribute "%s" is not a number', $name));
         }
 
         return new AttributeValue([$type => $value]);

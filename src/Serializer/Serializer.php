@@ -182,9 +182,9 @@ class Serializer
      *
      * @throws DALException if a provided field does not exist in the definition or a required field value is missing
      *
-     * @return array<string, AttributeValue>
+     * @return SerializedKeyResult<Entity>
      */
-    public function serializeKey(EntityDefinition $definition, AbstractEntity|Key $key): array
+    public function serializeKey(EntityDefinition $definition, AbstractEntity|Key $key): SerializedKeyResult
     {
         if ($key instanceof AbstractEntity) {
             $keySchema = $definition->getKeySchema();
@@ -216,70 +216,7 @@ class Serializer
             }
         }
 
-        return $result;
-    }
-
-    /**
-     * A stable identity for an item's primary key
-     *
-     * @template Entity of AbstractEntity
-     *
-     * @param EntityDefinition<Entity> $definition
-     * @param Entity|Key<Entity>|array<string, AttributeValue> $key - a serialized key or whole item, or what to serialize into one
-     *
-     * @throws DALException if a key field does not exist in the definition or a value is missing
-     */
-    public function hashKey(EntityDefinition $definition, AbstractEntity|Key|array $key): string
-    {
-        if (!\is_array($key)) {
-            $key = $this->serializeKey($definition, $key);
-        }
-
-        $parts = [];
-        foreach ($definition->getKeySchema()->getFields() as $field) {
-            $value = $key[$field] ?? null;
-
-            // A key attribute is only ever a string, number or binary, so the default arm is only defensive.
-            $parts[] = match (true) {
-                $value === null => '',
-                $value->getS() !== null => 'S:' . $value->getS(),
-                $value->getN() !== null => 'N:' . $value->getN(),
-                $value->getB() !== null => 'B:' . base64_encode($value->getB()),
-                default => '',
-            };
-        }
-
-        return implode("\0", $parts);
-    }
-
-    /**
-     * @template Entity of AbstractEntity
-     *
-     * @param EntityDefinition<Entity> $definition
-     * @param array<string, AttributeValue|null> $output
-     *
-     * @throws DALException
-     *
-     * @return Key<Entity>|null - Returns null if the key cannot be built from the provided fields, e.g. empty or key schema not matching
-     */
-    public function deserializeKey(EntityDefinition $definition, array $output): ?Key
-    {
-        $keySchema = $definition->getKeySchema();
-
-        if (!isset($output[$keySchema->hashKey]) || ($keySchema->rangeKey !== null && !isset($output[$keySchema->rangeKey]))) {
-            return null;
-        }
-
-        $fields = [$keySchema->hashKey => $output[$keySchema->hashKey]];
-        if ($keySchema->rangeKey !== null) {
-            $fields[$keySchema->rangeKey] = $output[$keySchema->rangeKey];
-        }
-
-        $deserialized = $this->deserializeFields($definition, $fields, NormalizerOperation::Key);
-
-        $rangeValue = $keySchema->rangeKey !== null ? ($deserialized[$keySchema->rangeKey] ?? null) : null;
-
-        return new Key($definition->getClass(), $deserialized[$keySchema->hashKey] ?? null, $rangeValue);
+        return SerializedKeyResult::fromItem($definition, $result);
     }
 
     /**

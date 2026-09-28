@@ -45,10 +45,14 @@
 - An exception implements the group that says what failed, instead of `DALException` directly, if one fits:
   `SerializationException` for a value that doesn't fit its field, `DeserializationException` for a stored row that
   doesn't fit its entity, and `ExpressionException` for a filter, condition or update that can't be sent.
-  A class belongs to one group at most, and it belongs there wherever it is thrown
+  A class belongs to the group of every kind of failure it is thrown for, so that catching a group catches it
+  wherever it is thrown: `UnknownFieldException` is an `ExpressionException` for a filter and a
+  `SerializationException` for a normalizer's put
 - Rethrow a `DALException` as it is. Wrap any other throwable in an exception that names the field
 - Use `\LogicException` for programming errors and container build failures
-- AsyncAws exceptions, such as `ConditionalCheckFailedException`, pass through unwrapped
+- AsyncAws exceptions, such as `ConditionalCheckFailedException`, pass through unwrapped. Only a failure after a
+  write is stored, while its entity is brought up to date, is wrapped in an `EntityOutOfSyncException`, so that the
+  caller can tell it from a write that failed
 - Every function declared as public API has to define `@throws` to document what it throws.
   PHPStan enforces it and takes a function without `@throws` to throw nothing.
   The bundle class, the compiler passes, `DefinitionBuilder`, the commands, the profiler and the tests are not API and declare none

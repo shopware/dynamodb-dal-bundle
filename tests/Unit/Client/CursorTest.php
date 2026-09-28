@@ -53,6 +53,9 @@ class CursorTest extends TestCase
         yield 'two types' => [$encode(['k' => ['id' => ['S' => 'x', 'N' => '1']]])];
         yield 'non-string value' => [$encode(['k' => ['id' => ['N' => 1]]])];
         yield 'invalid binary' => [$encode(['k' => ['id' => ['B' => '***']]])];
+        yield 'empty string' => [$encode(['k' => ['id' => ['S' => '']]])];
+        yield 'empty binary' => [$encode(['k' => ['id' => ['B' => '']]])];
+        yield 'not a number' => [$encode(['k' => ['id' => ['N' => 'x']]])];
         yield 'non-bool direction' => [$encode(['k' => ['id' => ['S' => 'x']], 'b' => 'yes'])];
     }
 

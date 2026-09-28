@@ -146,8 +146,9 @@ final class ArticleController extends AbstractController
 ### Pitfalls
 
 - A bad token is only noticed when the page is read, so the `try` has to wrap `->page()`.
-- An edited token can pass the bundle's checks and fail at DynamoDB instead, with a `ClientException`. The `catch`
-  above only starts over for a token the bundle refuses itself.
+- An edited token can pass the bundle's checks and fail at DynamoDB instead, with a `ClientException`, such as one
+  moved outside the query's range key condition. The `catch` above only starts over for a token the bundle refuses
+  itself.
 - Entities added or removed before the current page move the page boundaries. Going back can then end on a first page
   with fewer than `limit` entities.
 - If the entities a link leads to are deleted before the link is followed, the page is empty and has neither token,

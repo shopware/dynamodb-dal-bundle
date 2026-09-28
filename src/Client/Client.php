@@ -14,8 +14,12 @@ use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
 use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
+use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
+use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
+use Shopware\DynamodbDalBundle\Exception\EntityOutOfSyncException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\InvalidCursorException;
 use Shopware\DynamodbDalBundle\Exception\InvalidKeyConditionException;
@@ -174,6 +178,7 @@ class Client
      * @throws ConditionEmptyException
      * @throws DALException if the entity or the condition does not serialize
      * @throws ConditionalCheckFailedException when the condition fails
+     * @throws EntityOutOfSyncException if the put is stored, but the normalizer fails on what it wrote
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function put(PutInput $input): void
@@ -194,8 +199,9 @@ class Client
      * @throws UpdateEmptyException if the update has nothing to write
      * @throws UpdateDuplicatePathException if the update gives a path two values
      * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable
-     * @throws DALException if the update, the key or the condition does not serialize, or the stored item does not deserialize
+     * @throws DALException if the update, the key or the condition does not serialize
      * @throws ConditionalCheckFailedException when the item does not exist or the condition fails
+     * @throws EntityOutOfSyncException if the update is stored, but the stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function update(UpdateInput $input): void
@@ -225,10 +231,13 @@ class Client
     /**
      * Writes puts and deletes spanning one or multiple tables with `BatchWriteItem`, 25 per request, resubmitting whatever DynamoDB leaves unprocessed.
      * Not atomic, and without conditions; for either, use {@see transactWrite()}.
-     * Once every request succeeded, values the normalizer generated are applied back onto each put entity.
+     * Values the normalizer generated are applied back onto each put entity DynamoDB stored, once every request is
+     * sent, or once one fails, before its failure is thrown. The other entities keep their values.
      *
      * @throws UnknownEntityDefinitionException
+     * @throws DuplicateKeyException if two of its puts and deletes name the same key
      * @throws DALException if an entity or a key does not serialize
+     * @throws EntityOutOfSyncException if the batch is stored, but a normalizer fails on what a put wrote
      * @throws AsyncAwsException if a request to DynamoDB fails
      */
     public function batchWrite(BatchWriteInput $input): void
@@ -239,16 +248,19 @@ class Client
     /**
      * Writes puts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order they are given.
      * Past 100 operations, the input is split into several transactions, each atomic on its own.
-     * Once they succeeded, values the normalizer generated are applied back onto each put entity, and an update keyed
-     * by an entity brings it up to date as its {@see UpdateInput::$refresh} says.
+     * Once every transaction is sent, or once one fails, before its failure is thrown, the entities of those stored are
+     * brought up to date: values the normalizer generated are applied back onto each put entity, and an update keyed by
+     * an entity brings it up to date as its {@see UpdateInput::$refresh} says.
      *
      * @throws UnknownEntityDefinitionException
+     * @throws DuplicateKeyException if two of its operations name the same key
      * @throws ConditionEmptyException
      * @throws UpdateEmptyException if an update has nothing to write
      * @throws UpdateDuplicatePathException if an update gives a path two values
      * @throws FieldMissingSerializedValueException if an update removes a field that is not nullable
-     * @throws DALException if an entity, an update, a key or a condition does not serialize, or a stored item does not deserialize
-     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict is retried first
+     * @throws DALException if an entity, an update, a key or a condition does not serialize
+     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict or throttling is retried first
+     * @throws EntityOutOfSyncException if the transactions are stored, but an entity could not be brought up to date
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function transactWrite(TransactWriteInput $input): void

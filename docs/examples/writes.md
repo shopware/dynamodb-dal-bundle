@@ -190,8 +190,9 @@ computes. Use `Refresh::None` when the code doesn't use the entity after the wri
 - With `Refresh::WithoutReadBack`, an entity updated in a transaction keeps its old values for nested paths and
   actions. After `Update::increment('totalCents', 499)`, `$order->totalCents` still holds the old total.
 - The entity is brought up to date after DynamoDB has stored the write. If the stored row doesn't deserialize, for
-  example because it lacks a field that has since become required, the call throws although the update is stored.
-  Retrying it repeats the write, so an `increment()` counts twice. `Refresh::None` skips that step.
+  example because it lacks a field that has since become required, or reading it back fails, the call throws an
+  `EntityOutOfSyncException` although the update is stored. Retrying it repeats the write, so an `increment()` counts
+  twice. `Refresh::None` skips that step. See [Exceptions](exceptions.md#stored-data-that-doesnt-match-the-entity).
 
 ## Conditional writes
 
@@ -271,22 +272,22 @@ $this->client->batchWrite(
 `withPut()` and `withDelete()` return a new batch with more entities or keys added, to build one up. For conditions,
 or to write all or nothing, use a [transaction](#transactions).
 
+A batch names each key once, as a put or as a delete. The bundle refuses a batch that names a key twice before it
+sends any of it.
+
 ### How it works
 
 - The bundle sends every put before every delete, whatever order they were added in.
 - It sends 25 operations per request, however many entity classes they span. It sends the operations that DynamoDB
-  leaves unprocessed again.
-- After the batch succeeds, each put is applied back to its entity, as for a single put.
+  leaves unprocessed again, after a pause that doubles with each round, up to a second.
+- Each put that DynamoDB stored is applied back to its entity once every request is sent, as for a single put. If a
+  request fails, that happens before its exception is thrown, so the entities that were written carry the values
+  their normalizer generated, and the others don't.
 
 ### Pitfalls
 
 > [!WARNING]
 > A batch is not atomic. If a request fails, the requests before it stay written.
-
-- Don't write the same entity twice in one batch. If both operations land in the same request of 25, DynamoDB rejects
-  that request, after the requests before it were written. If they land in different requests, both go through and
-  the later one wins. An entity that is put and deleted therefore ends up deleted, although the PHP object takes the
-  values of the put.
 
 ## Transactions
 
@@ -307,24 +308,29 @@ $this->client->transactWrite(
 The operations are sent in the order they are given. `with()` returns a new transaction with more operations added
 after them, to build one up.
 
+A transaction names each key once, whatever operations name it. The bundle refuses a transaction that names a key
+twice before it sends any of it.
+
 A cancelled transaction throws `TransactionCanceledException`. Its `getCancellationReasons()` holds one reason per
 operation, in the order the operations were given. Each reason tells whether its operation failed, and why.
 
 ### How it works
 
-- If DynamoDB cancels a transaction only because another transaction conflicted with it, the bundle retries it with a
-  growing delay, for up to three attempts in total. Any other cancellation, such as a failed condition, is thrown
-  right away.
-- After the transaction succeeds, puts and updates keyed by an entity are applied to their entities, as
-  [Keeping the entity in sync](#keeping-the-entity-in-sync) describes.
+- If DynamoDB cancels a transaction only because another transaction conflicted with it or because it was throttled,
+  the bundle sends it again after a pause that doubles each time, for up to three attempts in total. Any other
+  cancellation, such as a failed condition, is thrown right away.
+- Each attempt carries an idempotency token of its own (`ClientRequestToken`). If AsyncAws sends an attempt again, for
+  example after a timeout, DynamoDB applies it only once.
+- Once every transaction is sent, the puts and the updates keyed by an entity are applied to their entities, as
+  [Keeping the entity in sync](#keeping-the-entity-in-sync) describes. If a transaction fails, the entities of the
+  ones before it are brought up to date before its exception is thrown.
 
 ### Pitfalls
 
 > [!WARNING]
 > DynamoDB allows up to 100 operations per transaction. The bundle splits a larger input into several transactions of
-> 100 operations, and each of them is atomic only on its own. If a later one fails, the earlier ones stay written,
-> but their entities keep their old values, because entities are brought up to date only after every transaction
-> succeeded.
+> 100 operations, and each of them is atomic only on its own. If a later one fails, the earlier ones stay written.
+> Their entities are brought up to date. The entities of the failed transaction and of the ones after it keep their
+> old values.
 
-- DynamoDB refuses a transaction that includes more than one operation on the same entity.
 - A transaction costs twice the write capacity of the same writes sent on their own or in a batch.
