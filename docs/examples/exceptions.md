@@ -43,7 +43,7 @@ These are the only exceptions a correct application should expect at runtime.
 |---|---|---|
 | `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update, upsert or delete does not hold, or the row an update addresses does not exist | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
 | `AsyncAws\DynamoDb\Exception\TransactionCanceledException` | DynamoDB cancels a transaction, for example because a condition failed. The bundle first retries a cancellation caused only by a conflict with another transaction or by throttling | `getCancellationReasons()` holds one reason per operation, in the order the operations were given. See [Transactions](writes.md#transactions) |
-| `UpsertContentionException` | Other writers created and deleted the row of an upsert between its update and its put, twice. Neither write is stored | Send the upsert again. See [Upserts](writes.md#upserts) |
+| `UpsertContentionException` | In both rounds of an upsert, the update found no row, and the put then found one that another writer had created in between. Neither write is stored | Send the upsert again. See [Upserts](writes.md#upserts) |
 | `InvalidCursorException` | A pagination token or `CursorHistory` was edited, or its key attributes are not those of the table or index searched | Start over at the first page. See [Paginated listing](paginated-listing.md#listing-a-query) |
 
 Other AsyncAws exceptions, such as `ProvisionedThroughputExceededException`, pass through as well.
@@ -60,7 +60,7 @@ an entity was deployed. They implement `DeserializationException`.
 | `MissingAttributeValueException` | The stored attribute is not of the type the field's serializer reads, such as a number stored as a string |
 | `FieldDeserializationException` | The field's serializer failed in another way, such as for a stored value that is no longer a case of the field's enum. Or the property refused the value, with a `\TypeError` or from a `set` hook. `getPrevious()` holds the original error |
 | `DenormalizationException` | The entity's normalizer threw something other than a `DALException` on the fields of a row or of a write. `getPrevious()` holds what it threw. A `DALException` of the normalizer is thrown as it is |
-| `EntityOutOfSyncException` | A write is stored, but an entity it wrote could not be brought up to date. `getPrevious()` holds the failure: one of the exceptions above, a failed read of the row, or the normalizer failing on what was written |
+| `EntityOutOfSyncException` | A write is stored, but an entity it wrote could not be brought up to date. `getPrevious()` holds the failure: one of the exceptions above, a failed read of the row, or the normalizer failing on what was written. After an upsert, `upsertOutcome` says which of its writes is stored |
 
 A JSON field whose stored JSON holds a scalar instead of an array or object throws a `WrongTypeException`, which is a
 [`SerializationException`](#values-that-dont-fit-their-field), not a `DeserializationException`.
@@ -115,7 +115,7 @@ The bundle throws these before it sends a request. They implement `ExpressionExc
 | `AttributeTypeMismatchException` | A filter or update does something the field's stored type doesn't allow, such as `beginsWith()` on a list, `append()` to a map, or a comparison of two operands of different types. A field whose serializer declares no type is left to DynamoDB, except for an upsert's path into a field that the put's row doesn't store as a map or a list there. See [Upserts](writes.md#upserts) |
 | `InvalidKeyConditionException` | A key filter names a field that is not the hash or range key of the table or index queried, has a range key where the key has none, or compares a key with a `Filter::size()` or `Filter::field()`. See [Querying](basics.md#querying) |
 | `ConditionEmptyException` | A write condition checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny([])` |
-| `UpdateEmptyException` | An update has nothing to write |
+| `UpdateEmptyException` | An update has nothing to write. So does an upsert whose list of paths is empty or names only key fields |
 | `UpdateDuplicatePathException` | An update gives one path two values, such as a field and a `setIfNotExists()` for the same path |
 
 A value in a filter, condition or update that doesn't fit its field throws a `SerializationException`, as it does in
@@ -130,6 +130,7 @@ These belong to no group.
 | `UnknownEntityDefinitionException` | The entity class is not listed under `shopware_dynamodb_dal.entities` |
 | `UnknownIndexException` | A query names an index that `#[Table]` doesn't declare |
 | `DuplicateKeyException` | A batch or transaction names one key twice, such as two puts, or a put and a delete. See [Batches](writes.md#batches) and [Transactions](writes.md#transactions) |
+| `UpsertKeyMismatchException` | The normalizer gives the key of an upsert other values for the put than for a key, so the update and the put would address different rows. See [Upserts](writes.md#upserts) |
 | `\LogicException` | An output is read a second time. Run the search or key read again instead |
 | `\InvalidArgumentException` | `Page::cursorAfter()` or `cursorBefore()` gets an entity that is not on that page |
 

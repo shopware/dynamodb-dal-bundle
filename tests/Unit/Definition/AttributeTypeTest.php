@@ -26,6 +26,9 @@ class AttributeTypeTest extends TestCase
         yield 'a binary set' => [new AttributeValue(['BS' => ["\x00"]]), AttributeType::BinarySet];
         yield 'a list' => [new AttributeValue(['L' => [new AttributeValue(['S' => 'a'])]]), AttributeType::List];
         yield 'a map' => [new AttributeValue(['M' => ['a' => new AttributeValue(['S' => 'a'])]]), AttributeType::Map];
+        // AsyncAws returns an empty array for every collection a value does not hold, so an empty one needs telling apart
+        yield 'an empty list' => [new AttributeValue(['L' => []]), AttributeType::List];
+        yield 'an empty map' => [new AttributeValue(['M' => []]), AttributeType::Map];
     }
 
     #[DataProvider('valuesOfEachType')]
@@ -34,22 +37,8 @@ class AttributeTypeTest extends TestCase
         static::assertSame($type, AttributeType::tryFromAttributeValue($value));
     }
 
-    /**
-     * @return iterable<string, array{AttributeValue}>
-     */
-    public static function valuesThatDoNotTellTheirType(): iterable
+    public function testNullHasNoType(): void
     {
-        yield 'NULL' => [new AttributeValue(['NULL' => true])];
-        yield 'an empty map' => [new AttributeValue(['M' => []])];
-        yield 'an empty list' => [new AttributeValue(['L' => []])];
-    }
-
-    /**
-     * AsyncAws returns an empty array for every collection a value does not hold, so an empty one looks like any other.
-     */
-    #[DataProvider('valuesThatDoNotTellTheirType')]
-    public function testAValueThatDoesNotTellItsTypeHasNone(AttributeValue $value): void
-    {
-        static::assertNull(AttributeType::tryFromAttributeValue($value));
+        static::assertNull(AttributeType::tryFromAttributeValue(new AttributeValue(['NULL' => true])));
     }
 }

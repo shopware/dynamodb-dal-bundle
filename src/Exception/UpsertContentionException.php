@@ -6,8 +6,8 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 
 /**
- * An upsert gave up because other writers created and deleted its item between its update and its put, in every round
- * it sent them. Neither write is stored.
+ * An upsert gave up because, in every round it sent them, its update found no item and its put then found one that
+ * another writer had created in between. Another writer deleted it again before each next round. Neither write is stored.
  * The upsert's own condition did not fail, which a {@see ConditionalCheckFailedException} would say, so the upsert can be sent again.
  */
 final class UpsertContentionException extends \RuntimeException implements DALException

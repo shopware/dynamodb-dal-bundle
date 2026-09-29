@@ -285,8 +285,8 @@ standard Symfony application. Override only the side you need. The other side le
 
 | Operation | Runs for | Fields present |
 |---|---|---|
-| `Put` | A put, and an [upsert](writes.md#upserts) where no row is stored | Every field, `null` where the property is not initialized |
-| `Update` | An update, and an upsert of a stored row, whose row is known to exist | Only the paths the update writes, `null` for one it removes |
+| `Put` | A put, and every [upsert](writes.md#upserts), for the row it creates where none is stored | Every field, `null` where the property is not initialized |
+| `Update` | An update, and every upsert, for the update of a stored row | Only the paths the update writes, `null` for one it removes |
 | `Key` | A lookup, delete, update or upsert by key | Only the key fields |
 | `Read` | A row DynamoDB returns | Every field. A field the row lacks is `null`, or its default where the field is not nullable |
 
@@ -309,6 +309,9 @@ and a key never gains an attribute. Use `set()` to add a path, such as `updatedA
 
 - A key runs through the normalizer on its own, as `Key`. That includes the key of an update, whose fields run
   separately, as `Update`.
+- An [upsert](writes.md#upserts) prepares its put and its update before it knows whether a row is stored. So
+  `normalize()` runs as `Put`, as `Update` and as `Key` for every upsert, and `denormalize()` runs only for the write
+  that is stored.
 - An update also passes the value an [action](writes.md#update-expressions) stores as given, under the action's
   path: the value of a `setIfNotExists()`, or the elements of an `append()`. The normalizer handles the value like
   any field, and never sees the action.
@@ -328,7 +331,8 @@ and a key never gains an attribute. Use `set()` to add a path, such as `updatedA
   then `false`. Use `hasWithin('meta')` and `getWithin('meta')`.
 - Generate nothing for a `Key`. A generated value there addresses a row that doesn't exist.
 - A rule that has to hold for every operation, such as trimming or lowercasing an ID, goes before any check of the
-  operation. A put then stores the form that a lookup by key asks for.
+  operation. A put then stores the form that a lookup by key asks for. An upsert whose put and key get different key
+  values is refused, because its update and its put would address different rows.
 - Filters, a query's key condition included, don't pass through the normalizer. Pass them the canonical value.
 - A value the normalizer leaves `null` on a required field fails as usual. On a read, `omit()` of a required field
   fails the same way.

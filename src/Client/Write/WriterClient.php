@@ -24,6 +24,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\DynamoDbClient;
@@ -132,10 +133,11 @@ class WriterClient
      * @throws UpdateEmptyException if the update has nothing to write
      * @throws UpdateDuplicatePathException if the update gives a path two values
      * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable, or the entity lacks a required value
+     * @throws UpsertKeyMismatchException if the normalizer gives the key other values for the put than for the update
      * @throws DALException if the entity, the update, a path, the key or the condition does not serialize
      * @throws ConditionalCheckFailedException when the condition fails
-     * @throws UpsertContentionException when other writers create and delete the item between the update and the put, twice
-     * @throws EntityOutOfSyncException if the upsert is stored, but the entity could not be brought up to date
+     * @throws UpsertContentionException when, in both rounds, the update finds no item and the put then finds one that another writer created
+     * @throws EntityOutOfSyncException if the upsert is stored, but the entity could not be brought up to date; its `upsertOutcome` says which write is stored
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
     public function upsert(UpsertInput $input): UpsertOutcome
@@ -152,6 +154,8 @@ class WriterClient
                 if ($exception->getItem() !== []) {
                     throw $exception;
                 }
+            } catch (EntityOutOfSyncException $exception) {
+                throw new EntityOutOfSyncException($exception->getPrevious() ?? $exception, UpsertOutcome::Updated);
             }
 
             try {
@@ -173,7 +177,11 @@ class WriterClient
                 continue;
             }
 
-            $this->writeBack($put->writeBack);
+            try {
+                $this->writeBack($put->writeBack);
+            } catch (EntityOutOfSyncException $exception) {
+                throw new EntityOutOfSyncException($exception->getPrevious() ?? $exception, UpsertOutcome::Created);
+            }
 
             return UpsertOutcome::Created;
         }

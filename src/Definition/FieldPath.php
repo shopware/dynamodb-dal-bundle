@@ -106,8 +106,8 @@ final class FieldPath
 
     /**
      * The value at this path in a serialized item, as its field serializers wrote it, or `null` where the item holds
-     * nothing there, such as a key its map lacks. The value is serialized still, for the caller to deserialize with
-     * {@see self::$definition} if it needs to.
+     * nothing there: a key its map lacks, or `NULL`, as which a map or a list stores an entry that is `null`. The value
+     * is serialized still, for the caller to deserialize with {@see self::$definition} if it needs to.
      *
      * @param array<string, AttributeValue> $item - keyed by attribute name, as DynamoDB takes and returns an item
      *
@@ -121,7 +121,7 @@ final class FieldPath
 
         foreach ($segments as $segment) {
             $type = $value !== null ? AttributeType::tryFromAttributeValue($value) : null;
-            if ($value === null || $type === null) {
+            if ($type === null) {
                 return null;
             }
 
@@ -134,7 +134,7 @@ final class FieldPath
             $walked .= \is_int($segment) ? "[{$segment}]" : ".{$segment}";
         }
 
-        return $value;
+        return $value?->getNull() === true ? null : $value;
     }
 
     public function getExpression(): string

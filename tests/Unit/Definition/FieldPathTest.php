@@ -251,6 +251,7 @@ class FieldPathTest extends TestCase
         yield 'an index past the list' => ['users[3]'];
         yield 'a segment into an empty map' => ['deep.empty.mode'];
         yield 'a segment into NULL' => ['deep.none.mode'];
+        yield 'NULL, as a map stores an entry that is null' => ['deep.none'];
     }
 
     /**
@@ -274,6 +275,20 @@ class FieldPathTest extends TestCase
             static::assertSame('deep.theme', $exception->field);
             static::assertSame(AttributeType::String, $exception->actualType);
             static::assertSame([AttributeType::Map], $exception->expectedTypes);
+        }
+    }
+
+    /**
+     * An empty list holds no entries either, but it is no map a key could be added to.
+     */
+    public function testTraverseRefusesASegmentIntoAnEmptyAttributeOfAnotherType(): void
+    {
+        try {
+            $this->parse('deep.theme.mode')->traverse(['deep' => new AttributeValue(['M' => ['theme' => new AttributeValue(['L' => []])]])]);
+            static::fail('`deep.theme` is stored as a list');
+        } catch (AttributeTypeMismatchException $exception) {
+            static::assertSame('deep.theme', $exception->field);
+            static::assertSame(AttributeType::List, $exception->actualType);
         }
     }
 

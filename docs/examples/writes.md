@@ -182,8 +182,12 @@ $this->client->upsert(new UpsertInput($order, ['status', 'totalCents', 'meta.car
 The second argument says what a stored row takes. A list of paths takes each path's value from the entity, as an
 update of `['status' => $order->status, ...]` would. A path may address a map entry or a list element, as
 `meta.carrier` does, and the other entries of a stored map stay as they are. A path that the entity holds no value
-for, such as a map key it lacks, is removed from the stored row. A key field in the list writes nothing, since the key
-already names the row.
+for, such as a map key it lacks or holds as `null`, is removed from the stored row. A key field in the list writes
+nothing, since the key already names the row.
+
+A list that writes nothing, because it is empty or names only key fields, is refused before anything is sent, even
+where no row is stored. To create a row only where none is stored, put it on the condition that its key is free, as
+under [Conditional writes](#conditional-writes).
 
 A path into a field takes its value from the row the put would store, not from the property. A field that a
 [field serializer](extending.md#a-field-type-of-your-own) or the [normalizer](extending.md#a-normalizer) stores as a
@@ -201,8 +205,9 @@ $this->client->upsert(new UpsertInput($order, Update::increment('totalCents', 49
 ```
 
 The third argument is a condition, and the fourth a `refresh`, as for an update. The entity has to carry its key,
-because the update addresses the stored row by it. An upsert takes two requests, so it can't be part of a
-[transaction](#transactions).
+because the update addresses the stored row by it. The put has to store the row under that same key, so the bundle
+refuses an upsert whose normalizer gives the key other values for a put than for a key. An upsert takes two requests,
+so it can't be part of a [transaction](#transactions).
 
 `upsert()` returns which of the two writes was stored, for a caller that only acts on one of them:
 
@@ -223,18 +228,20 @@ if ($this->client->upsert(new UpsertInput($order, ['status'])) === UpsertOutcome
   DynamoDB to return the stored row if their condition fails (`ReturnValuesOnConditionCheckFailure=ALL_OLD`), which
   tells a missing row from a condition of yours that fails on a stored one.
 - If another writer creates the row between the update and the put, the put fails and returns that row, and the
-  bundle sends the update again. If the row is deleted again before that second update, the bundle gives up with an
+  bundle sends the update again. If the row is deleted again before that second update, the bundle puts the entity
+  again. Only if another writer creates the row once more before that second put does the bundle give up, with an
   `UpsertContentionException`, and neither write is stored. That is not a failed condition, so it is not a
   `ConditionalCheckFailedException`.
 - Only one of the two writes is stored. The row is therefore either the stored row with the update applied, or the
   entity.
 - A whole field in a list of paths takes the entity's value. A path into a field is read from the row the put would
   store, and its value there is deserialized with the type of the field's values, as `#[Field]` declares it.
-- The entity's [normalizer](extending.md#a-normalizer) runs as `Update` for the update and as `Put` for the put, as for
-  each write on its own. A `createdAt` it generates for a put therefore reaches only a new row, and an `updatedAt` it
-  stamps for an update only a stored one.
+- The entity's [normalizer](extending.md#a-normalizer) normalizes both writes before either is sent: as `Put` for the
+  put, and as `Update` for the update. Only the write that is stored reaches the row. A `createdAt` it generates for a
+  put therefore reaches only a new row, and an `updatedAt` it stamps for an update only a stored one.
 - The entity is brought up to date as after the write that was stored. After the update, it takes the stored row.
-  After the put, it takes the values the normalizer generated. `Refresh::None` leaves it as it is after either.
+  After the put, it takes the values the normalizer generated. `Refresh::None` leaves it as it is after either. If
+  bringing it up to date fails, the `EntityOutOfSyncException` says in `upsertOutcome` which write is stored.
 
 ### Pitfalls
 
@@ -260,6 +267,10 @@ if ($this->client->upsert(new UpsertInput($order, ['status'])) === UpsertOutcome
 - A value at a path into a field passes the normalizer twice: as part of the whole field, for the row the put would
   store, and on its own, for the update. A normalizer that changes such a value in a way that doesn't hold up to a
   second pass, such as adding a prefix, changes it twice in a stored row.
+- `normalize()` runs as `Put` and as `Update` on every upsert, before the bundle knows whether a row is stored. A
+  normalizer whose `normalize()` has side effects, such as drawing a number from a sequence or recording an event, has
+  them for both writes, although only one is stored. Keep such effects out of the normalizer, or act on the outcome
+  that `upsert()` returns.
 - Where no row is stored, DynamoDB checks the condition against a row without attributes, as it does for a put. A
   comparison is then false, so a condition like `Filter::lessThan('totalCents', 10_000)` refuses to create the row.
   Allow for the new row: `Filter::or(Filter::notExists('totalCents'), Filter::lessThan('totalCents', 10_000))`.

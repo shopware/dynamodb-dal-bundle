@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Exception;
 
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
@@ -31,6 +32,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
 use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Test\ExceptionFactory;
@@ -58,6 +60,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(UpdateDuplicatePathException::class)]
 #[CoversClass(UpdateEmptyException::class)]
 #[CoversClass(UpsertContentionException::class)]
+#[CoversClass(UpsertKeyMismatchException::class)]
 #[CoversClass(WrongTypeException::class)]
 class DALExceptionTest extends TestCase
 {
@@ -116,6 +119,7 @@ class DALExceptionTest extends TestCase
                 UnknownEntityDefinitionException::class,
                 UnknownIndexException::class,
                 UpsertContentionException::class,
+                UpsertKeyMismatchException::class,
             ],
         ];
 
@@ -221,6 +225,15 @@ class DALExceptionTest extends TestCase
 
         static::assertSame('The write is stored, but not every entity it wrote could be brought up to date: Rate exceeded', $exception->getMessage());
         static::assertSame($previous, $exception->getPrevious());
+        static::assertNull($exception->upsertOutcome);
+    }
+
+    /**
+     * An upsert says which of its writes is stored, as it would have returned it.
+     */
+    public function testEntityOutOfSyncAfterAnUpsertKeepsItsOutcome(): void
+    {
+        static::assertSame(UpsertOutcome::Created, new EntityOutOfSyncException(new \RuntimeException('Rate exceeded'), UpsertOutcome::Created)->upsertOutcome);
     }
 
     public function testUpdateEmpty(): void
@@ -257,6 +270,20 @@ class DALExceptionTest extends TestCase
         );
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame($failure, $exception->getPrevious());
+    }
+
+    public function testUpsertKeyMismatch(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $entity = new CustomerEntity();
+        $exception = new UpsertKeyMismatchException($entityDefinition, $entity);
+
+        static::assertSame(
+            'Upsert of item "customer" addresses one row with its update and another with its put, as its normalizer gives the key other values for a put',
+            $exception->getMessage(),
+        );
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($entity, $exception->entity);
     }
 
     /**

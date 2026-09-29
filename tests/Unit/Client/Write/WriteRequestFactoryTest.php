@@ -17,12 +17,15 @@ use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
+use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
 use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
+use Shopware\DynamodbDalBundle\Serializer\NormalizerContext;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -33,6 +36,7 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Client\Write\Fixtures\SettingsFieldSer
 use Shopware\DynamodbDalBundle\Tests\Unit\Client\Write\Fixtures\SettingsNormalizer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CatalogEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
+use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\RecordingNormalizer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -211,6 +215,37 @@ class WriteRequestFactoryTest extends TestCase
     }
 
     /**
+     * The condition is compiled on its own for the put too, so it cannot hide behind the check that the key is free.
+     */
+    public function testAnUpsertConditionThatChecksNothingIsRefused(): void
+    {
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->factory->upsert(new UpsertInput($this->entity('a'), ['name'], Filter::or()));
+    }
+
+    /**
+     * The update's key is normalized as a key, and the put's with the entity. A normalizer that gives the put another
+     * key would have the two address different rows.
+     */
+    public function testAnUpsertWhoseNormalizerGivesThePutAnotherKeyIsRefused(): void
+    {
+        $normalizer = new RecordingNormalizer(normalize: static function (NormalizerContext $context): void {
+            if ($context->operation === NormalizerOperation::Put) {
+                $context->set('autofilledId', 'composed');
+            }
+        });
+        $entity = $this->entity('a');
+
+        try {
+            self::factoryFor(NormalEntity::createDefinition($normalizer))->upsert(new UpsertInput($entity, ['name']));
+            static::fail('The put is keyed by "composed", the update by "a"');
+        } catch (UpsertKeyMismatchException $exception) {
+            static::assertSame($entity, $exception->entity);
+        }
+    }
+
+    /**
      * A path the entity holds no value for is removed, as a field given as `null` is. The key names the item, so a key
      * field in the paths writes nothing.
      */
@@ -223,25 +258,24 @@ class WriteRequestFactoryTest extends TestCase
 
     public function testAStoredItemTakesAPathIntoAnAttributeFromTheEntitysValueThere(): void
     {
-        $definition = EntityDefinitionFactory::create(CatalogEntity::class);
-        $serializer = new Serializer();
-        $factory = new WriteRequestFactory(
-            $serializer,
-            new FilterCompiler(),
-            new UpdateCompiler($serializer),
-            new EntityDefinitionRegistry([$definition->getName() => $definition]),
-        );
-        $entity = new CatalogEntity()->setVars([
-            'tenantId' => 't',
-            'status' => 'open',
-            'createdAt' => new \DateTimeImmutable('@1700000000'),
-            'groups' => ['colors' => ['red', 'blue']],
-        ]);
+        $factory = self::factoryFor(EntityDefinitionFactory::create(CatalogEntity::class));
 
-        [$update] = $factory->upsert(new UpsertInput($entity, ['groups.colors[1]']));
+        [$update] = $factory->upsert(new UpsertInput(self::catalogEntity(['colors' => ['red', 'blue']]), ['groups.colors[1]']));
 
         static::assertSame('SET #groups.#colors[1] = :u_1_0_groups_2ecolors_5b1_5d', $update->request['UpdateExpression'] ?? null);
         static::assertEquals(new AttributeValue(['S' => 'blue']), $update->request['ExpressionAttributeValues'][':u_1_0_groups_2ecolors_5b1_5d'] ?? null);
+    }
+
+    /**
+     * A map stores an entry that is `null` as `NULL`, which holds no value to write either.
+     */
+    public function testAnEntryTheEntityHoldsAsNullIsRemoved(): void
+    {
+        $factory = self::factoryFor(EntityDefinitionFactory::create(CatalogEntity::class));
+
+        [$update] = $factory->upsert(new UpsertInput(self::catalogEntity(['colors' => null, 'sizes' => ['s']]), ['groups.colors']));
+
+        static::assertSame('REMOVE #groups.#colors', $update->request['UpdateExpression'] ?? null);
     }
 
     /**
@@ -340,6 +374,19 @@ class WriteRequestFactoryTest extends TestCase
     private function entity(string $id): NormalEntity
     {
         return new NormalEntity()->setAutofilledId($id)->setRequired('req');
+    }
+
+    /**
+     * @param array<string, ?list<string>> $groups
+     */
+    private static function catalogEntity(array $groups): CatalogEntity
+    {
+        return new CatalogEntity()->setVars([
+            'tenantId' => 't',
+            'status' => 'open',
+            'createdAt' => new \DateTimeImmutable('@1700000000'),
+            'groups' => $groups,
+        ]);
     }
 
     private static function settingsEntity(): SettingsEntity

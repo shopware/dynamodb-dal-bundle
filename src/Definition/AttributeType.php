@@ -22,8 +22,7 @@ enum AttributeType: string
     case BinarySet = 'BS';
 
     /**
-     * The type a serialized value is stored as, `null` where the value does not tell it: `NULL`, which has no case here,
-     * and an empty map, list or set, which AsyncAws cannot tell apart.
+     * The type a serialized value is stored as, `null` for `NULL`, which has no case here.
      */
     public static function tryFromAttributeValue(AttributeValue $value): ?self
     {
@@ -37,7 +36,9 @@ enum AttributeType: string
             $value->getBs() !== [] => self::BinarySet,
             $value->getL() !== [] => self::List,
             $value->getM() !== [] => self::Map,
-            default => null,
+            // The getter of an empty collection returns `[]`, as the getter of each collection the value is not does,
+            // so only the request body still names it. Cheap here, as there is nothing left in it to encode.
+            default => self::tryFrom((string) array_key_first($value->requestBody())),
         };
     }
 }

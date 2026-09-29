@@ -693,6 +693,46 @@ class WriterClientTest extends TestCase
     }
 
     /**
+     * The upsert is stored, so the caller still learns which write it was, although the entity fell behind.
+     */
+    public function testAnUpsertStoredAsAnUpdateThatLeavesItsEntityOutOfSyncSaysSo(): void
+    {
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw new \DomainException('The normalizer refuses the row')));
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'req']),
+            ]]));
+        $this->client->expects(static::never())->method('putItem');
+
+        try {
+            $writer->upsert(new UpsertInput($this->entity('a'), ['name']));
+            static::fail('The normalizer refuses the stored row');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertSame(UpsertOutcome::Updated, $exception->upsertOutcome);
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+        }
+    }
+
+    public function testAnUpsertStoredAsAPutThatLeavesItsEntityOutOfSyncSaysSo(): void
+    {
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw new \DomainException('The normalizer refuses the fields')));
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException(self::conditionalCheckFailed());
+        $this->client->expects(static::once())->method('putItem')->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        try {
+            $writer->upsert(new UpsertInput($this->entity('a'), ['name']));
+            static::fail('The normalizer refuses the fields');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertSame(UpsertOutcome::Created, $exception->upsertOutcome);
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+        }
+    }
+
+    /**
      * `refresh: Refresh::WithoutReadBack` buys no read: the fields beside an action are applied, the action's target is not.
      */
     public function testUpdateOfSeveralWithoutAReadbackAppliesTheFieldsBesideAnAction(): void

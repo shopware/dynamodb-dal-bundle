@@ -19,6 +19,7 @@ use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Expression\Contract\FilterInterface;
 use Shopware\DynamodbDalBundle\Expression\ExpressionCompiledResult;
 use Shopware\DynamodbDalBundle\Expression\Filter;
@@ -140,22 +141,7 @@ final readonly class WriteRequestFactory
      */
     public function put(PutInput $input): PreparedWrite
     {
-        $definition = $this->definitionRegistry->getByEntityClass($input->class);
-
-        $result = $this->serializer->serialize($definition, $input->entity, NormalizerOperation::Put);
-        $condition = $this->condition($definition, $input->condition);
-
-        return new PreparedWrite(
-            'Put',
-            SerializedKeyResult::fromItem($definition, $result->getFields()),
-            [
-                'TableName' => $definition->getTable(),
-                ...$result->getPutExpression(),
-                ...$condition->getExpression('condition'),
-                ...$condition->getExpressionAttributes(),
-            ],
-            WriteBack::fields($input->entity, $definition, $result->getNormalizedFields(), $result->getOperation()),
-        );
+        return $this->putOf($input->entity, $input->condition);
     }
 
     /**
@@ -179,7 +165,8 @@ final readonly class WriteRequestFactory
         $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
         [$normalized, $update] = $this->updateCompiler->update($definition, $input->update);
-        $condition = $this->updateCondition($definition, $input->condition);
+        // `UpdateItem` otherwise creates a missing item from just its key and the updated fields
+        $condition = $this->condition($definition, Filter::exists($definition->getKeySchema()->hashKey), $input->condition);
         $key = $this->serializer->serializeKey($definition, $input->key);
 
         return new PreparedWrite(
@@ -209,6 +196,7 @@ final readonly class WriteRequestFactory
      * @throws UpdateEmptyException if the update has nothing to write
      * @throws UpdateDuplicatePathException if the update gives a path two values
      * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable, or the entity lacks a required value
+     * @throws UpsertKeyMismatchException if the normalizer gives the key other values for the put than for the update
      * @throws DALException if the entity, the update, a path, the key or the condition does not serialize
      *
      * @return array{PreparedWrite<UpdateRequest>, PreparedWrite<PutRequest>} - the update, and the put
@@ -217,8 +205,7 @@ final readonly class WriteRequestFactory
     {
         $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        $keyFree = Filter::notExists($definition->getKeySchema()->hashKey);
-        $put = $this->put(new PutInput($input->entity, $input->condition !== null ? Filter::and($keyFree, $input->condition) : $keyFree));
+        $put = $this->putOf($input->entity, Filter::notExists($definition->getKeySchema()->hashKey), $input->condition);
 
         $update = $this->update(new UpdateInput(
             $input->entity,
@@ -226,6 +213,12 @@ final readonly class WriteRequestFactory
             $input->condition,
             $input->refresh,
         ));
+
+        // The update's key is normalized as a key and the put's as part of the entity. Where the two differ, the update
+        // misses the row the put finds, and every round ends as contention.
+        if ($update->key->hash !== $put->key->hash) {
+            throw new UpsertKeyMismatchException($definition, $input->entity);
+        }
 
         return [$update, $input->refresh === Refresh::None ? new PreparedWrite($put->type, $put->key, $put->request) : $put];
     }
@@ -283,6 +276,35 @@ final readonly class WriteRequestFactory
     }
 
     /**
+     * The put of the entity, conditioned on each of the conditions given.
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
+     * @throws DALException if the entity or a condition does not serialize
+     *
+     * @return PreparedWrite<PutRequest>
+     */
+    private function putOf(AbstractEntity $entity, ?FilterInterface ...$conditions): PreparedWrite
+    {
+        $definition = $this->definitionRegistry->getByEntityClass($entity::class);
+
+        $result = $this->serializer->serialize($definition, $entity, NormalizerOperation::Put);
+        $condition = $this->condition($definition, ...$conditions);
+
+        return new PreparedWrite(
+            'Put',
+            SerializedKeyResult::fromItem($definition, $result->getFields()),
+            [
+                'TableName' => $definition->getTable(),
+                ...$result->getPutExpression(),
+                ...$condition->getExpression('condition'),
+                ...$condition->getExpressionAttributes(),
+            ],
+            WriteBack::fields($entity, $definition, $result->getNormalizedFields(), $result->getOperation()),
+        );
+    }
+
+    /**
      * @param UpdateInput<AbstractEntity> $input
      */
     private function updateWriteBack(EntityDefinition $definition, UpdateInput $input, UpdateExpression $normalized): ?WriteBack
@@ -300,7 +322,7 @@ final readonly class WriteRequestFactory
 
     /**
      * The update of each path to the entity's value there. A path the entity holds no value for, such as a map key it
-     * lacks, is removed. A key field is left out, since the key names the item.
+     * lacks or holds as `null`, is removed. A key field is left out, since the key names the item.
      *
      * A whole field takes the entity's own value, which the update's normalizer then sees as it would for any update.
      * A path into a field takes its value from the item the put writes: only the field's serializer, and the normalizer
@@ -338,31 +360,19 @@ final readonly class WriteRequestFactory
     }
 
     /**
-     * @throws ConditionEmptyException
-     * @throws DALException
-     */
-    private function condition(EntityDefinition $definition, ?FilterInterface $condition): ExpressionCompiledResult
-    {
-        if ($condition === null) {
-            return new ExpressionCompiledResult();
-        }
-
-        return $this->filterCompiler->condition($definition, $condition);
-    }
-
-    /**
-     * The update's condition, joined with a check that the item exists.
-     * `UpdateItem` otherwise creates a missing item from just its key and the updated fields.
+     * The conditions given, joined with `AND`. Each is compiled on its own, so one that checks nothing is refused rather
+     * than hidden behind another.
      *
      * @throws ConditionEmptyException
      * @throws DALException
      */
-    private function updateCondition(EntityDefinition $definition, ?FilterInterface $condition): ExpressionCompiledResult
+    private function condition(EntityDefinition $definition, ?FilterInterface ...$conditions): ExpressionCompiledResult
     {
-        $exists = Filter::exists($definition->getKeySchema()->hashKey);
+        $conditions = array_values(array_filter($conditions, static fn (?FilterInterface $condition): bool => $condition !== null));
+        if ($conditions === []) {
+            return new ExpressionCompiledResult();
+        }
 
-        return $condition !== null
-            ? $this->filterCompiler->condition($definition, $exists, $condition)
-            : $this->filterCompiler->condition($definition, $exists);
+        return $this->filterCompiler->condition($definition, ...$conditions);
     }
 }
