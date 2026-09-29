@@ -6,7 +6,9 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Profiler\DalCallTracer;
 use Shopware\DynamodbDalBundle\Profiler\TraceableWriterClient;
@@ -27,6 +29,19 @@ class TraceableWriterClientTest extends TestCase
         static::assertCount(1, $calls);
         static::assertSame('batchWrite', $calls[0]->method);
         static::assertSame([NormalEntity::class, OtherEntity::class], $calls[0]->entities);
+    }
+
+    public function testAnUpsertIsOneCallOverItsEntity(): void
+    {
+        $tracer = new DalCallTracer();
+        $inner = static::createStub(WriterClient::class);
+        $inner->method('upsert')->willReturn(UpsertOutcome::Updated);
+        $writer = new TraceableWriterClient($inner, $tracer);
+
+        static::assertSame(UpsertOutcome::Updated, $writer->upsert(new UpsertInput(new NormalEntity(), ['required'])));
+
+        static::assertSame('upsert', $tracer->calls()[0]->method ?? null);
+        static::assertSame([NormalEntity::class], $tracer->calls()[0]->entities);
     }
 
     public function testAFailedWriteIsTheCallsFailure(): void

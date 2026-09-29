@@ -28,8 +28,10 @@ use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Test\ExceptionFactory;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -51,6 +53,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(UnknownFieldException::class)]
 #[CoversClass(UpdateDuplicatePathException::class)]
 #[CoversClass(UpdateEmptyException::class)]
+#[CoversClass(UpsertContentionException::class)]
 #[CoversClass(WrongTypeException::class)]
 class DALExceptionTest extends TestCase
 {
@@ -106,6 +109,7 @@ class DALExceptionTest extends TestCase
                 InvalidCursorException::class,
                 UnknownEntityDefinitionException::class,
                 UnknownIndexException::class,
+                UpsertContentionException::class,
             ],
         ];
 
@@ -205,6 +209,23 @@ class DALExceptionTest extends TestCase
         static::assertSame('Update of item "customer" writes path "meta.label" more than once', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame('meta.label', $exception->path);
+    }
+
+    /**
+     * The put's last failure stays on it as the previous exception.
+     */
+    public function testUpsertContentionKeepsThePutsLastFailure(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $failure = ExceptionFactory::conditionalCheckFailed();
+        $exception = new UpsertContentionException($entityDefinition, 2, $failure);
+
+        static::assertSame(
+            'Upsert of item "customer" gave up after 2 rounds, in each of which another writer created or deleted the item',
+            $exception->getMessage(),
+        );
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($failure, $exception->getPrevious());
     }
 
     /**

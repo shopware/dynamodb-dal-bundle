@@ -284,9 +284,9 @@ standard Symfony application. Override only the side you need. The other side le
 
 | Operation | Runs for | Fields present |
 |---|---|---|
-| `Put` | A put | Every field, `null` where the property is not initialized |
-| `Update` | An update, whose row is known to exist | Only the paths the update writes, `null` for one it removes |
-| `Key` | A lookup, delete or update by key | Only the key fields |
+| `Put` | A put, and an [upsert](writes.md#upserts) where no row is stored | Every field, `null` where the property is not initialized |
+| `Update` | An update, and an upsert of a stored row, whose row is known to exist | Only the paths the update writes, `null` for one it removes |
+| `Key` | A lookup, delete, update or upsert by key | Only the key fields |
 | `Read` | A row DynamoDB returns | Every field. A field the row lacks is `null`, or its default where the field is not nullable |
 
 The context reads and changes the fields:

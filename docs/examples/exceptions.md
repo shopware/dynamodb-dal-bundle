@@ -41,8 +41,9 @@ These are the only exceptions a correct application should expect at runtime.
 
 | Exception | Thrown when | Handling |
 |---|---|---|
-| `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update or delete does not hold, or the row an update addresses does not exist | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
+| `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update, upsert or delete does not hold, or the row an update addresses does not exist | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
 | `AsyncAws\DynamoDb\Exception\TransactionCanceledException` | DynamoDB cancels a transaction, for example because a condition failed. The bundle first retries a cancellation caused only by a conflict with another transaction or by throttling | `getCancellationReasons()` holds one reason per operation, in the order the operations were given. See [Transactions](writes.md#transactions) |
+| `UpsertContentionException` | Other writers created and deleted the row of an upsert between its update and its put, twice. Neither write is stored | Send the upsert again. See [Upserts](writes.md#upserts) |
 | `InvalidCursorException` | A pagination token or `CursorHistory` was edited, or belongs to another table or index | Start over at the first page. See [Paginated listing](paginated-listing.md#listing-a-query) |
 
 Other AsyncAws exceptions, such as `ProvisionedThroughputExceededException`, pass through as well.
@@ -108,7 +109,7 @@ The bundle throws these before it sends a request. They implement `ExpressionExc
 |---|---|
 | `UnknownFieldException` | A filter or update names a field the entity doesn't have. Also a path that the field's type has no place for, such as an index into a map or a name inside a list. It is a [`SerializationException`](#values-that-dont-fit-their-field) as well |
 | `NullOperandException` | A filter or condition compares with `null`. To match a missing attribute, use `Filter::notExists()` |
-| `AttributeTypeMismatchException` | A filter or update does something the field's stored type doesn't allow, such as `beginsWith()` on a list, `append()` to a map, or a comparison of two operands of different types. A field whose serializer declares no type is left to DynamoDB |
+| `AttributeTypeMismatchException` | A filter or update does something the field's stored type doesn't allow, such as `beginsWith()` on a list, `append()` to a map, or a comparison of two operands of different types. A field whose serializer declares no type is left to DynamoDB, except for an upsert's path into a field that the put's row doesn't store as a map or a list there. See [Upserts](writes.md#upserts) |
 | `InvalidKeyConditionException` | A key filter names a field that is not the hash or range key of the table or index queried, has a range key where the key has none, or compares a key with a `Filter::size()` or `Filter::field()`. See [Querying](basics.md#querying) |
 | `ConditionEmptyException` | A write condition checks nothing, such as an empty `Filter::and()` or `Filter::equalsAny([])` |
 | `UpdateEmptyException` | An update has nothing to write |

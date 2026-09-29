@@ -9,7 +9,9 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
@@ -25,6 +27,7 @@ use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Expression\UpdateCompiler;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
+use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Serializer\SerializedKeyResult;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
@@ -194,6 +197,40 @@ final readonly class WriteRequestFactory
     }
 
     /**
+     * An upsert as the update of the stored item and the put of the entity, both prepared before either is sent. The
+     * update is conditioned on the item existing, as every update is, and the put on its key being free, each on top of
+     * the upsert's own condition, so at most one of them is written. With {@see Refresh::None}, the put leaves the entity
+     * as it is, as the update does.
+     *
+     * @param UpsertInput<AbstractEntity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
+     * @throws UpdateEmptyException if the update has nothing to write
+     * @throws UpdateDuplicatePathException if the update gives a path two values
+     * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable, or the entity lacks a required value
+     * @throws DALException if the entity, the update, a path, the key or the condition does not serialize
+     *
+     * @return array{PreparedWrite<UpdateRequest>, PreparedWrite<PutRequest>} - the update, and the put
+     */
+    public function upsert(UpsertInput $input): array
+    {
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
+
+        $keyFree = Filter::notExists($definition->getKeySchema()->hashKey);
+        $put = $this->put(new PutInput($input->entity, $input->condition !== null ? Filter::and($keyFree, $input->condition) : $keyFree));
+
+        $update = $this->update(new UpdateInput(
+            $input->entity,
+            \is_array($input->update) ? $this->entityValuesAt($definition, $input->entity, $put->request['Item'], $input->update) : $input->update,
+            $input->condition,
+            $input->refresh,
+        ));
+
+        return [$update, $input->refresh === Refresh::None ? new PreparedWrite($put->type, $put->key, $put->request) : $put];
+    }
+
+    /**
      * @param DeleteInput<AbstractEntity> $input
      *
      * @throws UnknownEntityDefinitionException
@@ -259,6 +296,45 @@ final readonly class WriteRequestFactory
         }
 
         return WriteBack::fields($input->key, $definition, $normalized->fields, NormalizerOperation::Update);
+    }
+
+    /**
+     * The update of each path to the entity's value there. A path the entity holds no value for, such as a map key it
+     * lacks, is removed. A key field is left out, since the key names the item.
+     *
+     * A whole field takes the entity's own value, which the update's normalizer then sees as it would for any update.
+     * A path into a field takes its value from the item the put writes: only the field's serializer, and the normalizer
+     * before it, know how the field is stored, such as an object as a map.
+     *
+     * @param array<string, AttributeValue> $item - the item the put writes
+     * @param list<string> $paths
+     *
+     * @throws AttributeTypeMismatchException if a path descends into an attribute the item does not store as a map or a list
+     * @throws DALException if a path does not address a field the entity has, or a value within a field does not deserialize
+     */
+    private function entityValuesAt(EntityDefinition $definition, AbstractEntity $entity, array $item, array $paths): UpdateExpression
+    {
+        $keyFields = $definition->getKeySchema()->getFields();
+        $vars = $entity->getVars();
+
+        $fields = [];
+        foreach ($paths as $path) {
+            if (\in_array($path, $keyFields, true)) {
+                continue;
+            }
+
+            $fieldPath = FieldPath::parse($definition, $path);
+            if (!$fieldPath->isNested()) {
+                $fields[$path] = $vars[$path] ?? null;
+
+                continue;
+            }
+
+            $stored = $fieldPath->traverse($item);
+            $fields[$path] = $stored !== null ? $this->serializer->deserializeValue($fieldPath->definition, $stored, $path) : null;
+        }
+
+        return new UpdateExpression($fields);
     }
 
     /**

@@ -22,7 +22,7 @@ write it.
 
 - [Quick setup](docs/QUICK_SETUP.md): requirements, installation, a first entity and its use
 - [Basics](docs/examples/basics.md): entities, reading by key, queries, scans, counts, filters, puts and deletes
-- [Updates, conditions and transactions](docs/examples/writes.md): partial and nested updates, update expressions, conditional writes and transactions
+- [Updates, conditions and transactions](docs/examples/writes.md): partial and nested updates, update expressions, upserts, conditional writes and transactions
 - [Paginated listing](docs/examples/paginated-listing.md): previous and next links, page numbers, and pages
   merged from several queries
 - [Custom types, normalizers, filters and update actions](docs/examples/extending.md)

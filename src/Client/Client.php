@@ -12,8 +12,10 @@ use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Output\GetOutput;
 use Shopware\DynamodbDalBundle\Client\Output\SearchOutput;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
@@ -27,6 +29,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
@@ -207,6 +210,32 @@ class Client
     public function update(UpdateInput $input): void
     {
         $this->writer->update($input);
+    }
+
+    /**
+     * Writes the entity whether or not its item is stored: it updates the stored item with `UpdateItem`, and where the
+     * update finds none, puts the entity with `PutItem`. A stored item takes what {@see UpsertInput::$update} says,
+     * and the entity is brought up to date as after that update or that put.
+     * Not atomic across the two requests, but only one of them is written, and the outcome says which.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param UpsertInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
+     * @throws UpdateEmptyException if the update has nothing to write
+     * @throws UpdateDuplicatePathException if the update gives a path two values
+     * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable, or the entity lacks a required value
+     * @throws DALException if the entity, the update, a path, the key or the condition does not serialize
+     * @throws ConditionalCheckFailedException when the condition fails
+     * @throws UpsertContentionException when other writers create and delete the item between the update and the put, twice
+     * @throws EntityOutOfSyncException if the upsert is stored, but the entity could not be brought up to date
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     */
+    public function upsert(UpsertInput $input): UpsertOutcome
+    {
+        return $this->writer->upsert($input);
     }
 
     /**

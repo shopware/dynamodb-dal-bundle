@@ -9,7 +9,7 @@
     - [The bundle tracks no changes](#the-bundle-tracks-no-changes)
     - [The bundle neither creates nor migrates tables](#the-bundle-neither-creates-nor-migrates-tables)
   - [Reads and writes](#reads-and-writes)
-    - [An update never creates a row](#an-update-never-creates-a-row)
+    - [An upsert takes two requests for a new row](#an-upsert-takes-two-requests-for-a-new-row)
     - [A page is reached by token, not by number](#a-page-is-reached-by-token-not-by-number)
   - [Types at a glance](#types-at-a-glance)
   - [Numbers](#numbers)
@@ -118,13 +118,13 @@ read. What else to watch for is in [Basics](examples/basics.md#the-entity).
 
 ## Reads and writes
 
-### An update never creates a row
+### An upsert takes two requests for a new row
 
 Every update checks that its row exists, so an update of a missing key fails, unlike DynamoDB's `UpdateItem`. An
-upsert, such as a counter per day whose first `increment()` creates the row, needs a put first. The put is
-conditioned on `Filter::notExists()` of the key, so it creates the row only where it is missing. Where the row
-exists, it fails with a `ConditionalCheckFailedException`, which the caller ignores before it sends the update. Every
-key's first write therefore costs a second request (see [Partial updates](examples/writes.md#partial-updates)).
+upsert sends the update, and puts the entity where DynamoDB refuses the update because no row is stored. A single
+`UpdateItem` can't do both: it can't write a map entry into a map that a new row doesn't have yet, and it can't create
+the map and write into it at once. A new row therefore costs two writes, the refused update included, and an upsert
+can't be part of a transaction (see [Upserts](examples/writes.md#upserts)).
 
 ### A page is reached by token, not by number
 

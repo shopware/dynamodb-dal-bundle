@@ -178,12 +178,8 @@ final readonly class ReadRequestFactory
         }
 
         foreach ($cursor->key as $name => $value) {
-            // Cursor::decode() takes a string, number or binary only
-            $type = match (true) {
-                $value->getS() !== null => AttributeType::String,
-                $value->getN() !== null => AttributeType::Number,
-                default => AttributeType::Binary,
-            };
+            // Cursor::decode() takes a string, number or binary only, and each tells its type
+            $type = AttributeType::tryFromAttributeValue($value) ?? AttributeType::Binary;
 
             $stored = $definition->getFieldDefinition($name)?->getAttributeType();
             if ($stored !== null && $stored !== $type) {

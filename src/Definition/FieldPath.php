@@ -2,7 +2,9 @@
 
 namespace Shopware\DynamodbDalBundle\Definition;
 
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * A document path into an item — `name`, `settings.currency`, `entries[0].id`.
@@ -100,6 +102,39 @@ final class FieldPath
     public function isNested(): bool
     {
         return \count($this->segments) > 1;
+    }
+
+    /**
+     * The value at this path in a serialized item, as its field serializers wrote it, or `null` where the item holds
+     * nothing there, such as a key its map lacks. The value is serialized still, for the caller to deserialize with
+     * {@see self::$definition} if it needs to.
+     *
+     * @param array<string, AttributeValue> $item - keyed by attribute name, as DynamoDB takes and returns an item
+     *
+     * @throws AttributeTypeMismatchException if a segment descends into an attribute that is not a map or a list
+     */
+    public function traverse(array $item): ?AttributeValue
+    {
+        $segments = $this->segments;
+        $walked = (string) array_shift($segments);
+        $value = $item[$walked] ?? null;
+
+        foreach ($segments as $segment) {
+            $type = $value !== null ? AttributeType::tryFromAttributeValue($value) : null;
+            if ($value === null || $type === null) {
+                return null;
+            }
+
+            $container = \is_int($segment) ? AttributeType::List : AttributeType::Map;
+            if ($type !== $container) {
+                throw new AttributeTypeMismatchException($this->definition->getEntityDefinition(), $walked, $type, [$container]);
+            }
+
+            $value = \is_int($segment) ? ($value->getL()[$segment] ?? null) : ($value->getM()[$segment] ?? null);
+            $walked .= \is_int($segment) ? "[{$segment}]" : ".{$segment}";
+        }
+
+        return $value;
     }
 
     public function getExpression(): string
