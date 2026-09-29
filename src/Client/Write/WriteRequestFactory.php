@@ -141,7 +141,22 @@ final readonly class WriteRequestFactory
      */
     public function put(PutInput $input): PreparedWrite
     {
-        return $this->putOf($input->entity, $input->condition);
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
+
+        $result = $this->serializer->serialize($definition, $input->entity, NormalizerOperation::Put);
+        $condition = $this->condition($definition, $input->condition);
+
+        return new PreparedWrite(
+            'Put',
+            SerializedKeyResult::fromItem($definition, $result->getFields()),
+            [
+                'TableName' => $definition->getTable(),
+                ...$result->getPutExpression(),
+                ...$condition->getExpression('condition'),
+                ...$condition->getExpressionAttributes(),
+            ],
+            WriteBack::fields($input->entity, $definition, $result->getNormalizedFields(), $result->getOperation()),
+        );
     }
 
     /**
@@ -205,7 +220,8 @@ final readonly class WriteRequestFactory
     {
         $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        $put = $this->putOf($input->entity, Filter::notExists($definition->getKeySchema()->hashKey), $input->condition);
+        // `and()` drops a condition that checks nothing, which the update, compiling it on its own, refuses
+        $put = $this->put(new PutInput($input->entity, Filter::and(Filter::notExists($definition->getKeySchema()->hashKey), $input->condition)));
 
         $update = $this->update(new UpdateInput(
             $input->entity,
@@ -273,35 +289,6 @@ final readonly class WriteRequestFactory
         }
 
         return $batch;
-    }
-
-    /**
-     * The put of the entity, conditioned on each of the conditions given.
-     *
-     * @throws UnknownEntityDefinitionException
-     * @throws ConditionEmptyException
-     * @throws DALException if the entity or a condition does not serialize
-     *
-     * @return PreparedWrite<PutRequest>
-     */
-    private function putOf(AbstractEntity $entity, ?FilterInterface ...$conditions): PreparedWrite
-    {
-        $definition = $this->definitionRegistry->getByEntityClass($entity::class);
-
-        $result = $this->serializer->serialize($definition, $entity, NormalizerOperation::Put);
-        $condition = $this->condition($definition, ...$conditions);
-
-        return new PreparedWrite(
-            'Put',
-            SerializedKeyResult::fromItem($definition, $result->getFields()),
-            [
-                'TableName' => $definition->getTable(),
-                ...$result->getPutExpression(),
-                ...$condition->getExpression('condition'),
-                ...$condition->getExpressionAttributes(),
-            ],
-            WriteBack::fields($entity, $definition, $result->getNormalizedFields(), $result->getOperation()),
-        );
     }
 
     /**

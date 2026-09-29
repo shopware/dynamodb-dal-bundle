@@ -215,7 +215,7 @@ class WriteRequestFactoryTest extends TestCase
     }
 
     /**
-     * The condition is compiled on its own for the put too, so it cannot hide behind the check that the key is free.
+     * The put's `and()` with the check that the key is free drops it, but the update compiles it on its own.
      */
     public function testAnUpsertConditionThatChecksNothingIsRefused(): void
     {
