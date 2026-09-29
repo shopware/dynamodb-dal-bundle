@@ -138,21 +138,14 @@ class UpdateExpressionTest extends DynamoDbTestCase
     {
         // The item's existence is checked before the path is resolved, so a missing item fails the
         // condition, not the path.
-        static::expectException(ConditionalCheckFailedException::class);
-
-        $this->update('never-written', ['meta.first' => 'one']);
+        static::assertFalse($this->update('never-written', ['meta.first' => 'one']));
     }
 
     public function testUpdateOfAWholeAttributeDoesNotCreateTheMissingRow(): void
     {
         // `UpdateItem` alone would create a row from the key and what was written, which the DAL then
         // refuses to deserialize over the required fields it lacks.
-        try {
-            $this->update('absent-whole', ['meta' => ['first' => 'one']]);
-            static::fail('An update of a missing item should fail its condition.');
-        } catch (ConditionalCheckFailedException) {
-            // Expected.
-        }
+        static::assertFalse($this->update('absent-whole', ['meta' => ['first' => 'one']]));
 
         // Read raw, so a partial row could not hide behind a deserialization failure.
         $item = $this->dynamo()->getItem([
@@ -385,9 +378,9 @@ class UpdateExpressionTest extends DynamoDbTestCase
     public function testAnActionOnAMissingItemFailsTheExistenceCheck(): void
     {
         // `ADD` would otherwise create the row from its key and the counter alone.
-        static::expectException(ConditionalCheckFailedException::class);
+        static::assertFalse($this->update('never-written', Update::increment('counter', 1)));
 
-        $this->update('never-written', Update::increment('counter', 1));
+        static::assertNull($this->read('never-written'));
     }
 
     public function testASingleUpdateKeyedByTheEntityRefreshesWhatAnActionComputed(): void
@@ -843,9 +836,9 @@ class UpdateExpressionTest extends DynamoDbTestCase
     /**
      * @param array<string, mixed>|UpdateExpression $update - fields keyed by path, so a key may address one map entry
      */
-    private function update(string $id, array|UpdateExpression $update, ?FilterInterface $condition = null): void
+    private function update(string $id, array|UpdateExpression $update, ?FilterInterface $condition = null): bool
     {
-        $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, $id), $update, $condition));
+        return $this->client()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, $id), $update, $condition));
     }
 
     /**

@@ -84,6 +84,12 @@ $client->method('put')->willThrowException(ExceptionFactory::conditionalCheckFai
 $client->method('transactWrite')->willThrowException(ExceptionFactory::transactionCanceled('None', 'ConditionalCheckFailed'));
 ```
 
+An insert of a stored row, or an update or a delete of a missing one, returns `false` rather than throwing:
+
+```php
+$client->method('insert')->willReturn(false);
+```
+
 The exceptions of the bundle itself name the definition they are about, and the field where there is one.
 `EntityDefinitionFactory` builds the definition of an entity class:
 

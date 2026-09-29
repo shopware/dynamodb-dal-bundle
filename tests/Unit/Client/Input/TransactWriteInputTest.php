@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Input;
 
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
@@ -39,11 +40,12 @@ class TransactWriteInputTest extends TestCase
             new PutInput(new NormalEntity()->setAutofilledId('a')->setRequired('req')),
             new DeleteInput(new Key(OtherEntity::class, 'o')),
             new UpdateInput(new OtherEntity()->setOtherId('p'), ['otherId' => 'p']),
+            new InsertInput(new NormalEntity()->setAutofilledId('b')->setRequired('req')),
         )->operations;
 
         static::assertSame(
-            [NormalEntity::class, OtherEntity::class, OtherEntity::class],
-            array_map(static fn (PutInput|UpdateInput|DeleteInput $operation): string => $operation->class, $operations),
+            [NormalEntity::class, OtherEntity::class, OtherEntity::class, NormalEntity::class],
+            array_map(static fn (PutInput|InsertInput|UpdateInput|DeleteInput $operation): string => $operation->class, $operations),
         );
     }
 

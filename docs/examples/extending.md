@@ -285,7 +285,7 @@ standard Symfony application. Override only the side you need. The other side le
 
 | Operation | Runs for | Fields present |
 |---|---|---|
-| `Put` | A put, and every [upsert](writes.md#upserts), for the row it creates where none is stored | Every field, `null` where the property is not initialized |
+| `Put` | A put or an insert, and every [upsert](writes.md#upserts), for the row it creates where none is stored | Every field, `null` where the property is not initialized |
 | `Update` | An update, and every upsert, for the update of a stored row | Only the paths the update writes, `null` for one it removes |
 | `Key` | A lookup, delete, update or upsert by key | Only the key fields |
 | `Read` | A row DynamoDB returns | Every field. A field the row lacks is `null`, or its default where the field is not nullable |

@@ -110,16 +110,11 @@ class RepositoryBehaviourTest extends DynamoDbTestCase
         $this->put(RecordEntity::create(self::TENANT, 'a'));
         $this->client()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'a')));
 
-        try {
-            $this->client()->update(new UpdateInput(
-                new Key(RecordEntity::class, self::TENANT, 'a'),
-                ['name' => 'resurrected'],
-                Filter::exists('id'),
-            ));
-            static::fail('The condition should have refused to recreate the row.');
-        } catch (ConditionalCheckFailedException) {
-            // Expected.
-        }
+        static::assertFalse($this->client()->update(new UpdateInput(
+            new Key(RecordEntity::class, self::TENANT, 'a'),
+            ['name' => 'resurrected'],
+            Filter::exists('id'),
+        )));
 
         static::assertNull($this->read('a'));
         static::assertSame(0, $this->client()->count(new ScanInput(RecordEntity::class)));

@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Write;
 
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
@@ -83,6 +84,21 @@ class WriteRequestFactoryTest extends TestCase
     }
 
     /**
+     * An insert is the put of its entity, refused where its key is taken, and the entity takes back what it filled.
+     */
+    public function testAnInsertIsAPutConditionedOnItsKeyBeingFree(): void
+    {
+        $entity = new NormalEntity()->setRequired('req');
+
+        $write = $this->factory->insert(new InsertInput($entity));
+
+        static::assertSame('Put', $write->type);
+        static::assertSame('NOT attribute_exists(#autofilledId)', $write->request['ConditionExpression'] ?? null);
+        static::assertSame($entity, $write->writeBack?->entity);
+        static::assertSame(NormalizerOperation::Put, $write->writeBack->operation);
+    }
+
+    /**
      * `UpdateItem` otherwise creates a missing item from just its key and the updated fields.
      */
     public function testAnUpdateIsConditionedOnItsItemExisting(): void
@@ -135,15 +151,38 @@ class WriteRequestFactoryTest extends TestCase
     }
 
     /**
-     * A transaction takes each write as the member of its kind, with the request a lone write sends.
+     * A lone delete tells a missing item apart by the existence check failing. In a transaction, that check would cancel the others.
+     */
+    public function testOnlyALoneDeleteIsConditionedOnItsItemExisting(): void
+    {
+        $delete = new DeleteInput($this->entity('a'), Filter::notExists('name'));
+
+        static::assertSame('attribute_exists(#autofilledId) AND NOT attribute_exists(#name)', $this->factory->delete($delete, requireItem: true)->request['ConditionExpression'] ?? null);
+        static::assertSame('NOT attribute_exists(#name)', $this->factory->prepare($delete)->request['ConditionExpression'] ?? null);
+    }
+
+    /**
+     * The existence check still holds the delete back, but a condition of the caller's that checks nothing is refused as for any delete.
+     */
+    public function testALoneDeleteConditionThatChecksNothingIsRefused(): void
+    {
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->factory->delete(new DeleteInput($this->entity('a'), Filter::equalsAny('name', [])), requireItem: true);
+    }
+
+    /**
+     * A transaction takes each write as the member of its kind.
      */
     public function testATransactionTakesEachWriteAsTheMemberOfItsKind(): void
     {
         $put = $this->factory->prepare(new PutInput($this->entity('a')))->toTransactItem();
+        $insert = $this->factory->prepare(new InsertInput($this->entity('a')))->toTransactItem();
         $update = $this->factory->prepare(new UpdateInput($this->entity('a'), ['name' => 'one']))->toTransactItem();
         $delete = $this->factory->prepare(new DeleteInput($this->entity('a')))->toTransactItem();
 
         static::assertSame('normal', $put->getPut()?->getTableName());
+        static::assertSame('NOT attribute_exists(#autofilledId)', $insert->getPut()?->getConditionExpression());
         static::assertSame('SET #name = :u_1_0_name', $update->getUpdate()?->getUpdateExpression());
         static::assertSame('normal', $delete->getDelete()?->getTableName());
     }
@@ -180,6 +219,18 @@ class WriteRequestFactoryTest extends TestCase
     /**
      * DynamoDB refuses a transaction that writes an item twice, whichever operations do.
      */
+    public function testATransactionRefusesTheEntityOfAnInsertWhoseKeyIsNamedTwice(): void
+    {
+        $entity = $this->entity('a');
+
+        try {
+            $this->factory->transaction(new TransactWriteInput(new DeleteInput(new Key(NormalEntity::class, 'a')), new InsertInput($entity)));
+            static::fail('The key is named twice');
+        } catch (DuplicateKeyException $exception) {
+            static::assertSame($entity, $exception->key);
+        }
+    }
+
     public function testATransactionRefusesAKeyNamedTwice(): void
     {
         $key = new Key(NormalEntity::class, 'a');
