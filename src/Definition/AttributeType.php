@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Definition;
 
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * The DynamoDB type a field is stored as, declared by {@see AbstractFieldSerializer::getAttributeType()}.
@@ -19,4 +20,25 @@ enum AttributeType: string
     case StringSet = 'SS';
     case NumberSet = 'NS';
     case BinarySet = 'BS';
+
+    /**
+     * The type a serialized value is stored as, `null` for `NULL`, which has no case here.
+     */
+    public static function tryFromAttributeValue(AttributeValue $value): ?self
+    {
+        return match (true) {
+            $value->getS() !== null => self::String,
+            $value->getN() !== null => self::Number,
+            $value->getB() !== null => self::Binary,
+            $value->getBool() !== null => self::Boolean,
+            $value->getSs() !== [] => self::StringSet,
+            $value->getNs() !== [] => self::NumberSet,
+            $value->getBs() !== [] => self::BinarySet,
+            $value->getL() !== [] => self::List,
+            $value->getM() !== [] => self::Map,
+            // The getter of an empty collection returns `[]`, as the getter of each collection the value is not does,
+            // so only the request body still names it. Cheap here, as there is nothing left in it to encode.
+            default => self::tryFrom((string) array_key_first($value->requestBody())),
+        };
+    }
 }

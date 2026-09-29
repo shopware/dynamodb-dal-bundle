@@ -2,14 +2,17 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Definition;
 
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
+use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\UntypedFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
+use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -229,8 +232,83 @@ class FieldPathTest extends TestCase
         );
     }
 
+    public function testTraverseFindsTheValueAtAPathThroughMapsAndLists(): void
+    {
+        $item = self::item();
+
+        static::assertEquals(new AttributeValue(['S' => 'dark']), $this->parse('deep.theme.mode')->traverse($item));
+        static::assertEquals(new AttributeValue(['S' => 'ada']), $this->parse('users[0].name')->traverse($item));
+        static::assertSame($item['deep'], $this->parse('deep')->traverse($item));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function pathsTheItemHoldsNothingAt(): iterable
+    {
+        yield 'an attribute the item lacks' => ['tags[0]'];
+        yield 'a key the map lacks' => ['deep.other'];
+        yield 'an index past the list' => ['users[3]'];
+        yield 'a segment into an empty map' => ['deep.empty.mode'];
+        yield 'a segment into NULL' => ['deep.none.mode'];
+        yield 'NULL, as a map stores an entry that is null' => ['deep.none'];
+    }
+
+    /**
+     * Nothing is there to find, which is no mismatch: the caller decides what an absent value means.
+     */
+    #[DataProvider('pathsTheItemHoldsNothingAt')]
+    public function testTraverseFindsNothingWhereTheItemHoldsNothing(string $path): void
+    {
+        static::assertNull($this->parse($path)->traverse(self::item()));
+    }
+
+    /**
+     * A serializer that declares no type may store the field as anything, which only the item then tells.
+     */
+    public function testTraverseRefusesASegmentIntoAnAttributeThatIsNoMapOrList(): void
+    {
+        try {
+            $this->parse('deep.theme.mode')->traverse(['deep' => new AttributeValue(['M' => ['theme' => new AttributeValue(['S' => 'dark'])]])]);
+            static::fail('`deep.theme` is stored as a string');
+        } catch (AttributeTypeMismatchException $exception) {
+            static::assertSame('deep.theme', $exception->field);
+            static::assertSame(AttributeType::String, $exception->actualType);
+            static::assertSame([AttributeType::Map], $exception->expectedTypes);
+        }
+    }
+
+    /**
+     * An empty list holds no entries either, but it is no map a key could be added to.
+     */
+    public function testTraverseRefusesASegmentIntoAnEmptyAttributeOfAnotherType(): void
+    {
+        try {
+            $this->parse('deep.theme.mode')->traverse(['deep' => new AttributeValue(['M' => ['theme' => new AttributeValue(['L' => []])]])]);
+            static::fail('`deep.theme` is stored as a list');
+        } catch (AttributeTypeMismatchException $exception) {
+            static::assertSame('deep.theme', $exception->field);
+            static::assertSame(AttributeType::List, $exception->actualType);
+        }
+    }
+
     private function parse(string $path): FieldPath
     {
         return FieldPath::parse(MapDefinition::create(), $path);
+    }
+
+    /**
+     * @return array<string, AttributeValue>
+     */
+    private static function item(): array
+    {
+        return [
+            'deep' => new AttributeValue(['M' => [
+                'theme' => new AttributeValue(['M' => ['mode' => new AttributeValue(['S' => 'dark'])]]),
+                'empty' => new AttributeValue(['M' => []]),
+                'none' => new AttributeValue(['NULL' => true]),
+            ]]),
+            'users' => new AttributeValue(['L' => [new AttributeValue(['M' => ['name' => new AttributeValue(['S' => 'ada'])]])]]),
+        ];
     }
 }

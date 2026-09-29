@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Exception;
 
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
@@ -30,8 +31,11 @@ use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Exception\UnknownIndexException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Test\ExceptionFactory;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +59,8 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(UnknownFieldException::class)]
 #[CoversClass(UpdateDuplicatePathException::class)]
 #[CoversClass(UpdateEmptyException::class)]
+#[CoversClass(UpsertContentionException::class)]
+#[CoversClass(UpsertKeyMismatchException::class)]
 #[CoversClass(WrongTypeException::class)]
 class DALExceptionTest extends TestCase
 {
@@ -112,6 +118,8 @@ class DALExceptionTest extends TestCase
                 InvalidCursorException::class,
                 UnknownEntityDefinitionException::class,
                 UnknownIndexException::class,
+                UpsertContentionException::class,
+                UpsertKeyMismatchException::class,
             ],
         ];
 
@@ -217,6 +225,15 @@ class DALExceptionTest extends TestCase
 
         static::assertSame('The write is stored, but not every entity it wrote could be brought up to date: Rate exceeded', $exception->getMessage());
         static::assertSame($previous, $exception->getPrevious());
+        static::assertNull($exception->upsertOutcome);
+    }
+
+    /**
+     * An upsert says which of its writes is stored, as it would have returned it.
+     */
+    public function testEntityOutOfSyncAfterAnUpsertKeepsItsOutcome(): void
+    {
+        static::assertSame(UpsertOutcome::Created, new EntityOutOfSyncException(new \RuntimeException('Rate exceeded'), UpsertOutcome::Created)->upsertOutcome);
     }
 
     public function testUpdateEmpty(): void
@@ -236,6 +253,37 @@ class DALExceptionTest extends TestCase
         static::assertSame('Update of item "customer" writes path "meta.label" more than once', $exception->getMessage());
         static::assertSame($entityDefinition, $exception->entityDefinition);
         static::assertSame('meta.label', $exception->path);
+    }
+
+    /**
+     * The put's last failure stays on it as the previous exception.
+     */
+    public function testUpsertContentionKeepsThePutsLastFailure(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $failure = ExceptionFactory::conditionalCheckFailed();
+        $exception = new UpsertContentionException($entityDefinition, 2, $failure);
+
+        static::assertSame(
+            'Upsert of item "customer" gave up after 2 rounds, in each of which another writer created or deleted the item',
+            $exception->getMessage(),
+        );
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($failure, $exception->getPrevious());
+    }
+
+    public function testUpsertKeyMismatch(): void
+    {
+        $entityDefinition = $this->entityDefinition();
+        $entity = new CustomerEntity();
+        $exception = new UpsertKeyMismatchException($entityDefinition, $entity);
+
+        static::assertSame(
+            'Upsert of item "customer" addresses one row with its update and another with its put, as its normalizer gives the key other values for a put',
+            $exception->getMessage(),
+        );
+        static::assertSame($entityDefinition, $exception->entityDefinition);
+        static::assertSame($entity, $exception->entity);
     }
 
     /**

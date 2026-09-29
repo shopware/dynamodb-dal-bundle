@@ -12,6 +12,8 @@ use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DALException;
@@ -21,10 +23,13 @@ use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Exception\UpdateDuplicatePathException;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
+use Shopware\DynamodbDalBundle\Exception\UpsertKeyMismatchException;
 use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\Core\Exception\Exception as AsyncAwsException;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\ReturnValue;
+use AsyncAws\DynamoDb\Enum\ReturnValuesOnConditionCheckFailure;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
@@ -37,12 +42,19 @@ use AsyncAws\DynamoDb\ValueObject\TransactWriteItem;
  * {@see EntityOutOfSyncException}, which tells the caller not to write again.
  *
  * @internal
+ *
+ * @phpstan-import-type UpdateRequest from WriteRequestFactory
  */
 class WriterClient
 {
     private const int BATCH_WRITE_LIMIT = 25;
 
     private const int TRANSACT_WRITE_LIMIT = 100;
+
+    /**
+     * How often an upsert sends its update and its put, while other writers create and delete its item in between.
+     */
+    private const int UPSERT_ROUNDS = 2;
 
     /**
      * @internal
@@ -100,24 +112,78 @@ class WriterClient
      */
     public function update(UpdateInput $input): void
     {
-        $write = $this->requests->update($input);
+        $this->updateItem($this->requests->update($input));
+    }
 
-        // Alone, an update can return the stored item, which says all it wrote, so it is asked for instead of the write-back
-        $entity = $write->writeBack?->entity;
+    /**
+     * Writes the entity whether or not its item is stored. It sends the update of the stored item first, conditioned on
+     * the item existing, and the put of the entity where the update finds none, conditioned on the key being free. Each
+     * asks for the stored item back where its condition fails, which tells a missing item from the upsert's own
+     * condition failing. Where the put finds an item that another writer created after the update, the update is sent
+     * again, once.
+     *
+     * The entity is brought up to date as for {@see self::update()} or {@see self::put()}, whichever was written.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param UpsertInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws ConditionEmptyException
+     * @throws UpdateEmptyException if the update has nothing to write
+     * @throws UpdateDuplicatePathException if the update gives a path two values
+     * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable, or the entity lacks a required value
+     * @throws UpsertKeyMismatchException if the normalizer gives the key other values for the put than for the update
+     * @throws DALException if the entity, the update, a path, the key or the condition does not serialize
+     * @throws ConditionalCheckFailedException when the condition fails
+     * @throws UpsertContentionException when, in both rounds, the update finds no item and the put then finds one that another writer created
+     * @throws EntityOutOfSyncException if the upsert is stored, but the entity could not be brought up to date; its `upsertOutcome` says which write is stored
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     */
+    public function upsert(UpsertInput $input): UpsertOutcome
+    {
+        [$update, $put] = $this->requests->upsert($input);
 
-        $output = $this->client->updateItem([
-            ...$write->request,
-            ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
-        ]);
-
-        $output->resolve();
-
-        if ($entity) {
+        for ($round = 1; ; ++$round) {
             try {
-                $this->serializer->deserialize($write->key->definition, $output->getAttributes(), $entity);
-            } catch (DALException $exception) {
-                throw new EntityOutOfSyncException($exception);
+                $this->updateItem($update, returnItemOnConditionFailure: true);
+
+                return UpsertOutcome::Updated;
+            } catch (ConditionalCheckFailedException $exception) {
+                // An item that is stored comes back with the failure, and then it failed the upsert's own condition
+                if ($exception->getItem() !== []) {
+                    throw $exception;
+                }
+            } catch (EntityOutOfSyncException $exception) {
+                throw new EntityOutOfSyncException($exception->getPrevious() ?? $exception, UpsertOutcome::Updated);
             }
+
+            try {
+                $this->client->putItem([
+                    ...$put->request,
+                    'ReturnValuesOnConditionCheckFailure' => ReturnValuesOnConditionCheckFailure::ALL_OLD,
+                ])->resolve();
+            } catch (ConditionalCheckFailedException $exception) {
+                // Without an item, the upsert's own condition failed where none is stored
+                if ($exception->getItem() === []) {
+                    throw $exception;
+                }
+
+                // With one, another writer created the item after the update, which now finds it
+                if ($round >= self::UPSERT_ROUNDS) {
+                    throw new UpsertContentionException($put->key->definition, $round, $exception);
+                }
+
+                continue;
+            }
+
+            try {
+                $this->writeBack($put->writeBack);
+            } catch (EntityOutOfSyncException $exception) {
+                throw new EntityOutOfSyncException($exception->getPrevious() ?? $exception, UpsertOutcome::Created);
+            }
+
+            return UpsertOutcome::Created;
         }
     }
 
@@ -227,6 +293,37 @@ class WriterClient
         }
 
         $this->writeBack(...$stored);
+    }
+
+    /**
+     * Sends an update alone. Alone, it can return the stored item, which says all it wrote, so that is asked for
+     * instead of the write-back.
+     *
+     * @param PreparedWrite<UpdateRequest> $write
+     * @param bool $returnItemOnConditionFailure - whether a failed condition carries the stored item, which tells a missing item from a condition that failed on a stored one
+     *
+     * @throws EntityOutOfSyncException if the update is stored, but the stored item does not deserialize
+     * @throws AsyncAwsException
+     */
+    private function updateItem(PreparedWrite $write, bool $returnItemOnConditionFailure = false): void
+    {
+        $entity = $write->writeBack?->entity;
+
+        $output = $this->client->updateItem([
+            ...$write->request,
+            ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
+            ...($returnItemOnConditionFailure ? ['ReturnValuesOnConditionCheckFailure' => ReturnValuesOnConditionCheckFailure::ALL_OLD] : []),
+        ]);
+
+        $output->resolve();
+
+        if ($entity) {
+            try {
+                $this->serializer->deserialize($write->key->definition, $output->getAttributes(), $entity);
+            } catch (DALException $exception) {
+                throw new EntityOutOfSyncException($exception);
+            }
+        }
     }
 
     /**

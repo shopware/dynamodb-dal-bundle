@@ -13,7 +13,9 @@ use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Read\ReaderClient;
 use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\Filter;
@@ -201,6 +203,15 @@ class ClientTest extends TestCase
         $this->writer->expects(static::once())->method('update')->with($update);
 
         $this->client->update($update);
+    }
+
+    public function testUpsertDelegatesToTheWriter(): void
+    {
+        $upsert = new UpsertInput(new NormalEntity()->setAutofilledId('a')->setRequired('req'), ['required']);
+
+        $this->writer->expects(static::once())->method('upsert')->with($upsert)->willReturn(UpsertOutcome::Created);
+
+        static::assertSame(UpsertOutcome::Created, $this->client->upsert($upsert));
     }
 
     public function testDeleteDelegatesToTheWriter(): void

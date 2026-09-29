@@ -144,6 +144,35 @@ class SerializerTest extends TestCase
         ]);
     }
 
+    /**
+     * A value within a field, such as a map entry, is deserialized by the definition of the values the field holds.
+     */
+    public function testDeserializeValueDeserializesOneValueWithoutTheNormalizer(): void
+    {
+        $normalizer = new RecordingNormalizer();
+        $definition = NormalEntity::createDefinition($normalizer)->getFieldDefinition('name');
+        static::assertNotNull($definition);
+
+        static::assertSame('dark', $this->serializer->deserializeValue($definition, new AttributeValue(['S' => 'dark'])));
+        static::assertSame([], $normalizer->calls);
+    }
+
+    public function testDeserializeValueWrapsAFailingFieldSerializerAndNamesThePath(): void
+    {
+        $serializer = static::createStub(AbstractFieldSerializer::class);
+        $serializer->method('deserialize')->willThrowException(new \RuntimeException('test-deserialization-error'));
+        $definition = NormalEntity::createDefinition(fieldSerializer: $serializer)->getFieldDefinition('name');
+        static::assertNotNull($definition);
+
+        try {
+            $this->serializer->deserializeValue($definition, new AttributeValue(['S' => 'dark']), 'name.theme');
+            static::fail('The field serializer fails');
+        } catch (FieldDeserializationException $exception) {
+            static::assertSame('name.theme', $exception->path);
+            static::assertInstanceOf(\RuntimeException::class, $exception->getPrevious());
+        }
+    }
+
     public function testDeserializeFieldsDeserializesProvidedFields(): void
     {
         $result = $this->serializer->deserializeFields($this->definition, [

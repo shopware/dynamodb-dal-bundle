@@ -8,7 +8,9 @@ use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Key;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 
 /**
@@ -37,6 +39,11 @@ final class TraceableWriterClient extends WriterClient
         $this->tracer->run($this->tracer->open([$input->class]), function () use ($input): void {
             $this->inner->update($input);
         });
+    }
+
+    public function upsert(UpsertInput $input): UpsertOutcome
+    {
+        return $this->tracer->run($this->tracer->open([$input->class]), fn (): UpsertOutcome => $this->inner->upsert($input));
     }
 
     public function delete(DeleteInput $input): void

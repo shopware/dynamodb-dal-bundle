@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Serializer;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
+use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
 use Shopware\DynamodbDalBundle\Exception\DenormalizationException;
@@ -103,18 +104,31 @@ class Serializer
                 continue;
             }
 
-            try {
-                $fields[$name] = $fieldDefinition->getSerializer()->deserialize($fieldDefinition, $attributeValue);
-            } catch (\Throwable $e) {
-                if ($e instanceof DALException) {
-                    throw $e;
-                }
-
-                throw new FieldDeserializationException($fieldDefinition, $e);
-            }
+            $fields[$name] = $this->deserializeValue($fieldDefinition, $attributeValue);
         }
 
         return $this->denormalize($definition, $fields, $operation);
+    }
+
+    /**
+     * Deserializes one value of a field with the field's serializer, without the normalizer: a whole field, or a value
+     * within one, such as a map entry by the map's value definition.
+     *
+     * @param ?string $path - where the value is within the item, such as `settings.theme`, for the failure to name
+     *
+     * @throws DALException if the serializer refuses the value, as it threw it or as a {@see FieldDeserializationException}
+     */
+    public function deserializeValue(FieldDefinition $definition, AttributeValue $value, ?string $path = null): mixed
+    {
+        try {
+            return $definition->getSerializer()->deserialize($definition, $value);
+        } catch (\Throwable $e) {
+            if ($e instanceof DALException) {
+                throw $e;
+            }
+
+            throw new FieldDeserializationException($definition, $e, $path);
+        }
     }
 
     /**

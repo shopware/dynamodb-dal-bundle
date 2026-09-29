@@ -10,6 +10,8 @@ use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
 use Shopware\DynamodbDalBundle\Client\Write\WriteRequestFactory;
 use Shopware\DynamodbDalBundle\Client\Write\WriterClient;
 use Shopware\DynamodbDalBundle\Expression\FilterCompiler;
@@ -30,6 +32,7 @@ use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
 use Shopware\DynamodbDalBundle\Serializer\AbstractNormalizer;
 use Shopware\DynamodbDalBundle\Serializer\NormalizerOperation;
 use Shopware\DynamodbDalBundle\Exception\UpdateEmptyException;
+use Shopware\DynamodbDalBundle\Exception\UpsertContentionException;
 use Shopware\DynamodbDalBundle\Expression\Update;
 use Shopware\DynamodbDalBundle\Expression\Update\UpdateExpression;
 use Shopware\DynamodbDalBundle\Serializer\SerializedFieldResult;
@@ -41,9 +44,13 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\OtherEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\PrefixingNormalizer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\RecordingNormalizer;
+use AsyncAws\Core\AwsError\AwsError;
+use AsyncAws\Core\Test\Http\SimpleMockedResponse;
 use AsyncAws\Core\Test\ResultMockFactory;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Enum\ReturnValue;
+use AsyncAws\DynamoDb\Enum\ReturnValuesOnConditionCheckFailure;
+use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\BatchWriteItemOutput;
@@ -564,6 +571,165 @@ class WriterClientTest extends TestCase
             new UpdateInput($this->entity('a'), Update::setIfNotExists('name', 'first')),
             new UpdateInput($this->entity('b'), ['name' => 'two']),
         ));
+    }
+
+    /**
+     * A stored item takes the update, and the entity the stored item from the update's own response.
+     */
+    public function testAnUpsertOfAStoredItemSendsOnlyTheUpdate(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ReturnValues'] ?? null) === ReturnValue::ALL_NEW
+                && ($args['ReturnValuesOnConditionCheckFailure'] ?? null) === ReturnValuesOnConditionCheckFailure::ALL_OLD))
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'stored']),
+                'name' => new AttributeValue(['S' => 'after']),
+            ]]));
+        $this->client->expects(static::never())->method('putItem');
+
+        $entity = $this->entity('a')->setName('after');
+        static::assertSame(UpsertOutcome::Updated, $this->normalizingWriter(new RecordingNormalizer())->upsert(new UpsertInput($entity, ['name'])));
+
+        static::assertSame('stored', $entity->getRequired());
+    }
+
+    /**
+     * Where the update finds no item, it fails without one, and the entity is put as a put would put it.
+     */
+    public function testAnUpsertPutsTheEntityWhereTheUpdateFindsNoItem(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException(self::conditionalCheckFailed());
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ConditionExpression'] ?? null) === 'NOT attribute_exists(#autofilledId)'
+                && ($args['ReturnValuesOnConditionCheckFailure'] ?? null) === ReturnValuesOnConditionCheckFailure::ALL_OLD))
+            ->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        static::assertSame(UpsertOutcome::Created, $this->normalizingWriter($normalizer)->upsert(new UpsertInput($this->entity('a'), ['name'])));
+
+        static::assertSame([NormalizerOperation::Put], $this->denormalizedAs($normalizer));
+    }
+
+    /**
+     * The stored item comes back with the failure, so it is the upsert's own condition that failed on it.
+     */
+    public function testAnUpsertWhoseConditionFailsOnTheStoredItemIsThrownWithoutAPut(): void
+    {
+        $failure = self::conditionalCheckFailed(['autofilledId' => ['S' => 'a']]);
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException($failure);
+        $this->client->expects(static::never())->method('putItem');
+
+        try {
+            $this->normalizingWriter(new RecordingNormalizer())->upsert(new UpsertInput($this->entity('a'), ['name'], Filter::notExists('name')));
+            static::fail('The condition fails on the stored item');
+        } catch (ConditionalCheckFailedException $exception) {
+            static::assertSame($failure, $exception);
+        }
+    }
+
+    /**
+     * Without an item on the put's failure either, the upsert's own condition failed on the item the put would create.
+     */
+    public function testAnUpsertWhoseConditionFailsWhereNoItemIsStoredIsThrown(): void
+    {
+        $failure = self::conditionalCheckFailed();
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException(self::conditionalCheckFailed());
+        $this->client->expects(static::once())->method('putItem')->willThrowException($failure);
+
+        try {
+            $this->normalizingWriter(new RecordingNormalizer())->upsert(new UpsertInput($this->entity('a'), ['name'], Filter::exists('name')));
+            static::fail('The condition fails where no item is stored');
+        } catch (ConditionalCheckFailedException $exception) {
+            static::assertSame($failure, $exception);
+        }
+    }
+
+    /**
+     * The put finds an item that another writer created after the update, which now finds that item.
+     */
+    public function testAnUpsertSendsTheUpdateAgainWhereAnotherWriterCreatedTheItem(): void
+    {
+        $updates = 0;
+        $this->client->expects(static::exactly(2))->method('updateItem')->willReturnCallback(static function () use (&$updates): UpdateItemOutput {
+            if (++$updates === 1) {
+                throw self::conditionalCheckFailed();
+            }
+
+            return ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'req']),
+            ]]);
+        });
+        $this->client->expects(static::once())->method('putItem')->willThrowException(self::conditionalCheckFailed(['autofilledId' => ['S' => 'a']]));
+
+        static::assertSame(UpsertOutcome::Updated, $this->normalizingWriter(new RecordingNormalizer())->upsert(new UpsertInput($this->entity('a'), ['name'])));
+    }
+
+    /**
+     * Other writers that create and delete the item between both updates and puts let neither be written. That is
+     * contention, not the upsert's condition failing, so a caller that reads a failed condition as a refusal never
+     * sees one.
+     */
+    public function testAnUpsertGivesUpAfterTwoRoundsAsContention(): void
+    {
+        $failure = self::conditionalCheckFailed(['autofilledId' => ['S' => 'a']]);
+
+        $this->client->expects(static::exactly(2))->method('updateItem')->willThrowException(self::conditionalCheckFailed());
+        $this->client->expects(static::exactly(2))->method('putItem')->willThrowException($failure);
+
+        try {
+            $this->normalizingWriter(new RecordingNormalizer())->upsert(new UpsertInput($this->entity('a'), ['name']));
+            static::fail('Other writers created and deleted the item in both rounds');
+        } catch (UpsertContentionException $exception) {
+            static::assertSame($failure, $exception->getPrevious());
+            static::assertSame('normal', $exception->entityDefinition->getName());
+        }
+    }
+
+    /**
+     * The upsert is stored, so the caller still learns which write it was, although the entity fell behind.
+     */
+    public function testAnUpsertStoredAsAnUpdateThatLeavesItsEntityOutOfSyncSaysSo(): void
+    {
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw new \DomainException('The normalizer refuses the row')));
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'req']),
+            ]]));
+        $this->client->expects(static::never())->method('putItem');
+
+        try {
+            $writer->upsert(new UpsertInput($this->entity('a'), ['name']));
+            static::fail('The normalizer refuses the stored row');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertSame(UpsertOutcome::Updated, $exception->upsertOutcome);
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+        }
+    }
+
+    public function testAnUpsertStoredAsAPutThatLeavesItsEntityOutOfSyncSaysSo(): void
+    {
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw new \DomainException('The normalizer refuses the fields')));
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException(self::conditionalCheckFailed());
+        $this->client->expects(static::once())->method('putItem')->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        try {
+            $writer->upsert(new UpsertInput($this->entity('a'), ['name']));
+            static::fail('The normalizer refuses the fields');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertSame(UpsertOutcome::Created, $exception->upsertOutcome);
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+        }
     }
 
     /**
@@ -1230,6 +1396,19 @@ class WriterClientTest extends TestCase
     private static function serializedId(string $id): string
     {
         return "{$id}-serialized";
+    }
+
+    /**
+     * @param array<string, array<string, string>> $item - the stored item DynamoDB returns with the failure, in its JSON shape; none where no item is stored
+     */
+    private static function conditionalCheckFailed(array $item = []): ConditionalCheckFailedException
+    {
+        $body = ['message' => 'The conditional request failed', ...($item !== [] ? ['Item' => $item] : [])];
+
+        return new ConditionalCheckFailedException(
+            new SimpleMockedResponse(json_encode($body) ?: '{}', ['content-type' => 'application/x-amz-json-1.0'], 400),
+            new AwsError('ConditionalCheckFailedException', 'The conditional request failed', 'Client', null),
+        );
     }
 
     private function transactionCanceledException(string ...$cancellationReasonCodes): TransactionCanceledException

@@ -5,6 +5,7 @@
   - [Partial updates](#partial-updates)
   - [Nested updates](#nested-updates)
   - [Update expressions](#update-expressions)
+  - [Upserts](#upserts)
   - [Keeping the entity in sync](#keeping-the-entity-in-sync)
   - [Conditional writes](#conditional-writes)
   - [Batches](#batches)
@@ -20,6 +21,7 @@ what each write can throw.
 |---|---|---|---|
 | `put()` | One whole entity, creating or replacing its row. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
 | `update()` | Some fields of one entity that is already stored | Yes | Yes |
+| `upsert()` | One entity, updating its stored row or putting it where none is stored | Yes | Yes |
 | `delete()` | Removes one entity. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
 | `batchWrite()` | Many puts and deletes | No | No |
 | `transactWrite()` | Puts, updates and deletes of several entities | Up to 100 operations | Yes |
@@ -49,7 +51,7 @@ field accepts `null`.
 ### Pitfalls
 
 - An update never creates a row, unlike DynamoDB's `UpdateItem`. If no row has the key, the update fails the same
-  way a failed [condition](#conditional-writes) does. Use a put to create the row.
+  way a failed [condition](#conditional-writes) does. Use a put or an [upsert](#upserts) to create the row.
 - An update cannot change the table's key fields, here `customerId` and `id`. DynamoDB rejects it. To move an entity to
   another key, put it under the new key and delete the old one in the same [transaction](#transactions).
 
@@ -155,6 +157,123 @@ write.
 - The normalizer sees the value that `setIfNotExists()` offers, not the value DynamoDB keeps. If the path already
   holds a value, the stored value stays, even though the normalizer saw the new one.
 - DynamoDB rejects `addToSet()` with an empty set.
+
+## Upserts
+
+An upsert writes one entity whether or not its row is stored. It updates a stored row, and puts the entity where no
+row is stored. The update is the same as an `UpdateInput` keyed by the entity, and the put the same as a `PutInput`
+of it.
+
+```php
+use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
+
+// An order synced from the shop: a stored order only takes the shop's status, total and carrier
+$order = new OrderEntity();
+$order->customerId = 'c-42';
+$order->id = 'o-1001';
+$order->createdAt = new \DateTimeImmutable();
+$order->status = OrderStatus::Paid;
+$order->totalCents = 4_990;
+$order->meta = ['carrier' => 'dhl'];
+
+$this->client->upsert(new UpsertInput($order, ['status', 'totalCents', 'meta.carrier']));
+```
+
+The second argument says what a stored row takes. A list of paths takes each path's value from the entity, as an
+update of `['status' => $order->status, ...]` would. A path may address a map entry or a list element, as
+`meta.carrier` does, and the other entries of a stored map stay as they are. A path that the entity holds no value
+for, such as a map key it lacks or holds as `null`, is removed from the stored row. A key field in the list writes
+nothing, since the key already names the row.
+
+A list that writes nothing, because it is empty or names only key fields, is refused before anything is sent, even
+where no row is stored. To create a row only where none is stored, put it on the condition that its key is free, as
+under [Conditional writes](#conditional-writes).
+
+A path into a field takes its value from the row the put would store, not from the property. A field that a
+[field serializer](extending.md#a-field-type-of-your-own) or the [normalizer](extending.md#a-normalizer) stores as a
+map, such as an object, therefore works like an array. The bundle refuses a path into a field that the row doesn't
+store as a map or a list there, before it sends anything.
+
+An [update expression](#update-expressions) instead is written to a stored row as it is, and the entity is the row that
+a new one gets:
+
+```php
+// Add a line to the order. A new order holds the entity, with the line as its total
+$order->totalCents = 499;
+
+$this->client->upsert(new UpsertInput($order, Update::increment('totalCents', 499)));
+```
+
+The third argument is a condition, and the fourth a `refresh`, as for an update. The entity has to carry its key,
+because the update addresses the stored row by it. The put has to store the row under that same key, so the bundle
+refuses an upsert whose normalizer gives the key other values for a put than for a key. An upsert takes two requests,
+so it can't be part of a [transaction](#transactions).
+
+`upsert()` returns which of the two writes was stored, for a caller that only acts on one of them:
+
+```php
+use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
+
+if ($this->client->upsert(new UpsertInput($order, ['status'])) === UpsertOutcome::Created) {
+    // The order was new, so no stored row was updated
+}
+```
+
+### How it works
+
+- The bundle prepares the update and the put before it sends either. An entity that can't be put is therefore refused,
+  even where a row is stored.
+- It sends the update first. The update is conditioned on the row existing, as every update is. Where no row is
+  stored, DynamoDB refuses the update, and the bundle puts the entity, conditioned on its key being free. Both ask
+  DynamoDB to return the stored row if their condition fails (`ReturnValuesOnConditionCheckFailure=ALL_OLD`), which
+  tells a missing row from a condition of yours that fails on a stored one.
+- If another writer creates the row between the update and the put, the put fails and returns that row, and the
+  bundle sends the update again. If the row is deleted again before that second update, the bundle puts the entity
+  again. Only if another writer creates the row once more before that second put does the bundle give up, with an
+  `UpsertContentionException`, and neither write is stored. That is not a failed condition, so it is not a
+  `ConditionalCheckFailedException`.
+- Only one of the two writes is stored. The row is therefore either the stored row with the update applied, or the
+  entity.
+- A whole field in a list of paths takes the entity's value. A path into a field is read from the row the put would
+  store, and its value there is deserialized with the type of the field's values, as `#[Field]` declares it.
+- The entity's [normalizer](extending.md#a-normalizer) normalizes both writes before either is sent: as `Put` for the
+  put, and as `Update` for the update. Only the write that is stored reaches the row. A `createdAt` it generates for a
+  put therefore reaches only a new row, and an `updatedAt` it stamps for an update only a stored one.
+- The entity is brought up to date as after the write that was stored. After the update, it takes the stored row.
+  After the put, it takes the values the normalizer generated. `Refresh::None` leaves it as it is after either. If
+  bringing it up to date fails, the `EntityOutOfSyncException` says in `upsertOutcome` which write is stored.
+
+### Pitfalls
+
+- A named path takes exactly the value the entity holds there, and a default counts as a value. A named path is not
+  "written if the entity has something". Take a stored order with the note "Leave at the door" and
+  `meta = ['carrier' => 'dhl', 'tracking' => 'T-1']`, and a sync that sets only the status on a fresh entity:
+
+  ```php
+  $order = new OrderEntity(); // key, createdAt and totalCents set; note and meta stay at null and []
+  $order->status = OrderStatus::Paid;
+
+  $this->client->upsert(new UpsertInput($order, ['status', 'note', 'meta.tracking']));
+  // Sends SET #status = :status REMOVE #note, #meta.#tracking
+  ```
+
+  The stored order gets the new status, but it loses its note and its tracking number. `meta.carrier` stays, and so
+  do `totalCents` and `createdAt`, which are not named. Name only the paths the caller sets, here `['status']`. Where
+  no row is stored, the same call puts the entity with its defaults, which overwrites nothing.
+- A new row costs two writes, because DynamoDB charges write capacity for the update it refuses. A stored row costs
+  one.
+- The rules of [nested updates](#nested-updates) apply to a stored row. A path into a map fails on a row that has no
+  such map, such as a row written before the field was added.
+- A value at a path into a field passes the normalizer twice: as part of the whole field, for the row the put would
+  store, and on its own, for the update. A normalizer that changes such a value in a way that doesn't hold up to a
+  second pass, such as adding a prefix, changes it twice in a stored row.
+- `normalize()` runs as `Put` and as `Update` on every upsert, before the bundle knows whether a row is stored. A
+  normalizer whose `normalize()` has side effects, such as drawing a number from a sequence or recording an event, has
+  them for both writes, although only one is stored. Keep such effects out of the normalizer, or act on the outcome
+  that `upsert()` returns.
+- Where no row is stored, DynamoDB checks the condition against a row without attributes, as it does for a put. A
+  comparison is then false, so a condition like `Filter::lessThan('totalCents', 10_000)` refuses to create the row.
+  Allow for the new row: `Filter::or(Filter::notExists('totalCents'), Filter::lessThan('totalCents', 10_000))`.
 
 ## Keeping the entity in sync
 
