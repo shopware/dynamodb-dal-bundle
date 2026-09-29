@@ -285,7 +285,7 @@ standard Symfony application. Override only the side you need. The other side le
 
 | Operation | Runs for | Fields present |
 |---|---|---|
-| `Put` | A put, and every [upsert](writes.md#upserts), for the row it creates where none is stored | Every field, `null` where the property is not initialized |
+| `Put` | A put or an insert, and every [upsert](writes.md#upserts), for the row it creates where none is stored | Every field, `null` where the property is not initialized |
 | `Update` | An update, and every upsert, for the update of a stored row | Only the paths the update writes, `null` for one it removes |
 | `Key` | A lookup, delete, update or upsert by key | Only the key fields |
 | `Read` | A row DynamoDB returns | Every field. A field the row lacks is `null`, or its default where the field is not nullable |
@@ -427,9 +427,10 @@ return "({$status} = {$context->fieldValue('status', $this->status)} OR attribut
 
 - Build every placeholder through the context. `FieldDefinition::getExpressionAttributeName()` and
   `getExpressionValueName()` return placeholders that the request never defines, and DynamoDB rejects them.
-- A fragment that joins clauses without parentheses binds to what surrounds it. Next to an update's check that the row
-  exists, `a OR b` goes out as `attribute_exists(#id) AND a OR b`. DynamoDB reads that as
-  `(attribute_exists(#id) AND a) OR b`, so the update can create a row that did not exist.
+- A fragment that joins clauses without parentheses binds to what surrounds it. Next to the check that the row exists,
+  which an update and a delete on its own add, `a OR b` goes out as `attribute_exists(#id) AND a OR b`. DynamoDB reads
+  that as `(attribute_exists(#id) AND a) OR b`, so an update can create a row that did not exist, and a delete of a
+  missing row returns `true`.
 
 ## An update action of your own
 

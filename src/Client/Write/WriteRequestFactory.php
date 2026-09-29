@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Client\Write;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
@@ -35,7 +36,7 @@ use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Turns write inputs into the requests DynamoDB takes: a put, update or delete into one it takes alone or in a
+ * Turns write inputs into the requests DynamoDB takes: a put, insert, update or delete into one it takes alone or in a
  * transaction, and puts and deletes into a {@see BatchWrite}.
  *
  * @internal
@@ -77,7 +78,7 @@ final readonly class WriteRequestFactory
     }
 
     /**
-     * @param PutInput<AbstractEntity>|UpdateInput<AbstractEntity>|DeleteInput<AbstractEntity> $input
+     * @param PutInput<AbstractEntity>|InsertInput<AbstractEntity>|UpdateInput<AbstractEntity>|DeleteInput<AbstractEntity> $input
      *
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
@@ -88,10 +89,11 @@ final readonly class WriteRequestFactory
      *
      * @return PreparedWrite<PutRequest|UpdateRequest|DeleteRequest>
      */
-    public function prepare(PutInput|UpdateInput|DeleteInput $input): PreparedWrite
+    public function prepare(PutInput|InsertInput|UpdateInput|DeleteInput $input): PreparedWrite
     {
         return match (true) {
             $input instanceof PutInput => $this->put($input),
+            $input instanceof InsertInput => $this->insert($input),
             $input instanceof UpdateInput => $this->update($input),
             $input instanceof DeleteInput => $this->delete($input),
         };
@@ -119,7 +121,7 @@ final readonly class WriteRequestFactory
         foreach ($input->operations as $operation) {
             $write = $this->prepare($operation);
             if (isset($writes[$write->key->hash])) {
-                throw new DuplicateKeyException($write->key->definition, $operation instanceof PutInput ? $operation->entity : $operation->key);
+                throw new DuplicateKeyException($write->key->definition, $operation instanceof PutInput || $operation instanceof InsertInput ? $operation->entity : $operation->key);
             }
 
             $writes[$write->key->hash] = $write;
@@ -157,6 +159,23 @@ final readonly class WriteRequestFactory
             ],
             WriteBack::fields($input->entity, $definition, $result->getNormalizedFields(), $result->getOperation()),
         );
+    }
+
+    /**
+     * A put conditioned on its key being free, so a stored item is refused instead of replaced.
+     *
+     * @param InsertInput<AbstractEntity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if the entity does not serialize
+     *
+     * @return PreparedWrite<PutRequest>
+     */
+    public function insert(InsertInput $input): PreparedWrite
+    {
+        $definition = $this->definitionRegistry->getByEntityClass($input->class);
+
+        return $this->put(new PutInput($input->entity, Filter::notExists($definition->getKeySchema()->hashKey)));
     }
 
     /**
@@ -241,6 +260,7 @@ final readonly class WriteRequestFactory
 
     /**
      * @param DeleteInput<AbstractEntity> $input
+     * @param bool $requireItem - whether a missing item fails the condition, as for a lone delete, but not in a transaction, which it would cancel
      *
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
@@ -248,11 +268,11 @@ final readonly class WriteRequestFactory
      *
      * @return PreparedWrite<DeleteRequest>
      */
-    public function delete(DeleteInput $input): PreparedWrite
+    public function delete(DeleteInput $input, bool $requireItem = false): PreparedWrite
     {
         $definition = $this->definitionRegistry->getByEntityClass($input->class);
 
-        $condition = $this->condition($definition, $input->condition);
+        $condition = $this->condition($definition, $requireItem ? Filter::exists($definition->getKeySchema()->hashKey) : null, $input->condition);
         $key = $this->serializer->serializeKey($definition, $input->key);
 
         return new PreparedWrite(

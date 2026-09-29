@@ -41,7 +41,7 @@ These are the only exceptions a correct application should expect at runtime.
 
 | Exception | Thrown when | Handling |
 |---|---|---|
-| `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update, upsert or delete does not hold, or the row an update addresses does not exist | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
+| `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update, upsert or delete does not hold. An insert of a stored row, or an update or a delete of a missing one, returns `false` instead | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
 | `AsyncAws\DynamoDb\Exception\TransactionCanceledException` | DynamoDB cancels a transaction, for example because a condition failed. The bundle first retries a cancellation caused only by a conflict with another transaction or by throttling | `getCancellationReasons()` holds one reason per operation, in the order the operations were given. See [Transactions](writes.md#transactions) |
 | `UpsertContentionException` | In both rounds of an upsert, the update found no row, and the put then found one that another writer had created in between. Neither write is stored | Send the upsert again. See [Upserts](writes.md#upserts) |
 | `InvalidCursorException` | A pagination token or `CursorHistory` was edited, or its key attributes are not those of the table or index searched | Start over at the first page. See [Paginated listing](paginated-listing.md#listing-a-query) |

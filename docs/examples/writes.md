@@ -20,11 +20,12 @@ what each write can throw.
 | Method | Writes | All or nothing | Takes a condition |
 |---|---|---|---|
 | `put()` | One whole entity, creating or replacing its row. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
+| `insert()` | One whole entity whose row is not stored yet. See [Basics](basics.md#putting-and-deleting) | Yes | No |
 | `update()` | Some fields of one entity that is already stored | Yes | Yes |
 | `upsert()` | One entity, updating its stored row or putting it where none is stored | Yes | Yes |
 | `delete()` | Removes one entity. See [Basics](basics.md#putting-and-deleting) | Yes | Yes |
 | `batchWrite()` | Many puts and deletes | No | No |
-| `transactWrite()` | Puts, updates and deletes of several entities | Up to 100 operations | Yes |
+| `transactWrite()` | Puts, inserts, updates and deletes of several entities | Up to 100 operations | Yes |
 
 ## Partial updates
 
@@ -50,8 +51,8 @@ field accepts `null`.
 
 ### Pitfalls
 
-- An update never creates a row, unlike DynamoDB's `UpdateItem`. If no row has the key, the update fails the same
-  way a failed [condition](#conditional-writes) does. Use a put or an [upsert](#upserts) to create the row.
+- An update never creates a row, unlike DynamoDB's `UpdateItem`. If no row has the key, the update writes nothing and
+  returns `false`. Use a put, an insert or an [upsert](#upserts) to create the row.
 - An update cannot change the table's key fields, here `customerId` and `id`. DynamoDB rejects it. To move an entity to
   another key, put it under the new key and delete the old one in the same [transaction](#transactions).
 
@@ -186,8 +187,7 @@ for, such as a map key it lacks or holds as `null`, is removed from the stored r
 nothing, since the key already names the row.
 
 A list that writes nothing, because it is empty or names only key fields, is refused before anything is sent, even
-where no row is stored. To create a row only where none is stored, put it on the condition that its key is free, as
-under [Conditional writes](#conditional-writes).
+where no row is stored. To create a row only where none is stored, use an [insert](basics.md#putting-and-deleting).
 
 A path into a field takes its value from the row the put would store, not from the property. A field that a
 [field serializer](extending.md#a-field-type-of-your-own) or the [normalizer](extending.md#a-normalizer) stores as a
@@ -315,31 +315,31 @@ computes. Use `Refresh::None` when the code doesn't use the entity after the wri
 
 ## Conditional writes
 
-Every write input takes a condition, built with the same `Filter` as a search. DynamoDB checks the condition against
-the stored row and refuses the write if it doesn't hold. An update always checks that the row exists, and adds its
-own condition to that check.
+Every write input except `InsertInput` takes a condition, built with the same `Filter` as a search. DynamoDB checks it
+against the stored row and refuses the write if it doesn't hold. An update and a delete also check that the row
+exists, and an insert that it doesn't.
 
 ```php
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
-use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Expression\Filter;
 
-// Create the order, but never overwrite an existing one
-$this->client->put(new PutInput($order, Filter::notExists('id')));
+// Create the order, but never overwrite an existing one: false where it is stored already
+$created = $this->client->insert($order);
 
-// Only pay an open order
-$this->client->update(new UpdateInput(
+// Only pay an open order: false where the order doesn't exist, and throws where it isn't open
+$paid = $this->client->update(new UpdateInput(
     $order,
     ['status' => OrderStatus::Paid],
     Filter::equals('status', OrderStatus::Open),
 ));
 
-// Only delete a cancelled order
-$this->client->delete(new DeleteInput($order, Filter::equals('status', OrderStatus::Cancelled)));
+// Only delete a cancelled order: false where the order doesn't exist, and throws where it isn't cancelled
+$deleted = $this->client->delete(new DeleteInput($order, Filter::equals('status', OrderStatus::Cancelled)));
 ```
 
-A write whose condition fails throws AsyncAws's `ConditionalCheckFailedException`. In a [transaction](#transactions),
-a failed condition cancels the whole transaction instead.
+A write whose condition fails throws AsyncAws's `ConditionalCheckFailedException`. If the check of the row fails
+instead, `insert()`, `update()` and `delete()` write nothing and return `false`, whatever your condition. In a
+[transaction](#transactions), a failed condition cancels the whole transaction instead.
 
 For optimistic locking, add a version field to the entity and require the version you read:
 
@@ -352,21 +352,38 @@ public int $version = 0;
 use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 
 try {
-    $this->client->update(new UpdateInput(
+    $paid = $this->client->update(new UpdateInput(
         $order,
         ['status' => OrderStatus::Paid, 'version' => $order->version + 1],
         Filter::equals('version', $order->version),
     ));
+
+    if (!$paid) {
+        // The order was deleted after it was read.
+    }
 } catch (ConditionalCheckFailedException) {
     // The order changed after it was read: reload it and try again, or report a conflict.
 }
 ```
 
+### How it works
+
+- An update and a delete ask DynamoDB to return the stored row when their condition fails
+  (`ReturnValuesOnConditionCheckFailure=ALL_OLD`). If no row comes back, the row is missing. If one does, your
+  condition failed on it. Both come from the same request, so no other writer can come in between.
+- An insert takes no condition, since DynamoDB could only check it against a row without attributes. A failed insert
+  therefore always means the row is stored.
+- Only a delete on its own checks that its row exists. In a [transaction](#transactions) or a [batch](#batches), a
+  delete of a missing row deletes nothing, and fails only on a condition of its own.
+
 ### Pitfalls
 
-- Where no row is stored, DynamoDB checks a put's or a delete's condition against a row without attributes. A
-  comparison is then false, and its negation true. The delete of a cancelled order above therefore throws for an
-  order that doesn't exist, although a delete without a condition would not.
+- Where the check of the row fails, `insert()`, `update()` and `delete()` return `false` rather than throw. Code that
+  ignores the result carries on as if they had written.
+- Where no row is stored, DynamoDB checks the condition of a put, or of a delete in a transaction, against a row
+  without attributes. A comparison is then false, and its negation true.
+- An update or a delete whose condition fails gets the whole stored row back. With large rows and frequent conflicts,
+  that adds up.
 - A condition built from optional criteria can end up checking nothing, such as a `Filter::and()` whose criteria are
   all `null`. As a search filter, that matches everything. As a write condition, the bundle refuses it before
   sending, because DynamoDB would apply the write unconditionally. To write without a condition, pass none.
@@ -410,16 +427,17 @@ sends any of it.
 
 ## Transactions
 
-`transactWrite()` runs puts, updates and deletes across entity classes as a single all-or-nothing request:
+`transactWrite()` runs puts, inserts, updates and deletes across entity classes as a single all-or-nothing request:
 
 ```php
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 
 $this->client->transactWrite(
     new TransactWriteInput(
         new UpdateInput($order, ['status' => OrderStatus::Cancelled], Filter::equals('status', OrderStatus::Open)),
         new DeleteInput(new Key(ReservationEntity::class, $order->id)),
-        new PutInput($event),
+        new InsertInput($event),
     ),
 );
 ```
@@ -431,7 +449,9 @@ A transaction names each key once, whatever operations name it. The bundle refus
 twice before it sends any of it.
 
 A cancelled transaction throws `TransactionCanceledException`. Its `getCancellationReasons()` holds one reason per
-operation, in the order the operations were given. Each reason tells whether its operation failed, and why.
+operation, in the order the operations were given. Each reason tells whether its operation failed, and why. An insert
+of a stored row or an update of a missing row doesn't return `false` here, but cancels the transaction like a failed
+condition.
 
 ### How it works
 
@@ -440,9 +460,9 @@ operation, in the order the operations were given. Each reason tells whether its
   cancellation, such as a failed condition, is thrown right away.
 - Each attempt carries an idempotency token of its own (`ClientRequestToken`). If AsyncAws sends an attempt again, for
   example after a timeout, DynamoDB applies it only once.
-- Once every transaction is sent, the puts and the updates keyed by an entity are applied to their entities, as
-  [Keeping the entity in sync](#keeping-the-entity-in-sync) describes. If a transaction fails, the entities of the
-  ones before it are brought up to date before its exception is thrown.
+- Once every transaction is sent, the puts, the inserts and the updates keyed by an entity are applied to their
+  entities, as [Keeping the entity in sync](#keeping-the-entity-in-sync) describes. If a transaction fails, the
+  entities of the ones before it are brought up to date before its exception is thrown.
 
 ### Pitfalls
 

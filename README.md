@@ -8,8 +8,8 @@ with entities and PHP values; DynamoDB's attribute format stays inside the bundl
 
 - Typed fields: strings, numbers, booleans, dates, backed enums, Uids, lists and maps, and types of your own
 - Get, query, scan and count, with one `Filter` builder for key conditions, filters and write conditions
-- Puts, partial and nested updates, atomic counters and appends, and deletes, one at a time, in batches or in
-  transactions, chunked and retried for you
+- Puts, inserts, partial and nested updates, atomic counters and appends, and deletes, one at a time, in batches or
+  in transactions, chunked and retried for you
 - Opaque, URL-safe pagination tokens that page forward and backward
 - A definition dump, schema baselines for CI and a profiler panel
 
@@ -21,7 +21,7 @@ write it.
 ## Documentation
 
 - [Quick setup](docs/QUICK_SETUP.md): requirements, installation, a first entity and its use
-- [Basics](docs/examples/basics.md): entities, reading by key, queries, scans, counts, filters, puts and deletes
+- [Basics](docs/examples/basics.md): entities, reading by key, queries, scans, counts, filters, puts, inserts and deletes
 - [Updates, conditions and transactions](docs/examples/writes.md): partial and nested updates, update expressions, upserts, conditional writes and transactions
 - [Paginated listing](docs/examples/paginated-listing.md): previous and next links, page numbers, and pages
   merged from several queries

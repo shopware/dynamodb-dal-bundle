@@ -19,7 +19,7 @@ final class ExceptionFactory
     }
 
     /**
-     * What a single put, update or delete throws where its condition fails, or where an updated item does not exist.
+     * What a single put, update or delete throws where its condition fails.
      */
     public static function conditionalCheckFailed(): ConditionalCheckFailedException
     {
@@ -32,7 +32,7 @@ final class ExceptionFactory
     /**
      * What a transaction throws where DynamoDB cancels it, with one cancellation reason per operation, in the order
      * the operations were given: `None` for one that would have succeeded, `ConditionalCheckFailed` for one whose
-     * condition failed or whose updated item does not exist, `TransactionConflict`, and so on.
+     * condition failed, whose updated item does not exist or whose inserted one is stored, `TransactionConflict`, and so on.
      */
     public static function transactionCanceled(string ...$reasonCodes): TransactionCanceledException
     {

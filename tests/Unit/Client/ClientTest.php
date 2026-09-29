@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Cursor;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
@@ -196,13 +197,34 @@ class ClientTest extends TestCase
         $this->client->put($put);
     }
 
+    public function testInsertDelegatesToTheWriter(): void
+    {
+        $insert = new InsertInput($this->entity('a'));
+
+        $this->writer->expects(static::once())->method('insert')->with($insert)->willReturn(false);
+
+        static::assertFalse($this->client->insert($insert));
+    }
+
+    public function testInsertOfAnEntityDelegatesItsInsertToTheWriter(): void
+    {
+        $entity = $this->entity('a');
+
+        $this->writer->expects(static::once())
+            ->method('insert')
+            ->with(static::callback(static fn (InsertInput $insert): bool => $insert->entity === $entity))
+            ->willReturn(true);
+
+        static::assertTrue($this->client->insert($entity));
+    }
+
     public function testUpdateDelegatesToTheWriter(): void
     {
         $update = new UpdateInput(new Key(NormalEntity::class, 'a'), ['required' => 'req']);
 
-        $this->writer->expects(static::once())->method('update')->with($update);
+        $this->writer->expects(static::once())->method('update')->with($update)->willReturn(false);
 
-        $this->client->update($update);
+        static::assertFalse($this->client->update($update));
     }
 
     public function testUpsertDelegatesToTheWriter(): void
@@ -218,9 +240,9 @@ class ClientTest extends TestCase
     {
         $delete = new DeleteInput(new Key(NormalEntity::class, 'a'));
 
-        $this->writer->expects(static::once())->method('delete')->with($delete);
+        $this->writer->expects(static::once())->method('delete')->with($delete)->willReturn(false);
 
-        $this->client->delete($delete);
+        static::assertFalse($this->client->delete($delete));
     }
 
     public function testBatchWriteDelegatesToTheWriter(): void

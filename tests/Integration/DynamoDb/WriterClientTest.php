@@ -10,6 +10,7 @@ use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\ScanInput;
@@ -74,6 +75,51 @@ class WriterClientTest extends DynamoDbTestCase
         static::assertSame(['k' => 'v'], $entity->meta);
     }
 
+    public function testInsertWritesTheItemWhereNoneIsStored(): void
+    {
+        static::assertTrue($this->writer()->insert(new InsertInput(RecordEntity::create(self::TENANT, 'a', name: 'inserted'))));
+
+        static::assertSame('inserted', $this->read('a')?->name);
+    }
+
+    public function testInsertOfAStoredItemWritesNothingAndSaysSo(): void
+    {
+        $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'stored')));
+
+        $entity = RecordEntity::create(self::TENANT, 'a', name: 'inserted');
+        static::assertFalse($this->writer()->insert(new InsertInput($entity)));
+
+        static::assertSame('stored', $this->read('a')?->name);
+        static::assertSame('inserted', $entity->name);
+    }
+
+    /**
+     * The key being free is checked for the whole key, so another item of the same partition keeps no insert from being written.
+     */
+    public function testInsertBesideAStoredItemOfTheSamePartitionWritesTheItem(): void
+    {
+        $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'stored')));
+
+        static::assertTrue($this->writer()->insert(new InsertInput(RecordEntity::create(self::TENANT, 'b', name: 'inserted'))));
+
+        static::assertSame('stored', $this->read('a')?->name);
+        static::assertSame('inserted', $this->read('b')?->name);
+    }
+
+    public function testInsertBackfillsThePassedEntity(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+
+        static::assertTrue($this->writer()->insert(new InsertInput($entity)));
+
+        static::assertSame(self::TENANT . '#invoice', $entity->pk);
+        static::assertTrue(isset($entity->id));
+
+        $read = $this->readNormalized($entity);
+        static::assertNotNull($read);
+        static::assertTrue($entity->id->equals($read->id));
+    }
+
     public function testABatchWritesEveryPut(): void
     {
         $this->writer()->batchWrite(new BatchWriteInput()->withPut(
@@ -110,6 +156,34 @@ class WriterClientTest extends DynamoDbTestCase
             RecordEntity::create(self::TENANT, 'a', name: 'second'),
             Filter::notExists('id'),
         ));
+    }
+
+    public function testATransactionOfInsertsWritesNoneWhereOneKeyIsTaken(): void
+    {
+        $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'b', name: 'taken')));
+
+        try {
+            $this->writer()->transactWrite(new TransactWriteInput(
+                new InsertInput(RecordEntity::create(self::TENANT, 'a')),
+                new InsertInput(RecordEntity::create(self::TENANT, 'b', name: 'inserted')),
+            ));
+            static::fail('The taken key should have cancelled the transaction.');
+        } catch (TransactionCanceledException $exception) {
+            static::assertSame(['None', 'ConditionalCheckFailed'], array_map(static fn (CancellationReason $reason): ?string => $reason->getCode(), $exception->getCancellationReasons()));
+        }
+
+        static::assertNull($this->read('a'));
+        static::assertSame('taken', $this->read('b')?->name);
+    }
+
+    public function testATransactionalInsertBackfillsItsEntity(): void
+    {
+        $entity = NormalizedEntity::create(self::TENANT, 'invoice');
+
+        $this->writer()->transactWrite(new TransactWriteInput(new InsertInput($entity)));
+
+        static::assertSame(self::TENANT . '#invoice', $entity->pk);
+        static::assertNotNull($this->readNormalized($entity));
     }
 
     public function testATransactionOfConditionalPutsWritesNoneWhenOneFails(): void
@@ -278,12 +352,7 @@ class WriterClientTest extends DynamoDbTestCase
      */
     public function testUpdateSingleRefusesAMissingItemAndCreatesNone(): void
     {
-        try {
-            $this->writer()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'ghost'), ['name' => 'nope']));
-            static::fail('An update of a missing item should fail its condition.');
-        } catch (ConditionalCheckFailedException) {
-            // Expected.
-        }
+        static::assertFalse($this->writer()->update(new UpdateInput(new Key(RecordEntity::class, self::TENANT, 'ghost'), ['name' => 'nope'])));
 
         static::assertSame(0, $this->countRecords());
     }
@@ -294,12 +363,7 @@ class WriterClientTest extends DynamoDbTestCase
         $this->writer()->put(new PutInput($entity));
         $this->writer()->delete(new DeleteInput($entity));
 
-        try {
-            $this->writer()->update(new UpdateInput($entity, ['label' => 'renamed']));
-            static::fail('An update of a deleted item should fail its condition.');
-        } catch (ConditionalCheckFailedException) {
-            // Expected.
-        }
+        static::assertFalse($this->writer()->update(new UpdateInput($entity, ['label' => 'renamed'])));
 
         static::assertNull($this->readNormalized($entity));
         static::assertSame(NormalizedEntityNormalizer::DEFAULT_LABEL, $entity->label);
@@ -311,24 +375,37 @@ class WriterClientTest extends DynamoDbTestCase
      */
     public function testUpdateWithAConditionAMissingItemSatisfiesStillRequiresTheItem(): void
     {
-        static::expectException(ConditionalCheckFailedException::class);
-
-        $this->writer()->update(new UpdateInput(
+        static::assertFalse($this->writer()->update(new UpdateInput(
             new Key(RecordEntity::class, self::TENANT, 'ghost'),
             ['name' => 'nope'],
             Filter::or(Filter::notExists('name'), Filter::notEquals('status', RecordStatus::Done)),
-        ));
+        )));
+
+        static::assertNull($this->read('ghost'));
+    }
+
+    /**
+     * The item is missing, which is what keeps the update from being written, so its own condition, which would fail
+     * on an item without attributes, throws nothing.
+     */
+    public function testUpdateOfAMissingItemSaysSoWhateverItsCondition(): void
+    {
+        static::assertFalse($this->writer()->update(new UpdateInput(
+            new Key(RecordEntity::class, self::TENANT, 'ghost'),
+            ['name' => 'nope'],
+            Filter::equals('status', RecordStatus::Open),
+        )));
     }
 
     public function testUpdateWithTheCallersOwnExistenceConditionStillApplies(): void
     {
         $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'a')));
 
-        $this->writer()->update(new UpdateInput(
+        static::assertTrue($this->writer()->update(new UpdateInput(
             new Key(RecordEntity::class, self::TENANT, 'a'),
             ['name' => 'after'],
             Filter::exists('tenantId'),
-        ));
+        )));
 
         static::assertSame('after', $this->read('a')?->name);
     }
@@ -355,16 +432,41 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'a')));
 
-        $this->writer()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'a')));
+        static::assertTrue($this->writer()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'a'))));
 
         static::assertNull($this->read('a'));
     }
 
     public function testDeleteSingleIsIdempotentForAnAbsentKey(): void
     {
-        $this->writer()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'never-written')));
+        static::assertFalse($this->writer()->delete(new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'never-written'))));
 
         static::assertSame(0, $this->countRecords());
+    }
+
+    /**
+     * The item is missing, which is what leaves nothing to delete, so the delete's own condition, which would fail on
+     * an item without attributes, throws nothing.
+     */
+    public function testDeleteOfAnAbsentKeySaysSoWhateverItsCondition(): void
+    {
+        static::assertFalse($this->writer()->delete(new DeleteInput(
+            new Key(RecordEntity::class, self::TENANT, 'never-written'),
+            Filter::equals('status', RecordStatus::Done),
+        )));
+    }
+
+    /**
+     * Only a lone delete is conditioned on its item existing. In a transaction, that condition would cancel the others.
+     */
+    public function testATransactionalDeleteOfAnAbsentKeyCancelsNothing(): void
+    {
+        $this->writer()->transactWrite(new TransactWriteInput()->with(
+            new PutInput(RecordEntity::create(self::TENANT, 'a')),
+            new DeleteInput(new Key(RecordEntity::class, self::TENANT, 'never-written')),
+        ));
+
+        static::assertNotNull($this->read('a'));
     }
 
     public function testDeleteByEntityReadsTheKeyOffTheEntity(): void

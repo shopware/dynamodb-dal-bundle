@@ -6,6 +6,7 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
@@ -54,6 +55,7 @@ use AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException;
 use AsyncAws\DynamoDb\Exception\TransactionCanceledException;
 use AsyncAws\DynamoDb\Result\BatchGetItemOutput;
 use AsyncAws\DynamoDb\Result\BatchWriteItemOutput;
+use AsyncAws\DynamoDb\Result\DeleteItemOutput;
 use AsyncAws\DynamoDb\Result\GetItemOutput;
 use AsyncAws\DynamoDb\Result\PutItemOutput;
 use AsyncAws\DynamoDb\Result\TransactWriteItemsOutput;
@@ -139,6 +141,124 @@ class WriterClientTest extends TestCase
 
         $this->expectException(UnknownEntityDefinitionException::class);
         $this->writer->put(new PutInput(new OtherEntity()->setOtherId('o')));
+    }
+
+    public function testInsertRejectsAnUnregisteredClass(): void
+    {
+        $this->client->expects(static::never())->method('putItem');
+
+        $this->expectException(UnknownEntityDefinitionException::class);
+        $this->writer->insert(new InsertInput(new OtherEntity()->setOtherId('o')));
+    }
+
+    /**
+     * The key being free is the insert's only condition, so its failure needs no stored item to tell why, and nothing the
+     * normalizer generated for the put goes back onto the entity.
+     */
+    public function testAnInsertOfAStoredItemWritesNothingAndLeavesItsEntityAlone(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ConditionExpression'] ?? null) === 'NOT attribute_exists(#autofilledId)'
+                && !isset($args['ReturnValuesOnConditionCheckFailure'])))
+            ->willThrowException(self::conditionalCheckFailed());
+
+        static::assertFalse($this->normalizingWriter($normalizer)->insert(new InsertInput($this->entity('a'))));
+
+        static::assertSame([], $this->denormalizedAs($normalizer));
+    }
+
+    public function testAnInsertIsDenormalizedAsThePutThatWroteIt(): void
+    {
+        $normalizer = new RecordingNormalizer();
+
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        static::assertTrue($this->normalizingWriter($normalizer)->insert(new InsertInput($this->entity('a'))));
+
+        static::assertSame([NormalizerOperation::Put], $this->denormalizedAs($normalizer));
+    }
+
+    /**
+     * Without an item on the failure, the existence check failed, so the entity is left as it is rather than taking a row.
+     */
+    public function testAnUpdateOfAMissingItemWritesNothingAndLeavesItsEntityAlone(): void
+    {
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ReturnValuesOnConditionCheckFailure'] ?? null) === ReturnValuesOnConditionCheckFailure::ALL_OLD))
+            ->willThrowException(self::conditionalCheckFailed());
+
+        $entity = $this->entity('a');
+        static::assertFalse($this->writer->update(new UpdateInput($entity, ['name' => 'after'])));
+
+        static::assertSame('req', $entity->getRequired());
+        static::assertFalse(isset($entity->getVars()['name']));
+    }
+
+    /**
+     * The stored item comes back with the failure, so it is the update's own condition that failed on it.
+     */
+    public function testAnUpdateWhoseConditionFailsOnTheStoredItemIsThrown(): void
+    {
+        $failure = self::conditionalCheckFailed(['autofilledId' => ['S' => 'a']]);
+
+        $this->client->expects(static::once())->method('updateItem')->willThrowException($failure);
+
+        try {
+            $this->writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), ['name' => 'after'], Filter::notExists('name')));
+            static::fail('The condition fails on the stored item');
+        } catch (ConditionalCheckFailedException $exception) {
+            static::assertSame($failure, $exception);
+        }
+    }
+
+    public function testALoneDeleteIsConditionedOnItsItemExisting(): void
+    {
+        $this->client->expects(static::once())
+            ->method('deleteItem')
+            ->with(static::callback(static fn (array $args): bool => ($args['ConditionExpression'] ?? null) === 'attribute_exists(#autofilledId)'
+                && ($args['ReturnValuesOnConditionCheckFailure'] ?? null) === ReturnValuesOnConditionCheckFailure::ALL_OLD))
+            ->willReturn(ResultMockFactory::create(DeleteItemOutput::class));
+
+        static::assertTrue($this->writer->delete(new DeleteInput(new Key(NormalEntity::class, 'a'))));
+    }
+
+    public function testALoneDeleteConditionThatChecksNothingIsRefusedBeforeAnyRequest(): void
+    {
+        $this->client->expects(static::never())->method('deleteItem');
+
+        $this->expectException(ConditionEmptyException::class);
+
+        $this->writer->delete(new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::equalsAny('name', [])));
+    }
+
+    public function testADeleteOfAMissingItemDeletesNothing(): void
+    {
+        $this->client->expects(static::once())->method('deleteItem')->willThrowException(self::conditionalCheckFailed());
+
+        static::assertFalse($this->writer->delete(new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::exists('name'))));
+    }
+
+    /**
+     * The stored item comes back with the failure, so it is the delete's own condition that failed on it.
+     */
+    public function testADeleteWhoseConditionFailsOnTheStoredItemIsThrown(): void
+    {
+        $failure = self::conditionalCheckFailed(['autofilledId' => ['S' => 'a']]);
+
+        $this->client->expects(static::once())->method('deleteItem')->willThrowException($failure);
+
+        try {
+            $this->writer->delete(new DeleteInput(new Key(NormalEntity::class, 'a'), Filter::notExists('name')));
+            static::fail('The condition fails on the stored item');
+        } catch (ConditionalCheckFailedException $exception) {
+            static::assertSame($failure, $exception);
+        }
     }
 
     public function testUpdateRejectsAnUnregisteredClass(): void

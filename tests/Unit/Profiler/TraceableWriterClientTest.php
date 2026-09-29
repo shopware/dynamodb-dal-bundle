@@ -5,7 +5,10 @@ namespace Shopware\DynamodbDalBundle\Tests\Unit\Profiler;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
+use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
+use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpsertInput;
 use Shopware\DynamodbDalBundle\Client\Key;
 use Shopware\DynamodbDalBundle\Client\Output\UpsertOutcome;
@@ -42,6 +45,22 @@ class TraceableWriterClientTest extends TestCase
 
         static::assertSame('upsert', $tracer->calls()[0]->method ?? null);
         static::assertSame([NormalEntity::class], $tracer->calls()[0]->entities);
+    }
+
+    public function testAWriteThatStoredNothingSaysSoThroughTheDecorator(): void
+    {
+        $tracer = new DalCallTracer();
+        $inner = static::createStub(WriterClient::class);
+        $inner->method('insert')->willReturn(false);
+        $inner->method('update')->willReturn(false);
+        $inner->method('delete')->willReturn(false);
+        $writer = new TraceableWriterClient($inner, $tracer);
+
+        static::assertFalse($writer->insert(new InsertInput(new NormalEntity())));
+        static::assertFalse($writer->update(new UpdateInput(new Key(NormalEntity::class, 'a'), ['required' => 'req'])));
+        static::assertFalse($writer->delete(new DeleteInput(new Key(NormalEntity::class, 'a'))));
+
+        static::assertSame(['insert', 'update', 'delete'], array_map(static fn ($call): string => $call->method, $tracer->calls()));
     }
 
     public function testAFailedWriteIsTheCallsFailure(): void

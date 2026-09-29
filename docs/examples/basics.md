@@ -418,21 +418,26 @@ $order->totalCents = 4_990;
 
 $this->client->put(new PutInput($order));
 
+// Only where the order isn't stored yet
+$created = $this->client->insert($order);
+
 $this->client->delete(new DeleteInput($order));
 $this->client->delete(new DeleteInput(new Key(OrderEntity::class, 'c-42', 'o-1002')));
 ```
 
 A put writes the entity as a whole: it creates the row, or replaces the stored row entirely. Every field that is
-neither nullable nor has a default has to be set before the put. A delete takes the entity or its `Key`.
+neither nullable nor has a default has to be set before the put. An insert writes the entity like a put, but only
+where no row is stored under its key. Otherwise it writes nothing and returns `false`. It takes the entity or an
+`InsertInput`. A delete takes the entity or its `Key`, and returns `false` where no row is stored.
 
-`put()` and `delete()` write one entity each. To write many, change only some fields, add conditions or write
-atomically, see [Updates, conditions and transactions](writes.md).
+`put()`, `insert()` and `delete()` write one entity each. To write many, change only some fields, add conditions or
+write atomically, see [Updates, conditions and transactions](writes.md).
 
 ### How it works
 
 - Fields that are `null` are left out of the row.
-- A normalizer can generate values during a put, such as an ID or a timestamp. The bundle writes them back to the
-  entity afterwards. See [A normalizer](extending.md#a-normalizer).
+- A normalizer can generate values during a put or an insert, such as an ID or a timestamp. The bundle writes them
+  back to the entity afterwards. See [A normalizer](extending.md#a-normalizer).
 - Deleting an entity that doesn't exist is not an error.
 
 ### Pitfalls

@@ -7,6 +7,7 @@ use Shopware\DynamodbDalBundle\Client\Backoff;
 use Shopware\DynamodbDalBundle\Client\Client;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\Refresh;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
@@ -92,8 +93,39 @@ class WriterClient
     }
 
     /**
+     * Writes the entity with `PutItem` on the condition that its key is free, and applies the serialized result back
+     * onto it as {@see self::put()} does. An entity whose insert is not written keeps its values.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param InsertInput<Entity> $input
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if the entity does not serialize
+     * @throws EntityOutOfSyncException if the insert is stored, but the normalizer fails on what it wrote
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where an item is stored under the entity's key, and nothing is written
+     */
+    public function insert(InsertInput $input): bool
+    {
+        $write = $this->requests->insert($input);
+
+        try {
+            $this->client->putItem($write->request)->resolve();
+        } catch (ConditionalCheckFailedException) {
+            // The key being free is the only condition, so it failed because an item is stored there
+            return false;
+        }
+
+        $this->writeBack($write->writeBack);
+
+        return true;
+    }
+
+    /**
      * Updates the item with `UpdateItem`. Unlike {@see self::put()}, an update writes only the fields it names.
-     * Every update is conditioned on its item existing, so a missing key fails instead of creating a partial item.
+     * Every update is conditioned on its item existing, so a missing key writes nothing instead of creating a partial item.
      * An entity given as key takes the stored item back, unless {@see UpdateInput::$refresh} is {@see Refresh::None}.
      *
      * @template Entity of AbstractEntity
@@ -106,13 +138,15 @@ class WriterClient
      * @throws UpdateDuplicatePathException if the update gives a path two values
      * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable
      * @throws DALException if the update, the key or the condition does not serialize
-     * @throws ConditionalCheckFailedException when the item does not exist or the condition fails
+     * @throws ConditionalCheckFailedException when the condition fails on the stored item
      * @throws EntityOutOfSyncException if the update is stored, but the stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where no item is stored under the key, and nothing is written
      */
-    public function update(UpdateInput $input): void
+    public function update(UpdateInput $input): bool
     {
-        $this->updateItem($this->requests->update($input));
+        return $this->updateItem($this->requests->update($input));
     }
 
     /**
@@ -146,13 +180,8 @@ class WriterClient
 
         for ($round = 1; ; ++$round) {
             try {
-                $this->updateItem($update, returnItemOnConditionFailure: true);
-
-                return UpsertOutcome::Updated;
-            } catch (ConditionalCheckFailedException $exception) {
-                // An item that is stored comes back with the failure, and then it failed the upsert's own condition
-                if ($exception->getItem() !== []) {
-                    throw $exception;
+                if ($this->updateItem($update)) {
+                    return UpsertOutcome::Updated;
                 }
             } catch (EntityOutOfSyncException $exception) {
                 throw new EntityOutOfSyncException($exception->getPrevious() ?? $exception, UpsertOutcome::Updated);
@@ -188,7 +217,8 @@ class WriterClient
     }
 
     /**
-     * Deletes the item with `DeleteItem`. Deleting an item that does not exist is not an error.
+     * Deletes the item with `DeleteItem`, conditioned on its item existing. It asks for the stored item back where its
+     * condition fails, which tells a missing item from the delete's own condition failing on a stored one.
      *
      * @template Entity of AbstractEntity
      *
@@ -197,12 +227,28 @@ class WriterClient
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
      * @throws DALException if the key or the condition does not serialize
-     * @throws ConditionalCheckFailedException
+     * @throws ConditionalCheckFailedException when the condition fails on the stored item
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where no item is stored under the key, whatever the condition
      */
-    public function delete(DeleteInput $input): void
+    public function delete(DeleteInput $input): bool
     {
-        $this->client->deleteItem($this->requests->delete($input)->request)->resolve();
+        try {
+            $this->client->deleteItem([
+                ...$this->requests->delete($input, requireItem: true)->request,
+                'ReturnValuesOnConditionCheckFailure' => ReturnValuesOnConditionCheckFailure::ALL_OLD,
+            ])->resolve();
+        } catch (ConditionalCheckFailedException $exception) {
+            // An item that is stored comes back with the failure, and then it failed the delete's own condition
+            if ($exception->getItem() !== []) {
+                throw $exception;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -249,12 +295,12 @@ class WriterClient
     }
 
     /**
-     * Writes puts, updates and deletes across tables with `TransactWriteItems`, in the order the operations were added.
+     * Writes puts, inserts, updates and deletes across tables with `TransactWriteItems`, in the order the operations were added.
      * Past 100 operations, the input is split into several transactions, each atomic on its own. A cancellation for a
      * conflict or for throttling is retried with backoff; any other cancellation is rethrown.
      *
      * Once every transaction is sent, or once one fails, before its failure is thrown, the serialized result of each put
-     * stored is applied back onto its entity, as for {@see self::put()}, and each update stored that is keyed by an
+     * or insert stored is applied back onto its entity, as for {@see self::put()}, and each update stored that is keyed by an
      * entity brings it up to date as its {@see UpdateInput::$refresh} says. Only {@see Refresh::Full} reads an item
      * back, where an update writes a nested path or has an action.
      *
@@ -265,7 +311,7 @@ class WriterClient
      * @throws UpdateDuplicatePathException if an update gives a path two values
      * @throws FieldMissingSerializedValueException if an update removes a field that is not nullable
      * @throws DALException if an entity, an update, a key or a condition does not serialize
-     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict or throttling is retried first
+     * @throws TransactionCanceledException e.g. when a condition fails, an updated item does not exist or an inserted one is stored; a conflict or throttling is retried first
      * @throws EntityOutOfSyncException if the transactions are stored, but an entity could not be brought up to date
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */
@@ -297,25 +343,37 @@ class WriterClient
 
     /**
      * Sends an update alone. Alone, it can return the stored item, which says all it wrote, so that is asked for
-     * instead of the write-back.
+     * instead of the write-back. A failed condition carries the stored item as well, which tells a missing item from
+     * a condition that failed on a stored one.
      *
      * @param PreparedWrite<UpdateRequest> $write
-     * @param bool $returnItemOnConditionFailure - whether a failed condition carries the stored item, which tells a missing item from a condition that failed on a stored one
      *
+     * @throws ConditionalCheckFailedException when the condition fails on the stored item
      * @throws EntityOutOfSyncException if the update is stored, but the stored item does not deserialize
      * @throws AsyncAwsException
+     *
+     * @return bool - `false` where no item is stored under the key, and nothing is written
      */
-    private function updateItem(PreparedWrite $write, bool $returnItemOnConditionFailure = false): void
+    private function updateItem(PreparedWrite $write): bool
     {
         $entity = $write->writeBack?->entity;
 
-        $output = $this->client->updateItem([
-            ...$write->request,
-            ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
-            ...($returnItemOnConditionFailure ? ['ReturnValuesOnConditionCheckFailure' => ReturnValuesOnConditionCheckFailure::ALL_OLD] : []),
-        ]);
+        try {
+            $output = $this->client->updateItem([
+                ...$write->request,
+                ...($entity ? ['ReturnValues' => ReturnValue::ALL_NEW] : []),
+                'ReturnValuesOnConditionCheckFailure' => ReturnValuesOnConditionCheckFailure::ALL_OLD,
+            ]);
 
-        $output->resolve();
+            $output->resolve();
+        } catch (ConditionalCheckFailedException $exception) {
+            // An item that is stored comes back with the failure, and then it failed the update's own condition
+            if ($exception->getItem() !== []) {
+                throw $exception;
+            }
+
+            return false;
+        }
 
         if ($entity) {
             try {
@@ -324,6 +382,8 @@ class WriterClient
                 throw new EntityOutOfSyncException($exception);
             }
         }
+
+        return true;
     }
 
     /**

@@ -5,6 +5,7 @@ namespace Shopware\DynamodbDalBundle\Profiler;
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\TransactWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\UpdateInput;
@@ -34,11 +35,14 @@ final class TraceableWriterClient extends WriterClient
         });
     }
 
-    public function update(UpdateInput $input): void
+    public function insert(InsertInput $input): bool
     {
-        $this->tracer->run($this->tracer->open([$input->class]), function () use ($input): void {
-            $this->inner->update($input);
-        });
+        return $this->tracer->run($this->tracer->open([$input->class]), fn (): bool => $this->inner->insert($input));
+    }
+
+    public function update(UpdateInput $input): bool
+    {
+        return $this->tracer->run($this->tracer->open([$input->class]), fn (): bool => $this->inner->update($input));
     }
 
     public function upsert(UpsertInput $input): UpsertOutcome
@@ -46,11 +50,9 @@ final class TraceableWriterClient extends WriterClient
         return $this->tracer->run($this->tracer->open([$input->class]), fn (): UpsertOutcome => $this->inner->upsert($input));
     }
 
-    public function delete(DeleteInput $input): void
+    public function delete(DeleteInput $input): bool
     {
-        $this->tracer->run($this->tracer->open([$input->class]), function () use ($input): void {
-            $this->inner->delete($input);
-        });
+        return $this->tracer->run($this->tracer->open([$input->class]), fn (): bool => $this->inner->delete($input));
     }
 
     public function batchWrite(BatchWriteInput $input): void
@@ -67,7 +69,7 @@ final class TraceableWriterClient extends WriterClient
 
     public function transactWrite(TransactWriteInput $input): void
     {
-        $entities = array_map(static fn (PutInput|UpdateInput|DeleteInput $operation): string => $operation->class, $input->operations);
+        $entities = array_map(static fn (PutInput|InsertInput|UpdateInput|DeleteInput $operation): string => $operation->class, $input->operations);
 
         $this->tracer->run($this->tracer->open($entities), function () use ($input): void {
             $this->inner->transactWrite($input);

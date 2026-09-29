@@ -6,6 +6,7 @@ use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Client\Input\BatchWriteInput;
 use Shopware\DynamodbDalBundle\Client\Input\DeleteInput;
 use Shopware\DynamodbDalBundle\Client\Input\GetInput;
+use Shopware\DynamodbDalBundle\Client\Input\InsertInput;
 use Shopware\DynamodbDalBundle\Client\Input\PutInput;
 use Shopware\DynamodbDalBundle\Client\Input\QueryInput;
 use Shopware\DynamodbDalBundle\Client\Input\RefreshInput;
@@ -191,8 +192,28 @@ class Client
     }
 
     /**
+     * Writes the whole item with `PutItem`, where no item is stored with the same key. A stored one is left as it is, never replaced.
+     * Values the normalizer generates are applied back onto the entity.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param InsertInput<Entity>|Entity $input - the insert, or the entity to insert
+     *
+     * @throws UnknownEntityDefinitionException
+     * @throws DALException if the entity does not serialize
+     * @throws EntityOutOfSyncException if the insert is stored, but the normalizer fails on what it wrote
+     * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where an item is stored under the entity's key, and nothing is written
+     */
+    public function insert(InsertInput|AbstractEntity $input): bool
+    {
+        return $this->writer->insert($input instanceof InsertInput ? $input : new InsertInput($input));
+    }
+
+    /**
      * Updates an existing item with `UpdateItem`.
-     * An update never creates an item: a key without one fails like a failed condition.
+     * An update never creates an item: where none is stored under the key, it writes nothing.
      *
      * @template Entity of AbstractEntity
      *
@@ -204,13 +225,15 @@ class Client
      * @throws UpdateDuplicatePathException if the update gives a path two values
      * @throws FieldMissingSerializedValueException if the update removes a field that is not nullable
      * @throws DALException if the update, the key or the condition does not serialize
-     * @throws ConditionalCheckFailedException when the item does not exist or the condition fails
+     * @throws ConditionalCheckFailedException when the condition fails on the stored item
      * @throws EntityOutOfSyncException if the update is stored, but the stored item does not deserialize
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where no item is stored under the key, and nothing is written
      */
-    public function update(UpdateInput $input): void
+    public function update(UpdateInput $input): bool
     {
-        $this->writer->update($input);
+        return $this->writer->update($input);
     }
 
     /**
@@ -242,7 +265,7 @@ class Client
 
     /**
      * Deletes the item by {@see Key} or entity with `DeleteItem`.
-     * Deleting an item that does not exist is not an error.
+     * Deleting an item that does not exist is not an error, whatever the condition.
      *
      * @template Entity of AbstractEntity
      *
@@ -251,12 +274,14 @@ class Client
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
      * @throws DALException if the key or the condition does not serialize
-     * @throws ConditionalCheckFailedException when the condition fails
+     * @throws ConditionalCheckFailedException when the condition fails on the stored item
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
+     *
+     * @return bool - `false` where no item is stored under the key, and nothing is deleted
      */
-    public function delete(DeleteInput $input): void
+    public function delete(DeleteInput $input): bool
     {
-        $this->writer->delete($input);
+        return $this->writer->delete($input);
     }
 
     /**
@@ -277,10 +302,10 @@ class Client
     }
 
     /**
-     * Writes puts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order they are given.
+     * Writes puts, inserts, updates and deletes spanning one or multiple tables with `TransactWriteItems`, in the order they are given.
      * Past 100 operations, the input is split into several transactions, each atomic on its own.
      * Once every transaction is sent, or once one fails, before its failure is thrown, the entities of those stored are
-     * brought up to date: values the normalizer generated are applied back onto each put entity, and an update keyed by
+     * brought up to date: values the normalizer generated are applied back onto each put or inserted entity, and an update keyed by
      * an entity brings it up to date as its {@see UpdateInput::$refresh} says.
      *
      * @throws UnknownEntityDefinitionException
@@ -290,7 +315,7 @@ class Client
      * @throws UpdateDuplicatePathException if an update gives a path two values
      * @throws FieldMissingSerializedValueException if an update removes a field that is not nullable
      * @throws DALException if an entity, an update, a key or a condition does not serialize
-     * @throws TransactionCanceledException e.g. when a condition fails or an updated item does not exist; a conflict or throttling is retried first
+     * @throws TransactionCanceledException e.g. when a condition fails, an updated item does not exist or an inserted one is stored; a conflict or throttling is retried first
      * @throws EntityOutOfSyncException if the transactions are stored, but an entity could not be brought up to date
      * @throws AsyncAwsException if a request to DynamoDB fails otherwise
      */

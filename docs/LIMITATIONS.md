@@ -11,6 +11,7 @@
   - [Reads and writes](#reads-and-writes)
     - [An upsert takes two requests for a new row](#an-upsert-takes-two-requests-for-a-new-row)
     - [A page is reached by token, not by number](#a-page-is-reached-by-token-not-by-number)
+    - [A resent insert or delete can return `false`](#a-resent-insert-or-delete-can-return-false)
   - [Types at a glance](#types-at-a-glance)
   - [Numbers](#numbers)
     - [Floats are binary, DynamoDB numbers are decimal](#floats-are-binary-dynamodb-numbers-are-decimal)
@@ -120,11 +121,11 @@ read. What else to watch for is in [Basics](examples/basics.md#the-entity).
 
 ### An upsert takes two requests for a new row
 
-Every update checks that its row exists, so an update of a missing key fails, unlike DynamoDB's `UpdateItem`. An
-upsert sends the update, and puts the entity where DynamoDB refuses the update because no row is stored. A single
-`UpdateItem` can't do both: it can't write a map entry into a map that a new row doesn't have yet, and it can't create
-the map and write into it at once. A new row therefore costs two writes, the refused update included, and an upsert
-can't be part of a transaction (see [Upserts](examples/writes.md#upserts)).
+Every update checks that its row exists, so an update of a missing key writes nothing, unlike DynamoDB's
+`UpdateItem`. An upsert sends the update, and puts the entity where DynamoDB refuses the update because no row is
+stored. A single `UpdateItem` can't do both: it can't write a map entry into a map that a new row doesn't have yet,
+and it can't create the map and write into it at once. A new row therefore costs two writes, the refused update
+included, and an upsert can't be part of a transaction (see [Upserts](examples/writes.md#upserts)).
 
 ### A page is reached by token, not by number
 
@@ -132,6 +133,15 @@ A search pages with tokens, not with an offset. Each token holds the key of an e
 therefore cannot open page 10 without reading pages 1 to 9 first. Page numbers need a `CursorHistory`, which holds
 only the pages visited, and which grows in the URL with every page. A scan cannot be read backward, so going back
 through one needs a history as well (see [Paginated listing](examples/paginated-listing.md#which-approach-to-use)).
+
+### A resent insert or delete can return `false`
+
+AsyncAws sends a request again after a timeout or a server error. Where the first attempt was stored, the second one
+finds the row it inserted, or misses the row it deleted, so `insert()` or `delete()` returns `false` although it
+wrote. After such an insert, the entity also lacks what the normalizer generated. A conditional put or update whose
+first attempt changed what its condition checks throws a `ConditionalCheckFailedException` the same way. DynamoDB takes
+an idempotency token only for a transaction, so where this matters, send the write as one, at twice the write
+capacity (see [Transactions](examples/writes.md#transactions)).
 
 ## Types at a glance
 
