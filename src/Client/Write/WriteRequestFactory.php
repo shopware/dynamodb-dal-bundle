@@ -36,7 +36,7 @@ use Shopware\DynamodbDalBundle\Serializer\Serializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
- * Turns write inputs into the requests DynamoDB takes: a put, update or delete into one it takes alone or in a
+ * Turns write inputs into the requests DynamoDB takes: a put, insert, update or delete into one it takes alone or in a
  * transaction, and puts and deletes into a {@see BatchWrite}.
  *
  * @internal

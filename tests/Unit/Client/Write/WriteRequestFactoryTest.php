@@ -216,9 +216,6 @@ class WriteRequestFactoryTest extends TestCase
         static::assertSame(['Delete', 'Put'], array_map(static fn (PreparedWrite $write): string => $write->type, $writes));
     }
 
-    /**
-     * DynamoDB refuses a transaction that writes an item twice, whichever operations do.
-     */
     public function testATransactionRefusesTheEntityOfAnInsertWhoseKeyIsNamedTwice(): void
     {
         $entity = $this->entity('a');
@@ -231,6 +228,9 @@ class WriteRequestFactoryTest extends TestCase
         }
     }
 
+    /**
+     * DynamoDB refuses a transaction that writes an item twice, whichever operations do.
+     */
     public function testATransactionRefusesAKeyNamedTwice(): void
     {
         $key = new Key(NormalEntity::class, 'a');

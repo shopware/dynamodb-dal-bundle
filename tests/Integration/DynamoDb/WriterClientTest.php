@@ -100,7 +100,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $this->writer()->put(new PutInput(RecordEntity::create(self::TENANT, 'a', name: 'stored')));
 
-        $this->writer()->insert(new InsertInput(RecordEntity::create(self::TENANT, 'b', name: 'inserted')));
+        static::assertTrue($this->writer()->insert(new InsertInput(RecordEntity::create(self::TENANT, 'b', name: 'inserted'))));
 
         static::assertSame('stored', $this->read('a')?->name);
         static::assertSame('inserted', $this->read('b')?->name);
@@ -110,7 +110,7 @@ class WriterClientTest extends DynamoDbTestCase
     {
         $entity = NormalizedEntity::create(self::TENANT, 'invoice');
 
-        $this->writer()->insert(new InsertInput($entity));
+        static::assertTrue($this->writer()->insert(new InsertInput($entity)));
 
         static::assertSame(self::TENANT . '#invoice', $entity->pk);
         static::assertTrue(isset($entity->id));

@@ -427,9 +427,10 @@ return "({$status} = {$context->fieldValue('status', $this->status)} OR attribut
 
 - Build every placeholder through the context. `FieldDefinition::getExpressionAttributeName()` and
   `getExpressionValueName()` return placeholders that the request never defines, and DynamoDB rejects them.
-- A fragment that joins clauses without parentheses binds to what surrounds it. Next to an update's check that the row
-  exists, `a OR b` goes out as `attribute_exists(#id) AND a OR b`. DynamoDB reads that as
-  `(attribute_exists(#id) AND a) OR b`, so the update can create a row that did not exist.
+- A fragment that joins clauses without parentheses binds to what surrounds it. Next to the check that the row exists,
+  which an update and a delete on its own add, `a OR b` goes out as `attribute_exists(#id) AND a OR b`. DynamoDB reads
+  that as `(attribute_exists(#id) AND a) OR b`, so an update can create a row that did not exist, and a delete of a
+  missing row returns `true`.
 
 ## An update action of your own
 

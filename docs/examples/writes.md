@@ -374,14 +374,14 @@ try {
 - An insert takes no condition, since DynamoDB could only check it against a row without attributes. A failed insert
   therefore always means the row is stored.
 - Only a delete on its own checks that its row exists. In a [transaction](#transactions) or a [batch](#batches), a
-  delete of a missing row deletes nothing and fails nothing.
+  delete of a missing row deletes nothing, and fails only on a condition of its own.
 
 ### Pitfalls
 
 - Where the check of the row fails, `insert()`, `update()` and `delete()` return `false` rather than throw. Code that
   ignores the result carries on as if they had written.
-- Where no row is stored, DynamoDB checks a put's condition against a row without attributes. A comparison is then
-  false, and its negation true.
+- Where no row is stored, DynamoDB checks the condition of a put, or of a delete in a transaction, against a row
+  without attributes. A comparison is then false, and its negation true.
 - An update or a delete whose condition fails gets the whole stored row back. With large rows and frequent conflicts,
   that adds up.
 - A condition built from optional criteria can end up checking nothing, such as a `Filter::and()` whose criteria are
@@ -460,9 +460,9 @@ condition.
   cancellation, such as a failed condition, is thrown right away.
 - Each attempt carries an idempotency token of its own (`ClientRequestToken`). If AsyncAws sends an attempt again, for
   example after a timeout, DynamoDB applies it only once.
-- Once every transaction is sent, the puts and the updates keyed by an entity are applied to their entities, as
-  [Keeping the entity in sync](#keeping-the-entity-in-sync) describes. If a transaction fails, the entities of the
-  ones before it are brought up to date before its exception is thrown.
+- Once every transaction is sent, the puts, the inserts and the updates keyed by an entity are applied to their
+  entities, as [Keeping the entity in sync](#keeping-the-entity-in-sync) describes. If a transaction fails, the
+  entities of the ones before it are brought up to date before its exception is thrown.
 
 ### Pitfalls
 
