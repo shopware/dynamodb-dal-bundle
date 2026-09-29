@@ -8,6 +8,7 @@ use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
+use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\BackedEnumFieldSerializer;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -49,6 +50,16 @@ class BackedEnumFieldSerializerTest extends TestCase
         $attribute = $this->serializer->serialize($this->definition, GoodEnum::A);
 
         static::assertEquals($expected, $attribute);
+    }
+
+    /**
+     * A case of another enum would be stored as a value that no read of the field takes back.
+     */
+    public function testSerializeRefusesACaseOfAnotherEnum(): void
+    {
+        $this->expectExceptionObject(new WrongTypeException($this->definition, GoodEnum::class, LabelEnum::Open));
+
+        $this->serializer->serialize($this->definition, LabelEnum::Open);
     }
 
     public function testDeserialize(): void

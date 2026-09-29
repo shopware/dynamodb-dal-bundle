@@ -44,7 +44,7 @@ These are the only exceptions a correct application should expect at runtime.
 | `AsyncAws\DynamoDb\Exception\ConditionalCheckFailedException` | The condition of a put, update, upsert or delete does not hold, or the row an update addresses does not exist | Reload the entity and try again, or report a conflict. See [Conditional writes](writes.md#conditional-writes) |
 | `AsyncAws\DynamoDb\Exception\TransactionCanceledException` | DynamoDB cancels a transaction, for example because a condition failed. The bundle first retries a cancellation caused only by a conflict with another transaction or by throttling | `getCancellationReasons()` holds one reason per operation, in the order the operations were given. See [Transactions](writes.md#transactions) |
 | `UpsertContentionException` | Other writers created and deleted the row of an upsert between its update and its put, twice. Neither write is stored | Send the upsert again. See [Upserts](writes.md#upserts) |
-| `InvalidCursorException` | A pagination token or `CursorHistory` was edited, or belongs to another table or index | Start over at the first page. See [Paginated listing](paginated-listing.md#listing-a-query) |
+| `InvalidCursorException` | A pagination token or `CursorHistory` was edited, or its key attributes are not those of the table or index searched | Start over at the first page. See [Paginated listing](paginated-listing.md#listing-a-query) |
 
 Other AsyncAws exceptions, such as `ProvisionedThroughputExceededException`, pass through as well.
 
@@ -58,7 +58,8 @@ an entity was deployed. They implement `DeserializationException`.
 |---|---|
 | `FieldMissingDeserializedValueException` | The row lacks a field that is neither nullable nor has a default, and the normalizer did not fill it in. Typically, the field was added to an entity whose table already has rows. See [The entity](basics.md#the-entity) |
 | `MissingAttributeValueException` | The stored attribute is not of the type the field's serializer reads, such as a number stored as a string |
-| `FieldDeserializationException` | The field's serializer failed in another way, such as for a stored value that is no longer a case of the field's enum. `getPrevious()` holds the original error |
+| `FieldDeserializationException` | The field's serializer failed in another way, such as for a stored value that is no longer a case of the field's enum. Or the property refused the value, with a `\TypeError` or from a `set` hook. `getPrevious()` holds the original error |
+| `DenormalizationException` | The entity's normalizer threw something other than a `DALException` on the fields of a row or of a write. `getPrevious()` holds what it threw. A `DALException` of the normalizer is thrown as it is |
 | `EntityOutOfSyncException` | A write is stored, but an entity it wrote could not be brought up to date. `getPrevious()` holds the failure: one of the exceptions above, a failed read of the row, or the normalizer failing on what was written |
 
 A JSON field whose stored JSON holds a scalar instead of an array or object throws a `WrongTypeException`, which is a
@@ -81,15 +82,16 @@ try {
 }
 ```
 
-A `JsonSerializable` value object reads back as an array. Assigning that array to the property fails with a
-`\TypeError`, which is not a `DALException`. See
+A `JsonSerializable` value object reads back as an array. The property refuses that array, so the read throws a
+`FieldDeserializationException`, whose `getPrevious()` is a `\TypeError`. See
 [A `JsonSerializable` value object](extending.md#a-jsonserializable-value-object).
 
 ## Values that don't fit their field
 
 The bundle throws these before it sends a request. It throws them for the entity of a put, for a key, and for a value
 in a filter, condition or update alike. They implement `SerializationException`, and their `$fieldDefinition` names
-the field. `UnknownFieldException` has no field definition, so its `$field` names the field.
+the field. `UnknownFieldException` has no field definition, so its `$field` names the field. `NormalizationException`
+names no field, only its `$entityDefinition`.
 
 | Exception | Thrown when |
 |---|---|
@@ -97,9 +99,10 @@ the field. `UnknownFieldException` has no field definition, so its `$field` name
 | `FieldMissingSerializedValueException` | A put leaves a required field uninitialized or `null`, an update removes a field that is not nullable, or a key lacks a value |
 | `FieldSerializationException` | The field's serializer failed with an error that is not a `DALException`. `getPrevious()` holds the original error |
 | `UnknownFieldException` | A normalizer sets a field that the entity doesn't declare, on a put or a key. It is an [`ExpressionException`](#invalid-filters-conditions-and-updates) as well |
+| `NormalizationException` | The entity's normalizer threw something other than a `DALException` on the fields of a put, an update or a key. `getPrevious()` holds what it threw |
 
-A `DALException` from a [field serializer of your own](extending.md#a-field-type-of-your-own) reaches the caller
-as it is, in the group its class implements.
+A `DALException` from a [field serializer of your own](extending.md#a-field-type-of-your-own) or a
+[normalizer](extending.md#a-normalizer) reaches the caller as it is, in the group its class implements.
 
 ## Invalid filters, conditions and updates
 

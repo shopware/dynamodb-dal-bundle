@@ -611,6 +611,26 @@ class ExpressionCompileContextTest extends TestCase
         ], $context->values);
     }
 
+    /**
+     * A binary set holds binaries, so the member is sent as one. Serialized by the field, it would be a set, which
+     * matches no row.
+     */
+    public function testContainsLooksForTheBytesOfOneMemberOfABinarySet(): void
+    {
+        [$expression, $context] = $this->compile(Filter::contains('blobs', "\x00\x01"), CounterDefinition::create());
+
+        static::assertSame('contains(#blobs, :h_0)', $expression);
+        static::assertEquals([':h_0' => new AttributeValue(['B' => "\x00\x01"])], $context->values);
+    }
+
+    public function testBinaryLiteralRegistersTheBytesAsABinary(): void
+    {
+        $context = new ExpressionCompileContext(CounterDefinition::create(), self::PREFIX);
+
+        static::assertSame(':h_0', $context->binaryLiteral("\xff"));
+        static::assertEquals([':h_0' => new AttributeValue(['B' => "\xff"])], $context->values);
+    }
+
     #[DataProvider('fieldThatContainsNothingProvider')]
     public function testContainsOnAFieldThatContainsNothingThrows(string $field, string $type): void
     {
@@ -752,6 +772,23 @@ class ExpressionCompileContextTest extends TestCase
             ':h_0' => new AttributeValue(['S' => '5']),
             ':h_1' => new AttributeValue(['N' => '5']),
             ':h_2' => new AttributeValue(['N' => '1.5']),
+        ], $context->values);
+    }
+
+    /**
+     * A float keeps the digits a float field stores it with, where a cast to string would round `0.1 + 0.2` to `0.3`
+     * and `0.9999999999999999` to `1`, and so compare with another number than the one given.
+     */
+    public function testLiteralWritesAFloatWithEveryDigitAFloatFieldStores(): void
+    {
+        $context = new ExpressionCompileContext(CounterDefinition::create(), self::PREFIX);
+
+        $context->literal(0.1 + 0.2);
+        $context->literal(0.9999999999999999);
+
+        static::assertEquals([
+            ':h_0' => new AttributeValue(['N' => '0.30000000000000004']),
+            ':h_1' => new AttributeValue(['N' => '0.9999999999999999']),
         ], $context->values);
     }
 

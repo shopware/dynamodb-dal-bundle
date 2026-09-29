@@ -8,10 +8,12 @@ use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldPath;
 use Shopware\DynamodbDalBundle\Exception\DALException;
+use Shopware\DynamodbDalBundle\Exception\DenormalizationException;
 use Shopware\DynamodbDalBundle\Exception\FieldDeserializationException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingSerializedValueException;
 use Shopware\DynamodbDalBundle\Exception\FieldSerializationException;
+use Shopware\DynamodbDalBundle\Exception\NormalizationException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
@@ -58,7 +60,7 @@ class Serializer
             }
         }
 
-        return ($entity ?? $definition->createInstance())->setVars($fields);
+        return $this->assign($definition, $entity ?? $definition->createInstance(), $fields);
     }
 
     /**
@@ -238,6 +240,8 @@ class Serializer
      *
      * @param array<string, mixed> $fields - `['fieldName' => fieldValue]`
      *
+     * @throws DALException if the normalizer fails, as it threw it or as a {@see NormalizationException}
+     *
      * @return array<string, mixed>
      */
     public function normalize(EntityDefinition $definition, array $fields, NormalizerOperation $operation): array
@@ -248,7 +252,16 @@ class Serializer
         }
 
         $context = NormalizerContext::fromFields($operation, $fields);
-        $normalizer->normalize($context);
+
+        try {
+            $normalizer->normalize($context);
+        } catch (\Throwable $e) {
+            if ($e instanceof DALException) {
+                throw $e;
+            }
+
+            throw new NormalizationException($definition, $e);
+        }
 
         return $context->getFields();
     }
@@ -257,6 +270,8 @@ class Serializer
      * Denormalizes whole item fields or only provided partial fields.
      *
      * @param array<string, mixed> $fields - `['fieldName' => fieldValue]`
+     *
+     * @throws DALException if the normalizer fails, as it threw it or as a {@see DenormalizationException}
      *
      * @return array<string, mixed>
      */
@@ -268,8 +283,50 @@ class Serializer
         }
 
         $context = NormalizerContext::fromFields($operation, $fields);
-        $normalizer->denormalize($context);
+
+        try {
+            $normalizer->denormalize($context);
+        } catch (\Throwable $e) {
+            if ($e instanceof DALException) {
+                throw $e;
+            }
+
+            throw new DenormalizationException($definition, $e);
+        }
 
         return $context->getFields();
+    }
+
+    /**
+     * Assigns denormalized fields to the entity's properties, one by one.
+     *
+     * @template Entity of AbstractEntity
+     *
+     * @param EntityDefinition<Entity> $definition
+     * @param Entity $entity
+     * @param array<string, mixed> $fields - `['fieldName' => fieldValue]`
+     *
+     * @throws DALException if a property refuses its value, such as with a `\TypeError` or from a `set` hook
+     *
+     * @return Entity
+     */
+    public function assign(EntityDefinition $definition, AbstractEntity $entity, array $fields): AbstractEntity
+    {
+        foreach ($fields as $name => $value) {
+            try {
+                $entity->setVars([$name => $value]);
+            } catch (\Throwable $e) {
+                if ($e instanceof DALException) {
+                    throw $e;
+                }
+
+                $fieldDefinition = $definition->getFieldDefinition($name);
+
+                // Only the normalizer can have added a value for a property that is no field
+                throw $fieldDefinition !== null ? new FieldDeserializationException($fieldDefinition, $e) : new DenormalizationException($definition, $e);
+            }
+        }
+
+        return $entity;
     }
 }

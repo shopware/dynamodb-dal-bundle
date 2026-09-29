@@ -42,8 +42,10 @@ class BackedEnumFieldSerializer extends AbstractFieldSerializer
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
     {
-        if (!$value instanceof \BackedEnum) {
-            throw new WrongTypeException($definition, \BackedEnum::class, $value);
+        // A case of another enum would store a value that no read of the field takes back
+        $type = $definition->getType();
+        if (!$value instanceof $type) {
+            throw new WrongTypeException($definition, $type, $value);
         }
 
         return AttributeValue::create(['S' => (string) $value->value]);

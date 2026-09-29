@@ -25,6 +25,7 @@ use Shopware\DynamodbDalBundle\Client\Read\ReadRequestFactory;
 use Shopware\DynamodbDalBundle\Exception\ConditionEmptyException;
 use Shopware\DynamodbDalBundle\Exception\DeserializationException;
 use Shopware\DynamodbDalBundle\Exception\DuplicateKeyException;
+use Shopware\DynamodbDalBundle\Exception\DenormalizationException;
 use Shopware\DynamodbDalBundle\Exception\EntityOutOfSyncException;
 use Shopware\DynamodbDalBundle\Exception\FieldMissingDeserializedValueException;
 use Shopware\DynamodbDalBundle\Exception\UnknownEntityDefinitionException;
@@ -111,6 +112,7 @@ class WriterClientTest extends TestCase
         // stubbed rather than mocked away, since an update and the write-back run through it.
         $this->serializer->method('normalize')->willReturnArgument(1);
         $this->serializer->method('denormalize')->willReturnArgument(1);
+        $this->serializer->method('assign')->willReturnCallback(static fn (EntityDefinition $definition, AbstractEntity $entity, array $fields): AbstractEntity => $entity->setVars($fields));
 
         $registry = new EntityDefinitionRegistry([$this->definition->getName() => $this->definition]);
         $this->writer = $this->createWriter($this->serializer, $registry);
@@ -1098,6 +1100,81 @@ class WriterClientTest extends TestCase
     }
 
     /**
+     * A normalizer may throw what it likes, and the serializer makes it a DAL failure, so once the update is stored,
+     * that is no failed write either.
+     */
+    public function testAnUpdateStoredWithARowItsNormalizerRefusesLeavesItsEntityOutOfSync(): void
+    {
+        $refused = new \DomainException('The normalizer refuses the row');
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw $refused));
+
+        $this->client->expects(static::once())
+            ->method('updateItem')
+            ->willReturn(ResultMockFactory::create(UpdateItemOutput::class, ['attributes' => [
+                'autofilledId' => new AttributeValue(['S' => 'a']),
+                'required' => new AttributeValue(['S' => 'req']),
+            ]]));
+
+        try {
+            $writer->update(new UpdateInput($this->entity('a'), ['name' => 'after']));
+            static::fail('The normalizer refuses the stored row');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+            static::assertSame($refused, $exception->getPrevious()->getPrevious());
+        }
+    }
+
+    /**
+     * Neither is a put or a transaction whose write-back fails in the normalizer.
+     */
+    public function testAPutStoredWithFieldsItsNormalizerRefusesLeavesItsEntityOutOfSync(): void
+    {
+        $refused = new \DomainException('The normalizer refuses the fields');
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw $refused));
+
+        $this->client->expects(static::once())
+            ->method('putItem')
+            ->willReturn(ResultMockFactory::create(PutItemOutput::class));
+
+        try {
+            $writer->put(new PutInput($this->entity('a')));
+            static::fail('The normalizer refuses the fields');
+        } catch (EntityOutOfSyncException $exception) {
+            static::assertInstanceOf(DenormalizationException::class, $exception->getPrevious());
+            static::assertSame($refused, $exception->getPrevious()->getPrevious());
+        }
+    }
+
+    /**
+     * After a failed batch, the one the caller has to handle is the failed request, whatever the write-back throws.
+     */
+    public function testAFailedBatchRequestIsThrownRatherThanAWriteBackTheNormalizerRefuses(): void
+    {
+        $writer = $this->normalizingWriter(new RecordingNormalizer(denormalize: static fn () => throw new \DomainException('The normalizer refuses the fields')));
+        $failure = new \RuntimeException('The second request fails');
+
+        /** @var \ArrayObject<int, true> $calls */
+        $calls = new \ArrayObject();
+        $this->client->expects(static::exactly(2))
+            ->method('batchWriteItem')
+            ->willReturnCallback(static function () use ($calls, $failure): BatchWriteItemOutput {
+                $calls->append(true);
+                if (\count($calls) === 2) {
+                    throw $failure;
+                }
+
+                return ResultMockFactory::create(BatchWriteItemOutput::class, ['unprocessedItems' => []]);
+            });
+
+        try {
+            $writer->batchWrite(new BatchWriteInput(array_map(fn (int $id): NormalEntity => $this->entity((string) $id), range(1, 26))));
+            static::fail('The second request fails');
+        } catch (\RuntimeException $exception) {
+            static::assertSame($failure, $exception);
+        }
+    }
+
+    /**
      * The entities are brought up to date once every transaction is sent, so one that cannot be read back keeps none of
      * them from being sent, and the others still take what they wrote.
      */
@@ -1196,6 +1273,7 @@ class WriterClientTest extends TestCase
                 'settings' => new AttributeValue(['S' => spl_object_hash((object) $key)]),
             ]));
         $serializer->method('denormalize')->willReturnArgument(1);
+        $serializer->method('assign')->willReturnCallback(static fn (EntityDefinition $d, AbstractEntity $entity, array $fields): AbstractEntity => $entity->setVars($fields));
 
         $registry = new EntityDefinitionRegistry([$definition->getName() => $definition]);
 

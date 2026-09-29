@@ -341,7 +341,11 @@ class WriterClient
                     \ARRAY_FILTER_USE_KEY,
                 );
 
-                $writeBack->entity->setVars($this->serializer->denormalize($writeBack->definition, $fields, $writeBack->operation));
+                $this->serializer->assign(
+                    $writeBack->definition,
+                    $writeBack->entity,
+                    $this->serializer->denormalize($writeBack->definition, $fields, $writeBack->operation),
+                );
             }
 
             if ($readBacks !== []) {
