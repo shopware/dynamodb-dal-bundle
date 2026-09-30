@@ -28,4 +28,36 @@ final readonly class ScanInput
         public ?int $limit = null,
     ) {
     }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withFilter(?FilterInterface $filter): self
+    {
+        return new self($this->class, $filter, $this->consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withConsistentRead(bool $consistentRead = true): self
+    {
+        return new self($this->class, $this->filter, $consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withCursor(?string $cursor): self
+    {
+        return new self($this->class, $this->filter, $this->consistentRead, $cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withLimit(?int $limit): self
+    {
+        return new self($this->class, $this->filter, $this->consistentRead, $this->cursor, $limit);
+    }
 }
