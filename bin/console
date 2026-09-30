@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php declare(strict_types=1);
+
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\DynamoDbTestKernel;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+
+require \dirname(__DIR__) . '/vendor/autoload.php';
+
+// The kernel of the DynamoDB-backed suites, with their fixture entities, in `dev`, where the bundle registers its
+// commands. Only a command that reads or writes a table needs DynamoDB, at DYNAMODB_ENDPOINT or the compose.yaml one.
+$endpoint = getenv('DYNAMODB_ENDPOINT');
+$kernel = new DynamoDbTestKernel(\is_string($endpoint) && $endpoint !== '' ? $endpoint : 'http://127.0.0.1:8345', 'dev');
+
+exit(new Application($kernel)->run());
