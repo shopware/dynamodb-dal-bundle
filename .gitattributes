@@ -1,0 +1,10 @@
+/.github export-ignore
+/bin export-ignore
+/tests export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/.php-cs-fixer.dist.php export-ignore
+/.roave-backward-compatibility-check.xml export-ignore
+/compose.yaml export-ignore
+/phpstan.dist.neon export-ignore
+/phpunit.dist.xml export-ignore
