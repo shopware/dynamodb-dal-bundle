@@ -65,7 +65,8 @@ an entity was deployed. They implement `DeserializationException`.
 A JSON field whose stored JSON holds a scalar instead of an array or object throws a `WrongTypeException`, which is a
 [`SerializationException`](#values-that-dont-fit-their-field), not a `DeserializationException`.
 
-`dal:baseline:required-fields` catches a field becoming required in CI, before it reaches stored rows.
+`dal:baseline:dump` catches a field becoming required, or being stored as another type, in CI, before it reaches
+stored rows.
 
 A write brings its entity up to date after DynamoDB has stored the write. When that fails, the write throws an
 `EntityOutOfSyncException`. The write is stored nevertheless, so don't retry it: a retry repeats it. Catching

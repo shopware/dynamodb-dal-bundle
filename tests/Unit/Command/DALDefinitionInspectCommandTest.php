@@ -2,16 +2,10 @@
 
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Command;
 
+use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CommandDefinitions;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CustomerEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\OrderEntity;
-use Shopware\DynamodbDalBundle\Command\DALDefinitionCommand;
-use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
-use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
-use Shopware\DynamodbDalBundle\Definition\IndexSchema;
-use Shopware\DynamodbDalBundle\Definition\KeySchema;
-use Shopware\DynamodbDalBundle\Serializer\Field\ListFieldSerializer;
-use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
-use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
+use Shopware\DynamodbDalBundle\Command\DALDefinitionInspectCommand;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -20,22 +14,22 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[CoversClass(DALDefinitionCommand::class)]
-class DALDefinitionCommandTest extends TestCase
+#[CoversClass(DALDefinitionInspectCommand::class)]
+class DALDefinitionInspectCommandTest extends TestCase
 {
     private BufferedOutput $output;
 
     private SymfonyStyle $io;
 
-    private DALDefinitionCommand $command;
+    private DALDefinitionInspectCommand $command;
 
     protected function setUp(): void
     {
         $this->output = new BufferedOutput();
         $this->io = new SymfonyStyle(static::createStub(InputInterface::class), $this->output);
-        $this->command = new DALDefinitionCommand([
-            'order' => $this->createOrderDefinition(),
-            'config' => $this->createCustomerDefinition(),
+        $this->command = new DALDefinitionInspectCommand([
+            'order' => CommandDefinitions::order(),
+            'config' => CommandDefinitions::customer(),
         ]);
     }
 
@@ -158,83 +152,5 @@ class DALDefinitionCommandTest extends TestCase
         $io->expects(static::never())->method('choice');
 
         $this->command->selectEntity($input, $io);
-    }
-
-    /**
-     * @return EntityDefinition<OrderEntity>
-     */
-    private function createOrderDefinition(): EntityDefinition
-    {
-        $stringSerializer = new StringFieldSerializer();
-
-        /** @var FieldDefinition<OrderEntity> $tenantId */
-        $tenantId = new FieldDefinition('tenantId', 'string', false, false, null, $stringSerializer);
-        /** @var FieldDefinition<OrderEntity> $externalId */
-        $externalId = new FieldDefinition('externalId', 'string', false, false, null, $stringSerializer);
-        /** @var FieldDefinition<OrderEntity> $reference */
-        $reference = new FieldDefinition('reference', 'string', false, false, null, $stringSerializer);
-        /** @var FieldDefinition<OrderEntity> $tags */
-        $tags = new FieldDefinition(
-            'tags',
-            'array',
-            true,
-            true,
-            [],
-            new ListFieldSerializer(),
-            new FieldDefinition('tags.value', 'string', true, false, null, $stringSerializer),
-        );
-
-        /** @var FieldDefinition<OrderEntity> $groups */
-        $groups = new FieldDefinition(
-            'groups',
-            'array',
-            true,
-            false,
-            null,
-            new MapFieldSerializer(),
-            new FieldDefinition(
-                'groups.value',
-                'array',
-                true,
-                false,
-                null,
-                new ListFieldSerializer(),
-                new FieldDefinition('groups.value.value', 'string', false, false, null, $stringSerializer),
-            ),
-        );
-
-        return new EntityDefinition(
-            'order',
-            'phpunit-order',
-            OrderEntity::class,
-            null,
-            [
-                'tenantId' => $tenantId,
-                'externalId' => $externalId,
-                'reference' => $reference,
-                'tags' => $tags,
-                'groups' => $groups,
-            ],
-            new KeySchema('tenantId', 'externalId'),
-            ['referenceIndex' => new IndexSchema('referenceIndex', 'reference')],
-        );
-    }
-
-    /**
-     * @return EntityDefinition<CustomerEntity>
-     */
-    private function createCustomerDefinition(): EntityDefinition
-    {
-        /** @var FieldDefinition<CustomerEntity> $tenantId */
-        $tenantId = new FieldDefinition('tenantId', 'string', false, false, null, new StringFieldSerializer());
-
-        return new EntityDefinition(
-            'config',
-            'phpunit-customer',
-            CustomerEntity::class,
-            null,
-            ['tenantId' => $tenantId],
-            new KeySchema('tenantId'),
-        );
     }
 }

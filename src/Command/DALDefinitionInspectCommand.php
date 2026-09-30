@@ -18,7 +18,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * @internal
  */
 #[AsCommand(
-    name: 'dal:definition',
+    name: 'dal:definition:inspect',
     description: 'Print the compiled DAL definition of an entity',
     help: <<<'HELP'
             The <info>%command.name%</info> command prints the definition the
@@ -36,13 +36,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
               Select an entity interactively:
                 <info>%command.full_name%</info>
 
-              Dump one by class, short name or table name:
+              Inspect one by class, short name or table name:
                 <info>%command.full_name% 'App\Entity\OrderEntity'</info>
                 <info>%command.full_name% OrderEntity</info>
                 <info>%command.full_name% order</info>
             HELP
 )]
-readonly class DALDefinitionCommand
+readonly class DALDefinitionInspectCommand
 {
     /**
      * @param iterable<string, EntityDefinition<AbstractEntity>> $entityDefinitions
