@@ -36,4 +36,60 @@ final readonly class QueryInput
         public ?int $limit = null,
     ) {
     }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withKeyCondition(KeyFilter $keyCondition): self
+    {
+        return new self($this->class, $keyCondition, $this->index, $this->filter, $this->forward, $this->consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withIndex(?string $index): self
+    {
+        return new self($this->class, $this->keyCondition, $index, $this->filter, $this->forward, $this->consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withFilter(?FilterInterface $filter): self
+    {
+        return new self($this->class, $this->keyCondition, $this->index, $filter, $this->forward, $this->consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withForward(bool $forward): self
+    {
+        return new self($this->class, $this->keyCondition, $this->index, $this->filter, $forward, $this->consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withConsistentRead(bool $consistentRead = true): self
+    {
+        return new self($this->class, $this->keyCondition, $this->index, $this->filter, $this->forward, $consistentRead, $this->cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withCursor(?string $cursor): self
+    {
+        return new self($this->class, $this->keyCondition, $this->index, $this->filter, $this->forward, $this->consistentRead, $cursor, $this->limit);
+    }
+
+    /**
+     * @return self<Entity>
+     */
+    public function withLimit(?int $limit): self
+    {
+        return new self($this->class, $this->keyCondition, $this->index, $this->filter, $this->forward, $this->consistentRead, $this->cursor, $limit);
+    }
 }
