@@ -1,0 +1,129 @@
+name: DAL baseline
+description: >-
+  Compare the DAL definitions with the baseline committed on the base branch, keep a pull request comment that says
+  what changed and what each change risks, and fail where the committed baseline is out of date
+
+inputs:
+  baseline:
+    description: The committed baseline, as `dal:baseline:dump` writes it, relative to the working directory
+    required: false
+    default: dal-baseline.json
+  console:
+    description: The command that runs the application's console, relative to the working directory
+    required: false
+    default: php bin/console
+  working-directory:
+    description: Where the console runs and the baseline lies
+    required: false
+    default: .
+  base-sha:
+    description: The commit whose baseline the definitions are compared with. Empty skips the comparison, as on a push
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+  comment:
+    description: Whether to keep a comment with the changes on the pull request, which needs `pull-requests write`
+    required: false
+    default: 'true'
+  comment-header:
+    description: Tells the comment apart from other sticky comments on the same pull request
+    required: false
+    default: dal-baseline
+  github-token:
+    description: The token the comment is written with
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  changed:
+    description: '`true` where the definitions changed the baseline since the base commit'
+    value: ${{ steps.compare.outputs.changed }}
+  report:
+    description: The Markdown report of the changes, empty where nothing changed
+    value: ${{ steps.compare.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Dump the baseline
+      id: dump
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        dir="$(mktemp -d "$RUNNER_TEMP/dal-baseline.XXXXXX")"
+        ${{ inputs.console }} dal:baseline:dump > "$dir/current.json"
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+    - name: Compare with the base commit
+      id: compare
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        report="${{ steps.dump.outputs.dir }}/report.md"
+        : > "$report"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+
+        if [ -z "${{ inputs.base-sha }}" ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # A checkout with history, or a caller that fetched it, has the base commit already
+        if ! git cat-file -e "${{ inputs.base-sha }}^{commit}" 2> /dev/null; then
+          git fetch --no-tags --depth=1 origin "${{ inputs.base-sha }}"
+        fi
+
+        base="$(git rev-parse --short "${{ inputs.base-sha }}")"
+
+        # `./` resolves the path from the working directory, not from the root of the repository
+        if ! git cat-file -e "${{ inputs.base-sha }}:./${{ inputs.baseline }}" 2> /dev/null; then
+          echo "::notice title=DAL baseline::${{ inputs.baseline }} does not exist on $base, so there is nothing to compare with"
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        git show "${{ inputs.base-sha }}:./${{ inputs.baseline }}" | ${{ inputs.console }} dal:baseline:compare - --format=markdown > "$report"
+
+        if [ ! -s "$report" ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        {
+          echo
+          echo "<sub>Compared the definitions with \`${{ inputs.baseline }}\` of $base. To see the same locally, run \`git show $base:./${{ inputs.baseline }} | ${{ inputs.console }} dal:baseline:compare -\`.</sub>"
+        } >> "$report"
+        cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        echo "changed=true" >> "$GITHUB_OUTPUT"
+
+    # A pull request from a fork gets a read-only token, so its comment would fail; the job summary shows the report
+    - name: Comment the changes
+      if: >-
+        inputs.comment == 'true' && github.event.pull_request
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && steps.compare.outputs.changed == 'true'
+      uses: marocchino/sticky-pull-request-comment@v3
+      with:
+        header: ${{ inputs.comment-header }}
+        path: ${{ steps.compare.outputs.report }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+
+    - name: Remove the comment
+      if: >-
+        inputs.comment == 'true' && github.event.pull_request
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && steps.compare.outputs.changed == 'false'
+      uses: marocchino/sticky-pull-request-comment@v3
+      with:
+        header: ${{ inputs.comment-header }}
+        delete: true
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+
+    # Last, so that the comment is up to date even where this fails. The next pull request compares with this baseline
+    - name: Check that the committed baseline is up to date
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if ! diff -u "${{ inputs.baseline }}" "${{ steps.dump.outputs.dir }}/current.json"; then
+          echo "::error title=DAL baseline out of date::${{ inputs.baseline }} does not match the definitions. Run \`${{ inputs.console }} dal:baseline:dump > ${{ inputs.baseline }}\` and commit it."
+          exit 1
+        fi

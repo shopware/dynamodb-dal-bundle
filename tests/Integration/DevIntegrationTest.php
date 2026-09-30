@@ -44,6 +44,7 @@ class DevIntegrationTest extends TestCase
         static::assertTrue($loader->has('dal:definition:inspect'));
         static::assertTrue($loader->has('dal:definition:validate'));
         static::assertTrue($loader->has('dal:baseline:dump'));
+        static::assertTrue($loader->has('dal:baseline:compare'));
     }
 
     public function testProfilerIntegrationIsWired(): void

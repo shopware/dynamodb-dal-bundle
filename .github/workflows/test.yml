@@ -51,3 +51,61 @@ jobs:
 
       - name: Run integration tests
         run: composer phpunit:integration
+
+  baseline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # The fixture entities stand in for an application's, so the action runs here as it runs for one
+      - uses: ./.github/actions/baseline
+        with:
+          baseline: tests/Integration/Fixtures/dal-baseline.json
+
+  # Runs the action from a subdirectory against a base commit made here, whose baseline differs, so that every pull
+  # request exercises the comparison and its report, not only the ones that change a fixture entity
+  baseline-action:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - name: Commit an earlier baseline
+        id: earlier
+        run: |
+          baseline=tests/Integration/Fixtures/dal-baseline.json
+          jq '.record.fields.counter.type = "S" | .record.fields.name.required = true | del(.record.indexes.statusIndex)' "$baseline" > "$RUNNER_TEMP/earlier.json"
+
+          # Committed through a separate index, so that neither the working tree nor HEAD changes
+          export GIT_INDEX_FILE="$RUNNER_TEMP/index"
+          git read-tree HEAD
+          git update-index --add --cacheinfo "100644,$(git hash-object -w "$RUNNER_TEMP/earlier.json"),$baseline"
+          sha="$(git -c user.name=ci -c user.email=ci@localhost commit-tree "$(git write-tree)" -p HEAD -m 'An earlier baseline')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/baseline
+        id: baseline
+        with:
+          working-directory: bin
+          console: php console
+          baseline: ../tests/Integration/Fixtures/dal-baseline.json
+          base-sha: ${{ steps.earlier.outputs.sha }}
+          comment: 'false'
+
+      - name: Check the report
+        run: |
+          report="${{ steps.baseline.outputs.report }}"
+          cat "$report"
+
+          test "${{ steps.baseline.outputs.changed }}" = true
+          grep --fixed-strings '**1 of 3 changes may break stored rows or requests.**' "$report"
+          grep --fixed-strings '| `record` | field `counter` stored as `S` → `N` |' "$report"
+          grep --fixed-strings '| `record` | index `statusIndex` added |' "$report"
+          grep --fixed-strings '| `record` | field `name` is no longer required |' "$report"
+          grep --fixed-strings "git show $(git rev-parse --short "${{ steps.earlier.outputs.sha }}"):./../tests/Integration/Fixtures/dal-baseline.json | php console dal:baseline:compare -" "$report"

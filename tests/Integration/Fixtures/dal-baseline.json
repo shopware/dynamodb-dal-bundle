@@ -1,0 +1,146 @@
+{
+    "archive": {
+        "hashKey": "id",
+        "rangeKey": null,
+        "indexes": {},
+        "fields": {
+            "id": {
+                "type": "S",
+                "required": true
+            },
+            "label": {
+                "type": "S",
+                "required": false
+            },
+            "labels": {
+                "type": "SS",
+                "required": false
+            },
+            "meta": {
+                "type": "M",
+                "required": false,
+                "values": {
+                    "type": "S"
+                }
+            }
+        }
+    },
+    "normalized": {
+        "hashKey": "pk",
+        "rangeKey": "id",
+        "indexes": {},
+        "fields": {
+            "createdAt": {
+                "type": "N",
+                "required": true
+            },
+            "id": {
+                "type": "S",
+                "required": true
+            },
+            "kind": {
+                "type": "S",
+                "required": true
+            },
+            "label": {
+                "type": "S",
+                "required": true
+            },
+            "pk": {
+                "type": "S",
+                "required": true
+            },
+            "tenantId": {
+                "type": "S",
+                "required": true
+            },
+            "updatedAt": {
+                "type": "N",
+                "required": false
+            }
+        }
+    },
+    "record": {
+        "hashKey": "tenantId",
+        "rangeKey": "id",
+        "indexes": {
+            "statusIndex": {
+                "hashKey": "status",
+                "rangeKey": "createdAt"
+            }
+        },
+        "fields": {
+            "active": {
+                "type": "BOOL",
+                "required": false
+            },
+            "amount": {
+                "type": "N",
+                "required": false
+            },
+            "counter": {
+                "type": "N",
+                "required": false
+            },
+            "counts": {
+                "type": "M",
+                "required": false,
+                "values": {
+                    "type": "N"
+                }
+            },
+            "createdAt": {
+                "type": "N",
+                "required": true
+            },
+            "deletedAt": {
+                "type": "N",
+                "required": false
+            },
+            "groups": {
+                "type": "M",
+                "required": false,
+                "values": {
+                    "type": "L",
+                    "values": {
+                        "type": "S"
+                    }
+                }
+            },
+            "id": {
+                "type": "S",
+                "required": true
+            },
+            "meta": {
+                "type": "M",
+                "required": false,
+                "values": {
+                    "type": "S"
+                }
+            },
+            "name": {
+                "type": "S",
+                "required": false
+            },
+            "payload": {
+                "type": "S",
+                "required": false
+            },
+            "status": {
+                "type": "S",
+                "required": false
+            },
+            "tags": {
+                "type": "L",
+                "required": false,
+                "values": {
+                    "type": "S"
+                }
+            },
+            "tenantId": {
+                "type": "S",
+                "required": true
+            }
+        }
+    }
+}

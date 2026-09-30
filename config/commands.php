@@ -3,6 +3,7 @@
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use AsyncAws\DynamoDb\DynamoDbClient;
+use Shopware\DynamodbDalBundle\Command\DALBaselineCompareCommand;
 use Shopware\DynamodbDalBundle\Command\DALBaselineDumpCommand;
 use Shopware\DynamodbDalBundle\Command\DALDefinitionInspectCommand;
 use Shopware\DynamodbDalBundle\Command\DALDefinitionValidateCommand;
@@ -22,6 +23,10 @@ return static function (ContainerConfigurator $container): void {
         ->tag('console.command');
 
     $services->set(DALBaselineDumpCommand::class)
+        ->args([tagged_iterator('dal.definition')])
+        ->tag('console.command');
+
+    $services->set(DALBaselineCompareCommand::class)
         ->args([tagged_iterator('dal.definition')])
         ->tag('console.command');
 };
