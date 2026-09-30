@@ -13,13 +13,15 @@ jobs:
   ecs:
     runs-on: ubuntu-latest
     steps:
-      - uses: $/.github/actions/setup
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
       - name: Run ECS
         run: composer ecs
 
   phpstan:
     runs-on: ubuntu-latest
     steps:
-      - uses: $/.github/actions/setup
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
       - name: Run PHPStan
         run: composer phpstan -- --error-format=github
