@@ -80,6 +80,9 @@
 - A test method's name states the behaviour as a sentence, for example `testUpdateRemovesTheMapEntryGivenAsNull`
 - Call assertions statically: `static::assertSame()`
 - Fixtures live under `Fixtures/`, next to the suite that uses them
+- `BaselineCommandsTest` and the baseline action in CI fail where `tests/Integration/Fixtures/dal-baseline.json` no
+  longer matches the integration fixture entities. After changing one, run
+  `bin/console dal:baseline:dump > tests/Integration/Fixtures/dal-baseline.json`
 
 ## Commits
 
