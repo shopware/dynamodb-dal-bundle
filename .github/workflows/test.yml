@@ -21,7 +21,8 @@ jobs:
         dependencies: [lowest, highest]
 
     steps:
-      - uses: $/.github/actions/setup
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
         with:
           php-version: ${{ matrix.php-version }}
           dependencies: ${{ matrix.dependencies }}
@@ -40,12 +41,13 @@ jobs:
         dependencies: [lowest, highest]
 
     steps:
-      - uses: $/.github/actions/setup
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
         with:
           php-version: ${{ matrix.php-version }}
           dependencies: ${{ matrix.dependencies }}
 
-      - uses: $/.github/actions/setup-dynamodb
+      - uses: ./.github/actions/setup-dynamodb
 
       - name: Run integration tests
         run: composer phpunit:integration
