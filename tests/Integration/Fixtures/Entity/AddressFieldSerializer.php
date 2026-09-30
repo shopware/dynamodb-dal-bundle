@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\Entity;
 
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -19,6 +20,11 @@ class AddressFieldSerializer extends AbstractFieldSerializer
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         return $type === Address::class;
+    }
+
+    public static function getAttributeType(): AttributeType
+    {
+        return AttributeType::String;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue

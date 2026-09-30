@@ -89,11 +89,11 @@ class FieldDefinition
     }
 
     /**
-     * The DynamoDB type the field is stored as, `null` where its serializer declares none.
+     * The DynamoDB type the field is stored as, which its serializer declares.
      */
-    public function getAttributeType(): ?AttributeType
+    public function getAttributeType(): AttributeType
     {
-        return $this->serializer->getAttributeType($this);
+        return $this->serializer::getAttributeType();
     }
 
     /**

@@ -10,7 +10,6 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\PriorityTaggedServiceTrait;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * @internal
@@ -23,12 +22,14 @@ class DefinitionCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        $fieldSerializers = array_map(
-            static fn (Reference $reference): string => (string) $reference,
-            $this->findAndSortTaggedServices(AbstractFieldSerializer::class, $container),
-        );
+        $fieldSerializers = [];
+        foreach ($this->findAndSortTaggedServices(AbstractFieldSerializer::class, $container) as $reference) {
+            if (is_subclass_of($serviceId = (string) $reference, AbstractFieldSerializer::class, true)) {
+                $fieldSerializers[] = $serviceId;
+            }
+        }
 
-        $builder = new DefinitionBuilder(array_values($fieldSerializers));
+        $builder = new DefinitionBuilder($fieldSerializers);
 
         /** @var array<string, class-string> $classesByName */
         $classesByName = [];

@@ -132,7 +132,7 @@ class JsonFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAString(): void
     {
-        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createJsonDefinition()));
+        static::assertSame(AttributeType::String, JsonFieldSerializer::getAttributeType());
     }
 
     private function jsonSerializable(mixed $serialized): \JsonSerializable

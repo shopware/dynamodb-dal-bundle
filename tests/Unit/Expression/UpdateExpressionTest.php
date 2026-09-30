@@ -205,13 +205,6 @@ class UpdateExpressionTest extends TestCase
         yield 'DELETE from a number' => [Update::removeFromSet('count', 1), '"count" in item "counter" is of type N, where one of SS, NS, BS is expected'];
     }
 
-    public function testAnActionOnAFieldWhoseSerializerDeclaresNoTypeIsLeftToDynamoDb(): void
-    {
-        [$expression] = $this->compile(Update::with(Update::addToSet('untyped', 'a'), Update::removeFromSet('untyped', 'b')));
-
-        static::assertSame('ADD #untyped :h_0_untyped DELETE #untyped :h_1_untyped', $expression);
-    }
-
     public function testAnActionOfYourOwnCompilesIntoItsClause(): void
     {
         $copy = new class implements UpdateActionInterface {

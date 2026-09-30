@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle\Tests\Integration;
 
 use Shopware\DynamodbDalBundle\AbstractEntity;
 use Shopware\DynamodbDalBundle\Attribute\Table;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinitionRegistry;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
@@ -28,12 +29,14 @@ use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWit
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithMapFieldEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithMapUnsupportedValueTypeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithNestedListFieldEntity;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\EntityWithTwoMoneyStoragesEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\KeyAwareEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingFieldSerializerEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingHashKeyEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingTableAttributeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\Money;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MoneyFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MoneyMapFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingTableNameEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\MissingTypeEntity;
 use Shopware\DynamodbDalBundle\Tests\Integration\Fixtures\CompilerPass\PrivatePropertyEntity;
@@ -538,6 +541,42 @@ class DefinitionCompilerPassTest extends TestCase
         $address = $definition->getFieldDefinition('address');
         static::assertNotNull($address);
         static::assertInstanceOf(JsonFieldSerializer::class, $address->getSerializer());
+    }
+
+    /**
+     * Tagged below the default priority, the second serializer of a type stores only the fields that ask for its type.
+     */
+    public function testAFieldThatAsksForAnAttributeTypeGetsTheSerializerThatStoresIt(): void
+    {
+        $container = $this->compileContainer([EntityWithTwoMoneyStoragesEntity::class => self::TABLE], [MoneyFieldSerializer::class], configure: static function (ContainerBuilder $container): void {
+            $container->register(MoneyMapFieldSerializer::class)
+                ->addTag(AbstractFieldSerializer::class, ['priority' => -1000]);
+        });
+
+        $definition = $container->get('dal.definition.phpunit_test');
+        static::assertInstanceOf(EntityDefinition::class, $definition);
+
+        $amount = $definition->getFieldDefinition('amount');
+        static::assertInstanceOf(MoneyFieldSerializer::class, $amount?->getSerializer());
+        static::assertSame(AttributeType::String, $amount->getAttributeType());
+
+        $total = $definition->getFieldDefinition('total');
+        static::assertInstanceOf(MoneyMapFieldSerializer::class, $total?->getSerializer());
+        static::assertSame(AttributeType::Map, $total->getAttributeType());
+    }
+
+    /**
+     * A tag on a service whose id names no field serializer, as an application may add by hand, is passed over rather
+     * than called for a `supports()` it does not have.
+     */
+    public function testPassesOverATaggedServiceThatIsNoFieldSerializer(): void
+    {
+        $definition = $this->compileContactDefinition(static function (ContainerBuilder $container): void {
+            $container->register('app.not_a_serializer', \stdClass::class)
+                ->addTag(AbstractFieldSerializer::class, ['priority' => 100]);
+        });
+
+        static::assertInstanceOf(StringFieldSerializer::class, $definition->getFieldDefinition('id')?->getSerializer());
     }
 
     /**

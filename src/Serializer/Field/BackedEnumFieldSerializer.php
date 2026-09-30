@@ -35,7 +35,7 @@ class BackedEnumFieldSerializer extends AbstractFieldSerializer
         return true;
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::String;
     }

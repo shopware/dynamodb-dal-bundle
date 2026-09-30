@@ -125,7 +125,7 @@ class BackedEnumFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAStringWhateverItsBacking(): void
     {
-        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createFieldDefinition()));
+        static::assertSame(AttributeType::String, BackedEnumFieldSerializer::getAttributeType());
     }
 
     /**

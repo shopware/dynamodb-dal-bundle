@@ -16,6 +16,7 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
  * A registered subclass is picked up without a tag, and a property takes the first serializer
  * whose {@see supports()} claims its type, by tag priority:
  * the application's own at the default 0, the bundle's at -100, and the JSON one last at -500.
+ * A property that pins its type with `#[Field(storedAs: …)]` is offered only to the serializers that store that type.
  *
  * @template ValueType = mixed
  * @template TargetType of string = string
@@ -32,6 +33,13 @@ abstract class AbstractFieldSerializer
      * @phpstan-assert-if-true TargetType $type
      */
     abstract public static function supports(string $type, ?string $docblockType = null): bool;
+
+    /**
+     * The DynamoDB type {@see serialize()} stores every field as, whatever the field's PHP type. Expressions check
+     * against it, such as for a string in `begins_with()` or a list in `list_append()`, and a path by it whether an
+     * index or a key comes next. A PHP type stored in two ways needs two serializers.
+     */
+    abstract public static function getAttributeType(): AttributeType;
 
     /**
      * Convert a value **into** its DynamoDB target AttributeValue.
@@ -53,17 +61,6 @@ abstract class AbstractFieldSerializer
      * @return ValueType
      */
     abstract public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed;
-
-    /**
-     * The DynamoDB type {@see serialize()} stores the field as, which expressions check against, such as a string
-     * for `begins_with()` or a list for `list_append()`. `null`, the default, leaves those checks to DynamoDB.
-     *
-     * @param FieldDefinition<AbstractEntity, TargetType> $definition
-     */
-    public function getAttributeType(FieldDefinition $definition): ?AttributeType
-    {
-        return null;
-    }
 
     /**
      * Where inside a collection a failure happened, as a document path DynamoDB addresses an element by:

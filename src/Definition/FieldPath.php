@@ -65,8 +65,7 @@ final class FieldPath
         for ($i = 1, $count = \count($segments); $field !== null && $i < $count; ++$i) {
             // Lists and maps are both `array`, so only the stored type tells whether an index or a key fits
             $container = \is_int($segments[$i]) ? AttributeType::List : AttributeType::Map;
-            $type = $field->getAttributeType();
-            if ($type !== null && $type !== $container) {
+            if ($field->getAttributeType() !== $container) {
                 throw new UnknownFieldException($definition, $path);
             }
 

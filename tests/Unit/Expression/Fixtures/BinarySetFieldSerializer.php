@@ -21,7 +21,7 @@ final class BinarySetFieldSerializer extends AbstractFieldSerializer
         return false;
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::BinarySet;
     }

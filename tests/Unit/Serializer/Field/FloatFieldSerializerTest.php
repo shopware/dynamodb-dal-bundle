@@ -76,7 +76,7 @@ class FloatFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsANumber(): void
     {
-        static::assertSame(AttributeType::Number, $this->serializer->getAttributeType($this->fieldDefinition()));
+        static::assertSame(AttributeType::Number, FloatFieldSerializer::getAttributeType());
     }
 
     /**

@@ -20,7 +20,7 @@ class IntFieldSerializer extends AbstractFieldSerializer
         return $type === 'int';
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::Number;
     }

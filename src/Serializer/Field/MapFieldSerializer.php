@@ -28,7 +28,7 @@ class MapFieldSerializer extends AbstractFieldSerializer
         return $type === 'array' && $docblockType !== null && ArrayTypeParser::isMapType($docblockType);
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::Map;
     }

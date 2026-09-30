@@ -82,7 +82,7 @@ final class FilterCompileContext extends ExpressionCompileContext
         if ($value instanceof FieldOperand || $value instanceof SizeOperand) {
             $type = \is_string($operand) ? $this->fieldDefinition($operand)->getAttributeType() : AttributeType::Number;
 
-            return $this->operand($value, ...($type === null ? [] : [$type]));
+            return $this->operand($value, $type);
         }
 
         if (\is_string($operand)) {

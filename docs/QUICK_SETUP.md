@@ -98,7 +98,8 @@ property type that no serializer supports.
 | Any other class implementing `JsonSerializable` | `S`, as JSON. Reads back as an array, see [`JsonSerializable` value objects](examples/extending.md#a-jsonserializable-value-object) |
 
 List and map values can be any type from this table, including nested lists and maps. Add types of your own
-with a [field serializer](examples/extending.md#a-field-type-of-your-own).
+with a [field serializer](examples/extending.md#a-field-type-of-your-own), and store a type in another way with
+[`#[Field(storedAs: …)]`](examples/extending.md#one-type-stored-in-two-ways).
 
 ## Usage
 

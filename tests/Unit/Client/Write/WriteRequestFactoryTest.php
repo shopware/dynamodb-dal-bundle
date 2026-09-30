@@ -365,8 +365,8 @@ class WriteRequestFactoryTest extends TestCase
     }
 
     /**
-     * A field its serializer stores as a string, without declaring so, has no entries a path could reach. The upsert
-     * is refused rather than removing the entry that was meant.
+     * A field whose serializer declares a map but writes a string has no entries a path could reach. The upsert is
+     * refused rather than removing the entry that was meant.
      */
     public function testAPathIntoAFieldTheItemStoresAsNoMapIsRefused(): void
     {
