@@ -122,7 +122,7 @@ Add a static factory if you want one.
 
 > [!WARNING]
 > A field you add to an entity whose table already has rows needs a default or a nullable type. Otherwise every read
-> of an old row fails. `dal:baseline:required-fields` catches this in CI.
+> of an old row fails. `dal:baseline:dump` catches this in CI.
 
 - A default is only filled in when the entity is read. The stored row still lacks the field, so it matches no filter
   or key condition on it, and it is missing from any index keyed on it, until a put writes the row again.

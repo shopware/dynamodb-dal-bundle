@@ -11,7 +11,8 @@ with entities and PHP values; DynamoDB's attribute format stays inside the bundl
 - Puts, inserts, partial and nested updates, atomic counters and appends, and deletes, one at a time, in batches or
   in transactions, chunked and retried for you
 - Opaque, URL-safe pagination tokens that page forward and backward
-- A definition dump, schema baselines for CI and a profiler panel
+- Console commands that print a definition, check it against its live table and record a baseline for CI, and a
+  profiler panel
 
 ## Getting started
 
@@ -38,9 +39,9 @@ In the `dev` environment, the bundle adds three console commands:
 
 | Command | Output |
 |---|---|
-| `dal:definition [entity]` | The compiled definition of an entity: its table, keys and indexes, and every field's type, nullability, default and serializer |
-| `dal:baseline:required-fields` | JSON listing each entity's required fields. Commit it and diff it in CI to catch a field becoming required while stored rows may lack it |
-| `dal:baseline:table-schema` | JSON with the key and index schema of the live tables, for the same kind of check |
+| `dal:definition:inspect [entity]` | The compiled definition of an entity: its table, keys and indexes, and every field's type, nullability, default, serializer and attribute type |
+| `dal:definition:validate` | Compares every definition with its live table: the table and index keys, their attribute types, and whether each declared index exists and projects every field. Fails on any difference that makes requests fail, and warns of an index the definition does not declare |
+| `dal:baseline:dump` | JSON with each entity's keys and indexes, and every field's attribute type and whether it is required. Commit it and diff it in CI to catch a field that turns required, or one stored as another type, before stored rows fail on it |
 
 With `symfony/web-profiler-bundle` installed, the profiler gets a DynamoDB panel. It lists each call a request made
 into the DAL, with its caller, the time spent in it and the DynamoDB requests it sent. The time is the wall time

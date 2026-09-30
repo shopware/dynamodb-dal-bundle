@@ -41,9 +41,9 @@ class DevIntegrationTest extends TestCase
         $loader = self::$kernel?->getContainer()->get('console.command_loader');
         static::assertInstanceOf(CommandLoaderInterface::class, $loader);
 
-        static::assertTrue($loader->has('dal:definition'));
-        static::assertTrue($loader->has('dal:baseline:required-fields'));
-        static::assertTrue($loader->has('dal:baseline:table-schema'));
+        static::assertTrue($loader->has('dal:definition:inspect'));
+        static::assertTrue($loader->has('dal:definition:validate'));
+        static::assertTrue($loader->has('dal:baseline:dump'));
     }
 
     public function testProfilerIntegrationIsWired(): void
