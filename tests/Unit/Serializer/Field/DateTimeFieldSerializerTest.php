@@ -85,7 +85,7 @@ class DateTimeFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsANumber(): void
     {
-        static::assertSame(AttributeType::Number, $this->serializer->getAttributeType($this->createDateTimeDefinition()));
+        static::assertSame(AttributeType::Number, DateTimeFieldSerializer::getAttributeType());
     }
 
     private function createDateTimeDefinition(): FieldDefinition

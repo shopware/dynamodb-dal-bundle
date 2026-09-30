@@ -113,7 +113,7 @@ class UidFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAString(): void
     {
-        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createUidDefinition()));
+        static::assertSame(AttributeType::String, UidFieldSerializer::getAttributeType());
     }
 
     /**

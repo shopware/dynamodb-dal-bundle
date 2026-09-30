@@ -22,7 +22,7 @@ class StringSetFieldSerializer extends AbstractFieldSerializer
         return $type === StringSet::class;
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::StringSet;
     }

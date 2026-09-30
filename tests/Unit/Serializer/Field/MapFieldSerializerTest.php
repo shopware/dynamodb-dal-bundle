@@ -180,6 +180,11 @@ class MapFieldSerializerTest extends TestCase
                 return $type === 'string';
             }
 
+            public static function getAttributeType(): AttributeType
+            {
+                return AttributeType::String;
+            }
+
             public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
             {
                 throw new FieldSerializationException($definition, path: 'inner');
@@ -340,7 +345,7 @@ class MapFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAMap(): void
     {
-        static::assertSame(AttributeType::Map, $this->serializer->getAttributeType($this->createMapDefinition()));
+        static::assertSame(AttributeType::Map, MapFieldSerializer::getAttributeType());
     }
 
     /**

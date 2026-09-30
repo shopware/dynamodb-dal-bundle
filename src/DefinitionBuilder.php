@@ -4,6 +4,7 @@ namespace Shopware\DynamodbDalBundle;
 
 use Shopware\DynamodbDalBundle\Attribute\Field;
 use Shopware\DynamodbDalBundle\Attribute\Table;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\EntityDefinition;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Definition\IndexSchema;
@@ -22,7 +23,7 @@ use Symfony\Component\DependencyInjection\Reference;
 final readonly class DefinitionBuilder
 {
     /**
-     * @param list<string> $fieldSerializers Service id of every service tagged as an {@see AbstractFieldSerializer}, in the order they are tried
+     * @param list<class-string<AbstractFieldSerializer>> $fieldSerializers Service id of every field serializer, which is its class, in the order they are tried
      */
     public function __construct(
         private array $fieldSerializers
@@ -182,24 +183,25 @@ final readonly class DefinitionBuilder
 
             /** @var Field $fieldAttr */
             $fieldAttr = $attributeAttr->newInstance();
-            $fieldDefinitions[$property->getName()] = $this->buildFieldDefinition($entityClass, $property, $fieldAttr->valueType);
+            $fieldDefinitions[$property->getName()] = $this->buildFieldDefinition($entityClass, $property, $fieldAttr);
         }
 
         return $fieldDefinitions;
     }
 
-    private function buildFieldDefinition(string $entityClass, \ReflectionProperty $property, ?string $attributeValueType): Definition
+    private function buildFieldDefinition(string $entityClass, \ReflectionProperty $property, Field $field): Definition
     {
         $type = $this->validatePropertyForField($property);
 
         $phpType = $type->getName();
         $docblockType = ArrayTypeParser::getDocblockVarType($property);
-        $valueType = $this->resolveValueTypeForProperty($property, $phpType, $docblockType, $attributeValueType);
+        $valueType = $this->resolveValueTypeForProperty($property, $phpType, $docblockType, $field->valueType);
 
-        $fieldSerializer = $this->findFieldSerializer($phpType, $docblockType);
-        if ($fieldSerializer === false) {
-            throw new \LogicException("Entity property {$entityClass}::\${$property->name} is not supported by any serializer");
-        }
+        $fieldSerializer = $this->findFieldSerializer($phpType, $docblockType, $field->storedAs) ?? throw new \LogicException(
+            $field->storedAs !== null
+                ? "Entity property {$entityClass}::\${$property->name} is not supported by any serializer that stores {$field->storedAs->value}, which its #[Field(storedAs: AttributeType::{$field->storedAs->name})] asks for"
+                : "Entity property {$entityClass}::\${$property->name} is not supported by any serializer",
+        );
 
         return new Definition(
             FieldDefinition::class,
@@ -284,10 +286,8 @@ final readonly class DefinitionBuilder
         $isListOrMap = ArrayTypeParser::isListOrMapType($valueType);
         $phpType = $isListOrMap ? 'array' : $valueType;
         $docblockType = $phpType === 'array' ? $valueType : null;
-        $valueSerializer = $this->findFieldSerializer($phpType, $docblockType);
-        if ($valueSerializer === false) {
-            throw new \LogicException("Entity property {$entityClass}::\${$property->name} value type \"{$valueType}\" is not supported by any serializer");
-        }
+        $valueSerializer = $this->findFieldSerializer($phpType, $docblockType)
+            ?? throw new \LogicException("Entity property {$entityClass}::\${$property->name} value type \"{$valueType}\" is not supported by any serializer");
 
         $innerValueType = $isListOrMap ? ArrayTypeParser::extractValueType($valueType) : null;
 
@@ -306,14 +306,16 @@ final readonly class DefinitionBuilder
     }
 
     /**
-     * @return string|false Service id of the serializer that supports the given type, or false if none
+     * The first serializer that claims the type, among those that store the field as `$storedAs` where it is given.
+     *
+     * @return ?class-string<AbstractFieldSerializer> Service id of the serializer, which is its class
      */
-    private function findFieldSerializer(string $phpType, ?string $docblockType): string|false
+    private function findFieldSerializer(string $phpType, ?string $docblockType, ?AttributeType $storedAs = null): ?string
     {
         return array_find(
             $this->fieldSerializers,
-            static fn (string $serviceId): bool => is_subclass_of($serviceId, AbstractFieldSerializer::class, true)
-                && $serviceId::supports($phpType, $docblockType),
-        ) ?? false;
+            static fn (string $serializer): bool => ($storedAs === null || $serializer::getAttributeType() === $storedAs)
+                && $serializer::supports($phpType, $docblockType),
+        );
     }
 }

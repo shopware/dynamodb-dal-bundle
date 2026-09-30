@@ -4,24 +4,27 @@
   - [A field type of your own](#a-field-type-of-your-own)
     - [How it works](#how-it-works)
     - [Pitfalls](#pitfalls)
-  - [A `JsonSerializable` value object](#a-jsonserializable-value-object)
-    - [Pitfalls](#pitfalls-1)
-  - [A normalizer](#a-normalizer)
+  - [One type stored in two ways](#one-type-stored-in-two-ways)
     - [How it works](#how-it-works-1)
+    - [Pitfalls](#pitfalls-1)
+  - [A `JsonSerializable` value object](#a-jsonserializable-value-object)
     - [Pitfalls](#pitfalls-2)
-  - [A filter of your own](#a-filter-of-your-own)
+  - [A normalizer](#a-normalizer)
     - [How it works](#how-it-works-2)
     - [Pitfalls](#pitfalls-3)
-  - [An update action of your own](#an-update-action-of-your-own)
+  - [A filter of your own](#a-filter-of-your-own)
     - [How it works](#how-it-works-3)
     - [Pitfalls](#pitfalls-4)
-  - [An update action the normalizer sees](#an-update-action-the-normalizer-sees)
+  - [An update action of your own](#an-update-action-of-your-own)
     - [How it works](#how-it-works-4)
     - [Pitfalls](#pitfalls-5)
+  - [An update action the normalizer sees](#an-update-action-the-normalizer-sees)
+    - [How it works](#how-it-works-5)
+    - [Pitfalls](#pitfalls-6)
 
 The bundle has four extension points:
 
-- A field serializer stores a type the bundle doesn't know.
+- A field serializer stores a type the bundle doesn't know, or stores a type in another way.
 - A normalizer holds rules that span several fields of an entity.
 - A filter or an update action adds DynamoDB syntax that `Filter` and `Update` don't cover.
 
@@ -68,7 +71,7 @@ final class MoneyFieldSerializer extends AbstractFieldSerializer
         return $type === Money::class;
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::String;
     }
@@ -101,7 +104,7 @@ public Money $total;
 | Method | Runs | Does |
 |---|---|---|
 | `supports($type, $docblockType)` | For every field, while the container is built | Claims the property types the serializer handles |
-| `getAttributeType($definition)` | When a filter or update on the field is compiled | Declares the DynamoDB type that `serialize()` writes |
+| `getAttributeType()` | While the container is built, and when a filter or update on the field is compiled | Declares the DynamoDB type that `serialize()` writes. Every serializer declares one |
 | `serialize($definition, $value)` | For every value written, and every value of a key or filter | Turns the PHP value into an `AttributeValue` |
 | `deserialize($definition, $attributeValue)` | For every value read | Turns the stored `AttributeValue` back into the PHP value |
 
@@ -130,13 +133,75 @@ Throw `WrongTypeException` or `MissingAttributeValueException`, so that the erro
 
 - `supports()` runs for every field while the container is built. Claim only your own type. A serializer that claims
   more takes over fields of other types.
-- Without `getAttributeType()`, the type is `null`, and every check passes. A filter that DynamoDB can never match
-  then matches nothing, a write's condition fails as if the entity didn't match it, and a wrong update fails at
-  DynamoDB, far from the code that wrote it.
 - A value your serializer stores as a map has no paths. A filter or update of `total.currency` throws
   `UnknownFieldException`.
 - A serializer applies to a PHP type, not to a property. Two properties of the same type are stored the same way,
-  unless one of them gets a type of its own.
+  unless one of them asks for another type, see [One type stored in two ways](#one-type-stored-in-two-ways).
+
+## One type stored in two ways
+
+A serializer stores every field it takes as the one DynamoDB type its `getAttributeType()` returns. To store some
+fields of a type in another way, write a second serializer for the type, and let those fields ask for its type with
+`#[Field(storedAs: …)]`:
+
+```php
+/**
+ * Stores a Money as a map like {"cents": 1999, "currency": "EUR"}.
+ *
+ * @extends AbstractFieldSerializer<Money, class-string<Money>>
+ */
+final class MoneyMapFieldSerializer extends AbstractFieldSerializer
+{
+    public static function supports(string $type, ?string $docblockType = null): bool
+    {
+        return $type === Money::class;
+    }
+
+    public static function getAttributeType(): AttributeType
+    {
+        return AttributeType::Map;
+    }
+
+    // serialize() and deserialize() write and read the map
+}
+```
+
+```yaml
+# config/services.yaml
+services:
+    App\Money\MoneyMapFieldSerializer:
+        tags:
+            - { name: 'Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer', priority: -1000 }
+```
+
+```php
+#[Field]
+public Money $total;
+
+#[Field(storedAs: AttributeType::Map)]
+public ?Money $refund = null;
+```
+
+`total` is stored as `"1999 EUR"` by `MoneyFieldSerializer`, and `refund` as a map by `MoneyMapFieldSerializer`. A
+field that asks for a type is offered only to the serializers that store it, in their usual order. If none of them
+claims the field, the container build fails.
+
+### How it works
+
+- The priority below the bundle's serializers, at -100, and the JSON one, at -500, keeps the second serializer away
+  from the fields that ask for no type.
+- A type the bundle stores can get a second way too, such as a `\DateTimeImmutable` stored as an ISO 8601 string
+  (`S`) next to the bundle's timestamps (`N`).
+- A field that asks for the type it is stored as anyway, such as `storedAs: AttributeType::Number` on an `int`,
+  keeps that type. A serializer of your own that claims `int` and stores another type doesn't take it over.
+- `storedAs` applies to the field, not to the values of a list or map, which are asked for by their own type.
+
+### Pitfalls
+
+- Without the lower priority, both serializers claim every field of the type that asks for no type, and the one
+  registered first wins.
+- Changing `storedAs`, or the priorities, changes how existing rows are read. Every row stored the old way then fails
+  to read, such as with a `MissingAttributeValueException`.
 
 ## A `JsonSerializable` value object
 
@@ -390,7 +455,7 @@ The context builds every placeholder:
 | Method | Returns |
 |---|---|
 | `path($fieldName, ...$types)` | The placeholder of a field, or of a path such as `meta.carrier`. `$types` names the types the stored field may have, as in `path('tags', AttributeType::List)` |
-| `fieldDefinition($fieldName)` | The definition of what the path addresses. Its `getAttributeType()` is the type it is stored as, or `null` where its serializer declares none |
+| `fieldDefinition($fieldName)` | The definition of what the path addresses. Its `getAttributeType()` is the type it is stored as |
 | `fieldValue($fieldName, $value)` | The placeholder of a value, serialized with the field's serializer |
 | `elementValue($fieldName, $value)` | The placeholder of one element of a list or map field, such as the element `contains()` looks for |
 | `literal($value)` | The placeholder of a string or number as it is, for an operand that is not a value of the field, such as the number a size is compared with, or the type name `attribute_type()` takes |

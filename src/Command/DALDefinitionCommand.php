@@ -232,7 +232,7 @@ readonly class DALDefinitionCommand
                 $field->hasDefaultValue() ? $this->describeValue($field->getDefaultValue()) : '-',
                 implode(', ', $keyRoles[$fieldName] ?? []) ?: '-',
                 $this->getShortClassName($field->getSerializer()::class),
-                $field->getAttributeType()->value ?? '-',
+                $field->getAttributeType()->value,
             ];
         }
 

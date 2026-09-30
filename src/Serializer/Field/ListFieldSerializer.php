@@ -28,7 +28,7 @@ class ListFieldSerializer extends AbstractFieldSerializer
         return $type === 'array' && $docblockType !== null && ArrayTypeParser::isListType($docblockType);
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::List;
     }

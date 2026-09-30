@@ -15,6 +15,9 @@ use Shopware\DynamodbDalBundle\Serializer\Field\MapFieldSerializer;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\AbstractCatalogEntity;
 use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\CatalogEntity;
+use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\StringSetFieldSerializer;
+use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\StoredAs\StoredAsEntity;
+use Shopware\DynamodbDalBundle\Tests\Unit\Fixtures\StoredAs\UnstorableStoredAsEntity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Definition;
@@ -38,6 +41,17 @@ class DefinitionBuilderTest extends TestCase
         DateTimeFieldSerializer::class,
         ListFieldSerializer::class,
         MapFieldSerializer::class,
+    ];
+
+    /**
+     * With a serializer of a list tried after the list serializer, so a field gets it only where it asks for its type.
+     */
+    private const array STORED_AS_SERIALIZERS = [
+        StringFieldSerializer::class,
+        DateTimeFieldSerializer::class,
+        ListFieldSerializer::class,
+        MapFieldSerializer::class,
+        StringSetFieldSerializer::class,
     ];
 
     /**
@@ -156,17 +170,6 @@ class DefinitionBuilderTest extends TestCase
         }
     }
 
-    /**
-     * Tagged service ids are taken as given; one that does not resolve to a field serializer is passed
-     * over rather than called for a `supports()` it does not have.
-     */
-    public function testSkipsServiceIdsThatAreNotFieldSerializers(): void
-    {
-        $fields = $this->fieldDefinitions(new DefinitionBuilder([\stdClass::class, ...self::SERIALIZERS]));
-
-        static::assertEquals(new Reference(StringFieldSerializer::class), $fields['tenantId']->getArgument('$serializer'));
-    }
-
     public function testFieldWithoutASupportingSerializerFailsTheBuild(): void
     {
         $builder = new DefinitionBuilder([StringFieldSerializer::class]);
@@ -175,6 +178,23 @@ class DefinitionBuilderTest extends TestCase
         static::expectExceptionMessage('Entity property ' . CatalogEntity::class . '::$createdAt is not supported by any serializer');
 
         $builder->build(CatalogEntity::class, self::TABLE);
+    }
+
+    public function testOffersAFieldThatAsksForAnAttributeTypeOnlyToTheSerializersThatStoreIt(): void
+    {
+        $fields = $this->fieldDefinitions(new DefinitionBuilder(self::STORED_AS_SERIALIZERS), StoredAsEntity::class);
+
+        static::assertEquals(new Reference(StringSetFieldSerializer::class), $fields['labels']->getArgument('$serializer'));
+        static::assertEquals(new Reference(ListFieldSerializer::class), $fields['tags']->getArgument('$serializer'));
+    }
+
+    public function testAFieldThatAsksForAnAttributeTypeNoSerializerOfItsTypeStoresFailsTheBuild(): void
+    {
+        $this->expectExceptionObject(new \LogicException(
+            'Entity property ' . UnstorableStoredAsEntity::class . '::$code is not supported by any serializer that stores N, which its #[Field(storedAs: AttributeType::Number)] asks for',
+        ));
+
+        $this->build(UnstorableStoredAsEntity::class, new DefinitionBuilder(self::STORED_AS_SERIALIZERS));
     }
 
     /**
@@ -188,11 +208,13 @@ class DefinitionBuilderTest extends TestCase
     }
 
     /**
+     * @param class-string $entityClass
+     *
      * @return array<string, Definition>
      */
-    private function fieldDefinitions(DefinitionBuilder $builder): array
+    private function fieldDefinitions(DefinitionBuilder $builder, string $entityClass = CatalogEntity::class): array
     {
-        [, $definition] = $this->build(CatalogEntity::class, $builder);
+        [, $definition] = $this->build($entityClass, $builder);
 
         $fields = $definition->getArgument('$fieldDefinitions');
         static::assertIsArray($fields);

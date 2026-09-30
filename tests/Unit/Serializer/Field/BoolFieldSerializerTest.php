@@ -84,7 +84,7 @@ class BoolFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsABoolean(): void
     {
-        static::assertSame(AttributeType::Boolean, $this->serializer->getAttributeType($this->createFieldDefinition()));
+        static::assertSame(AttributeType::Boolean, BoolFieldSerializer::getAttributeType());
     }
 
     private function createFieldDefinition(): FieldDefinition

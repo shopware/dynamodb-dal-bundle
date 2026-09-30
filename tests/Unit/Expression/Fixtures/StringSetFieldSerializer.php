@@ -10,7 +10,8 @@ use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 
 /**
  * Writes a list of strings as a DynamoDB string set, as an application's own set type would be written, since the
- * bundle has none.
+ * bundle has none. It claims a `list<string>`, as the list serializer does, so tried after that one, it stores only the
+ * fields that ask for a string set.
  *
  * @extends AbstractFieldSerializer<list<string>, 'array'>
  */
@@ -18,10 +19,10 @@ final class StringSetFieldSerializer extends AbstractFieldSerializer
 {
     public static function supports(string $type, ?string $docblockType = null): bool
     {
-        return false;
+        return $type === 'array' && $docblockType === 'list<string>';
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::StringSet;
     }

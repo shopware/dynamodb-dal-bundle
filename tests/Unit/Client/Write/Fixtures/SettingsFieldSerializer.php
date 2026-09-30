@@ -3,6 +3,7 @@
 namespace Shopware\DynamodbDalBundle\Tests\Unit\Client\Write\Fixtures;
 
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
+use Shopware\DynamodbDalBundle\Definition\AttributeType;
 use Shopware\DynamodbDalBundle\Definition\FieldDefinition;
 use Shopware\DynamodbDalBundle\Exception\MissingAttributeValueException;
 use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
@@ -10,14 +11,14 @@ use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 
 /**
  * Stores {@see Settings} as a map of its properties, so the object's structure is known to this serializer alone.
- * It declares no attribute type, as a serializer of your own may, so a path into the field is never refused for it.
+ * With `$asString`, it writes one string instead, although it declares a map, as a faulty serializer of your own may.
  *
  * @extends AbstractFieldSerializer<Settings, class-string<Settings>>
  */
 final class SettingsFieldSerializer extends AbstractFieldSerializer
 {
     /**
-     * @param bool $asString - store the object as one string instead of a map
+     * @param bool $asString - store the object as one string, which is no map
      */
     public function __construct(
         private readonly bool $asString = false,
@@ -27,6 +28,11 @@ final class SettingsFieldSerializer extends AbstractFieldSerializer
     public static function supports(string $type, ?string $docblockType = null): bool
     {
         return $type === Settings::class;
+    }
+
+    public static function getAttributeType(): AttributeType
+    {
+        return AttributeType::Map;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue

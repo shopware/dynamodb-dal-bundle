@@ -26,7 +26,7 @@ class DateTimeFieldSerializer extends AbstractFieldSerializer
             || $type === \DateTime::class;
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::Number;
     }

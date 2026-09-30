@@ -314,7 +314,7 @@ class ListFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAList(): void
     {
-        static::assertSame(AttributeType::List, $this->serializer->getAttributeType($this->createStringListDefinition()));
+        static::assertSame(AttributeType::List, ListFieldSerializer::getAttributeType());
     }
 
     private function createStringListDefinition(): FieldDefinition

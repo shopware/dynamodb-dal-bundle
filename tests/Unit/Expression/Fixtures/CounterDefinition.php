@@ -17,9 +17,8 @@ use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 
 /**
  * An entity definition with the field types update actions work on, serialized for real: numbers to
- * count with, a list to append to, a map of numbers to reach into, a set to delete from and a binary set. A boolean,
- * a JSON-encoded field and one whose serializer declares no type are there for the checks against the
- * stored type.
+ * count with, a list to append to, a map of numbers to reach into, a set to delete from and a binary set. A boolean
+ * and a JSON-encoded field are there for the checks against the stored type.
  *
  * `NormalEntity::createDefinition()` is all strings, which no arithmetic applies to.
  */
@@ -66,15 +65,6 @@ final class CounterDefinition
                 'blobs' => new FieldDefinition('blobs', 'array', true, true, null, new BinarySetFieldSerializer()),
                 'active' => new FieldDefinition('active', 'bool', false, true, false, new BoolFieldSerializer()),
                 'payload' => new FieldDefinition('payload', 'array', false, true, [], new JsonFieldSerializer()),
-                'untyped' => new FieldDefinition(
-                    'untyped',
-                    'string',
-                    true,
-                    true,
-                    null,
-                    new UntypedFieldSerializer(),
-                    new FieldDefinition('untyped.value', 'string', true, false, null, $string),
-                ),
             ],
             new KeySchema('id'),
         );

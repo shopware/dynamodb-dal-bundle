@@ -64,7 +64,7 @@ class IntFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsANumber(): void
     {
-        static::assertSame(AttributeType::Number, $this->serializer->getAttributeType($this->createIntDefinition()));
+        static::assertSame(AttributeType::Number, IntFieldSerializer::getAttributeType());
     }
 
     private function createIntDefinition(): FieldDefinition

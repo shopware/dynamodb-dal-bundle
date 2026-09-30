@@ -10,7 +10,6 @@ use Shopware\DynamodbDalBundle\Definition\KeySchema;
 use Shopware\DynamodbDalBundle\Exception\AttributeTypeMismatchException;
 use Shopware\DynamodbDalBundle\Exception\UnknownFieldException;
 use Shopware\DynamodbDalBundle\Serializer\Field\StringFieldSerializer;
-use Shopware\DynamodbDalBundle\Tests\Unit\Expression\Fixtures\UntypedFieldSerializer;
 use Shopware\DynamodbDalBundle\Tests\Unit\Serializer\Fixtures\NormalEntity;
 use AsyncAws\DynamoDb\ValueObject\AttributeValue;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -75,23 +74,6 @@ class FieldPathTest extends TestCase
         yield 'numeric name inside a list' => ['tags.0'];
         yield 'name inside a nested list' => ['matrix[0].name'];
         yield 'index into a nested map' => ['users[0][1]'];
-    }
-
-    /**
-     * A serializer of your own that declares no type leaves the shape to DynamoDB, so both forms parse.
-     */
-    public function testParseChecksAFieldWhoseSerializerDeclaresNoTypeForDepthOnly(): void
-    {
-        $definition = new EntityDefinition('untyped', 'untyped', NormalEntity::class, null, [
-            'bag' => new FieldDefinition('bag', 'array', true, true, null, new UntypedFieldSerializer(), new FieldDefinition('value', 'string', false, false, null, new StringFieldSerializer())),
-        ], new KeySchema('bag'));
-
-        static::assertSame(['bag', 0], FieldPath::parse($definition, 'bag[0]')->segments);
-        static::assertSame(['bag', 'name'], FieldPath::parse($definition, 'bag.name')->segments);
-
-        $this->expectException(UnknownFieldException::class);
-
-        FieldPath::parse($definition, 'bag.name.deeper');
     }
 
     /**

@@ -53,8 +53,8 @@ class ExpressionCompileContext
      * Registers the attribute names of the path, and returns the path as an expression spells it: `#settings.#currency`
      * for `settings.currency`. A name placeholder is derived from the name, so the same path always registers alike.
      *
-     * `$types` restricts the stored type, such as a list for `list_append()`.
-     * A field without a declared type always passes, see {@see AbstractFieldSerializer::getAttributeType()}.
+     * `$types` restricts the stored type, such as a list for `list_append()`, which the field's serializer declares
+     * through {@see AbstractFieldSerializer::getAttributeType()}.
      *
      * @throws UnknownFieldException
      * @throws AttributeTypeMismatchException
@@ -96,8 +96,8 @@ class ExpressionCompileContext
 
     /**
      * Like {@see fieldValue()}, but serializes the value as one element of the list or map field, such as the element
-     * `contains()` looks for. A field without a declared type passes, as in {@see path()}, and one without elements
-     * serializes the value as the field.
+     * `contains()` looks for. A list or map that declares no values, such as a value object without
+     * `#[Field(valueType: …)]`, serializes the value as the field.
      *
      * @throws UnknownFieldException
      * @throws AttributeTypeMismatchException for a field that is no list or map
@@ -176,9 +176,9 @@ class ExpressionCompileContext
      *
      * @throws AttributeTypeMismatchException
      */
-    private function assertType(string $field, ?AttributeType $actual, array $expected): void
+    private function assertType(string $field, AttributeType $actual, array $expected): void
     {
-        if ($actual !== null && $expected !== [] && !\in_array($actual, $expected, true)) {
+        if ($expected !== [] && !\in_array($actual, $expected, true)) {
             throw new AttributeTypeMismatchException($this->definition, $field, $actual, array_values($expected));
         }
     }

@@ -20,7 +20,7 @@ class BoolFieldSerializer extends AbstractFieldSerializer
         return $type === 'bool';
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::Boolean;
     }

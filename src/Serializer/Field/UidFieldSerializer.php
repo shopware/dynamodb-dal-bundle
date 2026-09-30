@@ -21,7 +21,7 @@ class UidFieldSerializer extends AbstractFieldSerializer
         return is_subclass_of($type, AbstractUid::class, true);
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::String;
     }

@@ -385,8 +385,7 @@ a `null` as well, and returns a new filter. The original filter stays unchanged.
 - The bundle checks what a filter does with a field against the type the field is stored as. Where DynamoDB would
   reject the filter or never match it, the bundle throws before the request. Examples are `size()` of a number,
   `beginsWith()` on a list, `contains()` on a map, an ordered comparison of a list, and two operands of different
-  types. A field whose serializer declares no type is left to DynamoDB, see
-  [A field type of your own](extending.md#a-field-type-of-your-own).
+  types.
 - A comparison with a missing attribute is false, and its negation is true.
 
 ### Pitfalls

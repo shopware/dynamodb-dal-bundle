@@ -10,11 +10,12 @@ use Shopware\DynamodbDalBundle\Exception\WrongTypeException;
 use Shopware\DynamodbDalBundle\Serializer\Field\AbstractFieldSerializer;
 
 /**
- * The kind of field serializer an application contributes for a type of its own.
+ * Stores {@see Money} as a map of its properties, the second way next to {@see MoneyFieldSerializer}'s string, for the
+ * fields that ask for a map.
  *
  * @extends AbstractFieldSerializer<Money, class-string<Money>>
  */
-class MoneyFieldSerializer extends AbstractFieldSerializer
+class MoneyMapFieldSerializer extends AbstractFieldSerializer
 {
     public static function supports(string $type, ?string $docblockType = null): bool
     {
@@ -23,7 +24,7 @@ class MoneyFieldSerializer extends AbstractFieldSerializer
 
     public static function getAttributeType(): AttributeType
     {
-        return AttributeType::String;
+        return AttributeType::Map;
     }
 
     public function serialize(FieldDefinition $definition, mixed $value): AttributeValue
@@ -32,17 +33,19 @@ class MoneyFieldSerializer extends AbstractFieldSerializer
             throw new WrongTypeException($definition, Money::class, $value);
         }
 
-        return AttributeValue::create(['S' => \sprintf('%d %s', $value->cents, $value->currency)]);
+        return AttributeValue::create(['M' => [
+            'cents' => AttributeValue::create(['N' => (string) $value->cents]),
+            'currency' => AttributeValue::create(['S' => $value->currency]),
+        ]]);
     }
 
-    public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): mixed
+    public function deserialize(FieldDefinition $definition, AttributeValue $attributeValue): Money
     {
-        if (($value = $attributeValue->getS()) === null) {
-            throw new MissingAttributeValueException($definition, 'S');
-        }
+        $map = $attributeValue->getM();
 
-        [$cents, $currency] = explode(' ', $value, 2);
-
-        return new Money((int) $cents, $currency);
+        return new Money(
+            (int) (($map['cents'] ?? null)?->getN() ?? throw new MissingAttributeValueException($definition, 'N')),
+            ($map['currency'] ?? null)?->getS() ?? throw new MissingAttributeValueException($definition, 'S'),
+        );
     }
 }

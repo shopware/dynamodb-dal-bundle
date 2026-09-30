@@ -20,7 +20,7 @@ class FloatFieldSerializer extends AbstractFieldSerializer
         return $type === 'float';
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::Number;
     }

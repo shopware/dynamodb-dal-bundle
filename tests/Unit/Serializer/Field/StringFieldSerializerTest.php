@@ -72,7 +72,7 @@ class StringFieldSerializerTest extends TestCase
 
     public function testDeclaresItStoresTheFieldAsAString(): void
     {
-        static::assertSame(AttributeType::String, $this->serializer->getAttributeType($this->createStringDefinition()));
+        static::assertSame(AttributeType::String, StringFieldSerializer::getAttributeType());
     }
 
     private function createStringDefinition(): FieldDefinition

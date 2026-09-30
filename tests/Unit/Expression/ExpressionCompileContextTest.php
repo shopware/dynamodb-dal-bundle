@@ -651,27 +651,6 @@ class ExpressionCompileContextTest extends TestCase
         yield 'a boolean' => ['active', 'BOOL'];
     }
 
-    public function testAFieldWhoseSerializerDeclaresNoTypePassesEveryCheck(): void
-    {
-        [$expression] = $this->compile(
-            Filter::and(
-                Filter::equals(Filter::size('untyped'), 1),
-                Filter::beginsWith('untyped', 'a'),
-                Filter::contains('untyped', 'b'),
-                Filter::greaterThan('untyped', Filter::field('count')),
-                Filter::exists('untyped[0]'),
-                Filter::exists('untyped.key'),
-            ),
-            CounterDefinition::create(),
-        );
-
-        static::assertSame(
-            '(size(#untyped) = :h_0 AND begins_with(#untyped, :h_1) AND contains(#untyped, :h_2_untyped) AND #untyped > #count'
-                . ' AND attribute_exists(#untyped[0]) AND attribute_exists(#untyped.#key))',
-            $expression,
-        );
-    }
-
     public function testIsEmptyAlsoMatchesAMissingFieldWhereIsNotEmptyAsksForASize(): void
     {
         [$empty] = $this->compile(Filter::and(Filter::equals('name', 'a'), Filter::isEmpty('tags')), CounterDefinition::create());
@@ -724,7 +703,6 @@ class ExpressionCompileContextTest extends TestCase
         static::assertSame('attribute_type(#tags, :h_0)', $expression);
         static::assertEquals([':h_0' => new AttributeValue(['S' => 'L'])], $context->values);
         static::assertSame(AttributeType::List, $context->fieldDefinition('tags')->getAttributeType());
-        static::assertNull($context->fieldDefinition('untyped')->getAttributeType());
     }
 
     public function testAFilterOfYourOwnThatParenthesizesItsClausesIsNotWrappedAgain(): void

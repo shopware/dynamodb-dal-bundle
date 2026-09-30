@@ -20,7 +20,7 @@ class StringFieldSerializer extends AbstractFieldSerializer
         return $type === 'string';
     }
 
-    public function getAttributeType(FieldDefinition $definition): AttributeType
+    public static function getAttributeType(): AttributeType
     {
         return AttributeType::String;
     }
