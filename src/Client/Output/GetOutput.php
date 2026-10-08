@@ -13,7 +13,7 @@ use AsyncAws\Core\Exception\Exception as AsyncAwsException;
  * matches of a search: each `BatchGetItem` of 100 keys is read as the stream reaches it.
  * {@see forEntity()} and {@see grouped()} read it as the other terminals do, so use one of them, and only once.
  *
- * @template Entity of AbstractEntity = never
+ * @template Entity of AbstractEntity
  *
  * @extends ReadOutput<Entity, int>
  *
