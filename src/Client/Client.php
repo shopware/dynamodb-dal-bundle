@@ -246,6 +246,8 @@ class Client
      *
      * @param UpsertInput<Entity> $input
      *
+     * @phpstan-impure - it writes, so the next call with the same input can have another outcome
+     *
      * @throws UnknownEntityDefinitionException
      * @throws ConditionEmptyException
      * @throws UpdateEmptyException if the update has nothing to write
