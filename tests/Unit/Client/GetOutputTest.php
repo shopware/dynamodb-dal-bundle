@@ -31,6 +31,29 @@ class GetOutputTest extends TestCase
         static::assertSame([$a, $o], self::getOutput($a, $o)->toArray());
     }
 
+    /**
+     * Iterated directly rather than through `toArray()`: PHPStan checks each `instanceof` against the type the loop
+     * gives the entities, which a template default of `never` on `GetOutput` made `never`.
+     */
+    public function testIteratingHandsOutEntitiesOfEveryClass(): void
+    {
+        $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
+        $o = new OtherEntity()->setOtherId('o');
+
+        $normal = [];
+        $other = [];
+        foreach (self::getOutput($a, $o) as $entity) {
+            if ($entity instanceof NormalEntity) {
+                $normal[] = $entity;
+            } else {
+                $other[] = $entity;
+            }
+        }
+
+        static::assertSame([$a], $normal);
+        static::assertSame([$o], $other);
+    }
+
     public function testBucketsEntitiesByTheirClass(): void
     {
         $a = new NormalEntity()->setAutofilledId('a')->setRequired('req');
