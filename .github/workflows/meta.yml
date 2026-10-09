@@ -20,8 +20,7 @@ jobs:
       - name: Verify PSR-4 autoload
         run: composer dump-autoload --optimize --strict-psr --no-scripts
 
-      # The bundle's own workflows use the action from the checkout, while an application's use it from the archive
-      # GitHub builds, which leaves out what .gitattributes export-ignores
+      # Applications load the action from GitHub's archive, which leaves out what .gitattributes export-ignores
       - name: Verify that the package ships the baseline action
         shell: bash
         run: |
