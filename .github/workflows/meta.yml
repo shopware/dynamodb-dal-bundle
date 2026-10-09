@@ -20,6 +20,19 @@ jobs:
       - name: Verify PSR-4 autoload
         run: composer dump-autoload --optimize --strict-psr --no-scripts
 
+      # The bundle's own workflows use the action from the checkout, while an application's use it from the archive
+      # GitHub builds, which leaves out what .gitattributes export-ignores
+      - name: Verify that the package ships the baseline action
+        shell: bash
+        run: |
+          # Only the files count, as the listing has their directories too
+          if ! diff -u --label expected --label archive \
+            <(echo .github/actions/baseline/action.yml) \
+            <(git archive HEAD -- .github | tar -tf - | sed '/\/$/d'); then
+            echo "::error file=.gitattributes,title=Wrong .github files in the package::Only .github/actions/baseline/action.yml ships from .github. Export-ignore the entries of .github, not the directory, which would hide the action too"
+            exit 1
+          fi
+
   bc-check:
     runs-on: ubuntu-latest
     steps:

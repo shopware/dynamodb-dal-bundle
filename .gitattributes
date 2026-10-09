@@ -1,4 +1,10 @@
-/.github export-ignore
+# Git skips everything below an export-ignored directory, so the entries of .github are ignored one by one: workflows
+# load the baseline action from the package, so it has to ship. Another file to ship needs an -export-ignore line here
+# and a line in the validate job's check
+/.github/* export-ignore
+/.github/actions -export-ignore
+/.github/actions/* export-ignore
+/.github/actions/baseline -export-ignore
 /bin export-ignore
 /tests export-ignore
 /.gitattributes export-ignore

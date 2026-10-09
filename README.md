@@ -61,16 +61,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Set up PHP and install the application's dependencies here
-      - uses: shopware/dynamodb-dal-bundle/.github/actions/baseline@<tag>
+      - uses: ./vendor/shopware/dynamodb-dal-bundle/.github/actions/baseline
         with:
           baseline: dal-baseline.json
           console: php bin/console --env=dev
 ```
 
-Use the tag of the bundle version the application installs, so that the action matches its commands. The commands
-need no DynamoDB. [`action.yml`](.github/actions/baseline/action.yml) describes the other inputs, such as the working
-directory. A pull request from a fork gets a read-only token, so the action shows its report in the job summary
-instead of a comment.
+The action ships with the bundle from 0.7.1, so the one in `vendor/` matches the installed commands. Its path is
+relative to the root of the repository and takes no expressions: for an application in `app/`, use
+`./app/vendor/shopware/dynamodb-dal-bundle/.github/actions/baseline` and set `working-directory: app`. To load it from
+GitHub instead, use `shopware/dynamodb-dal-bundle/.github/actions/baseline@<tag>` with the tag of the bundle version
+the application installs. The commands need no DynamoDB. [`action.yml`](.github/actions/baseline/action.yml)
+describes the other inputs. A pull request from a fork gets a read-only token, so the action shows its report in the
+job summary instead of a comment.
 
 ### Profiler
 
